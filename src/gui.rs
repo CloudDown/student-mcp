@@ -1,19 +1,23 @@
-use crate::config::{mcp_endpoint, Gateway, Settings, VERSION};
+use crate::config::{mcp_endpoint, Gateway, Settings};
 use crate::funnel::{self, TailscaleInfo};
-use eframe::egui::{self, Button, Color32, Label, RichText, Sense, TextEdit, Ui};
+use crate::logos::Logos;
+use eframe::egui::{
+    self, pos2, Align2, Button, CentralPanel, Color32, Context, CursorIcon, FontId, Grid, Layout,
+    Rect, RichText, Sense, Stroke, TextEdit, TextureHandle, Ui, Vec2,
+};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Instant;
 
-const ACCENT: [Color32; 4] = [
-    Color32::from_rgb(0xf2, 0x99, 0x4a), // Moodle orange
-    Color32::from_rgb(0xb1, 0x6a, 0xe3), // Proxmox violet
-    Color32::from_rgb(0x54, 0x6e, 0x7a), // placeholder Dossier
-    Color32::from_rgb(0x51, 0x7e, 0x5e), // placeholder Courriel
-];
+// A calm, almost-monochrome white palette.
+const INK: Color32 = Color32::from_rgb(26, 26, 26);
+const SUBTLE: Color32 = Color32::from_rgb(155, 155, 155);
+const BORDER: Color32 = Color32::from_rgb(232, 232, 232);
+const HOVER: Color32 = Color32::from_rgb(247, 247, 247);
+const FIELD: Color32 = Color32::from_rgb(250, 250, 250);
+const GREEN: Color32 = Color32::from_rgb(52, 168, 83);
+const RED: Color32 = Color32::from_rgb(224, 67, 67);
 
-fn dim() -> Color32 {
-    Color32::from_rgb(150, 150, 150)
-}
+const MOODLE_DEFAULT_URL: &str = "https://moodle.polymtl.ca";
 
 #[derive(Debug, Clone)]
 enum Notice {
@@ -36,13 +40,15 @@ struct Draft {
     token_id: String,
     secret: String,
     allow_write: bool,
-    ack: bool,
+    other_school: bool,
+    use_token: bool,
 }
 
 pub struct App {
     settings: Settings,
     gateway: Gateway,
     port: u16,
+    logos: Option<Logos>,
     bind_error: Option<String>,
     screen: &'static str, // "home" | "moodle" | "proxmox"
     draft: Draft,
@@ -60,7 +66,7 @@ pub fn run(port_override: Option<u16>, first_run: bool) {
     }
     let mut gateway = settings.gateway();
     let base_port = port_override.unwrap_or(gateway.port);
-    // Bind now (before the window opens) and try a few sibling ports if taken.
+    // Bind now (before the window opens); try sibling ports if taken.
     let mut bind_error = None;
     let mut chosen = None;
     for attempt in 0..10 {
@@ -85,18 +91,19 @@ pub fn run(port_override: Option<u16>, first_run: bool) {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("student-mcp")
-            .with_inner_size([430.0, 640.0])
-            .with_min_inner_size([380.0, 520.0]),
+            .with_inner_size([440.0, 620.0])
+            .with_min_inner_size([400.0, 520.0]),
         ..Default::default()
     };
     let result = eframe::run_native(
         "student-mcp",
         options,
-        Box::new(move |_cc| {
-            Ok(Box::new(App {
+        Box::new(move |cc| {
+            let mut app = App {
                 settings: Settings::load(),
                 gateway,
                 port,
+                logos: None,
                 bind_error,
                 screen: "home",
                 draft: Draft::default(),
@@ -105,7 +112,9 @@ pub fn run(port_override: Option<u16>, first_run: bool) {
                 rx: None,
                 funnel_info: None,
                 copied_flash: None,
-            }))
+            };
+            app.logos = Some(Logos::load(&cc.egui_ctx));
+            Ok(Box::new(app))
         }),
     );
     if let Err(error) = result {
@@ -116,125 +125,140 @@ pub fn run(port_override: Option<u16>, first_run: bool) {
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_jobs();
-        egui::CentralPanel::default().show(ctx, |ui| self.body(ui, ctx));
+        CentralPanel::default()
+            .frame(egui::Frame::new().fill(Color32::WHITE).inner_margin(20.0))
+            .show(ctx, |ui| self.body(ui, ctx));
     }
 }
 
 impl App {
     fn body(&mut self, ui: &mut Ui, ctx: &egui::Context) {
-        egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
-            ui.add_space(8.0);
-            ui.horizontal(|row| {
-                row.add(Label::new(RichText::new("student-mcp").size(21.0).strong()).selectable(false));
-                row.with_layout(egui::Layout::right_to_left(egui::Align::Center), |row| {
-                    row.label(RichText::new(format!("v{VERSION}")).small().color(dim()));
-                });
-            });
-            match self.screen {
-                "home" => self.home_screen(ui, ctx),
-                "moodle" => self.moodle_screen(ui, ctx),
-                "proxmox" => self.proxmox_screen(ui, ctx),
-                _ => self.home_screen(ui, ctx),
-            }
-            self.footer(ui);
-        });
+        match self.screen {
+            "moodle" => self.moodle_screen(ui, ctx),
+            "proxmox" => self.proxmox_screen(ui, ctx),
+            _ => self.home_screen(ui, ctx),
+        }
     }
+
+    // ---------- home: the gallery ----------
 
     fn home_screen(&mut self, ui: &mut Ui, ctx: &egui::Context) {
-        ui.add_space(10.0);
-        if let Some(error) = &self.bind_error {
-            ui.colored_label(
-                Color32::from_rgb(0xe9, 0x4f, 0x4f),
-                format!("Serveur MCP local impossible : port {} occupé. Ferme l'autre instance, puis rouvre.", self.port),
-            );
-            let _ = error;
-        } else {
-            ui.horizontal(|row| {
-                dot(row, Color32::from_rgb(0x43, 0xa0, 0x5f));
-                row.label(format!("Serveur MCP local : 127.0.0.1:{}", self.port));
+        ui.horizontal(|row| {
+            row.label(RichText::new("student-mcp").size(15.0).strong().color(INK));
+            row.with_layout(Layout::right_to_left(egui::Align::Center), |row| {
+                let color = if self.bind_error.is_none() { GREEN } else { RED };
+                let (rect, _) = row.allocate_exact_size(Vec2::splat(9.0), Sense::hover());
+                row.painter().circle_filled(rect.center(), 3.5, color);
+                if let Some(error) = &self.bind_error {
+                    row.label(RichText::new(error).size(11.0).color(RED));
+                }
             });
-        }
+        });
+        ui.add_space(18.0);
 
-        // Local connector URL + copy
-        ui.add_space(6.0);
-        let local = mcp_endpoint(&format!("http://127.0.0.1:{}", self.port), &self.gateway.token);
-        ui.label(RichText::new("Connecteur local (Claude Desktop, OpenCode…). Monospace :").small());
-        self.row_copy(ui, ctx, &local, true);
-
-        ui.add_space(14.0);
-        ui.heading(RichText::new("Services").size(15.0));
-        ui.add_space(4.0);
+        let Some(owned) = self.logos.clone() else { return };
+        let logos = &owned;
         let moodle_on = self.settings.moodle().is_some();
         let proxmox_on = self.settings.proxmox().is_some();
-        if self.card(ui, "M", "Moodle", if moodle_on { "Actif — cliquer pour voir ou modifier" } else { "Cours, devoirs, notes, horaire" }, ACCENT[0], true) {
-            self.draft = Draft::default();
-            self.screen = "moodle";
-            self.notice = None;
-        }
-        if self.card(ui, "P", "Proxmox", if proxmox_on { "Actif — cliquer pour voir ou modifier" } else { "VMs et containers de ton labo" }, ACCENT[1], true) {
-            self.draft = Draft::default();
-            self.screen = "proxmox";
-            self.notice = None;
-        }
-        self.card(ui, "D", "Dossier étudiant", "Bientôt — pas d'API publique", ACCENT[2], false);
-        self.card(ui, "@", "Courriel Poly", "Bientôt — pas d'API publique", ACCENT[3], false);
 
-        ui.add_space(16.0);
-        ui.heading(RichText::new("Lien public (optionnel)").size(15.0));
-        ui.add_space(2.0);
-        ui.label(
-            RichText::new("Publie une URL HTTPS que tu peux coller dans Claude sur le web comme connecteur personnalisé.")
-                .small()
-                .color(dim()),
+        let width = ui.available_width();
+        let card_size = Vec2::new((width - 16.0) / 2.0, 148.0);
+
+        Grid::new("gallery").spacing([16.0, 16.0]).show(ui, |grid| {
+            if self
+                .tile(grid, &logos.moodle, "Moodle", card_size, moodle_on, false)
+            {
+                self.draft = Draft::default();
+                self.screen = "moodle";
+                self.notice = None;
+            }
+            if self.tile(grid, &logos.proxmox, "Proxmox", card_size, proxmox_on, false) {
+                self.draft = Draft::default();
+                self.screen = "proxmox";
+                self.notice = None;
+            }
+            grid.end_row();
+            self.tile(grid, &logos.poly, "Dossier", card_size, false, true);
+            self.tile(grid, &logos.outlook, "Courriel", card_size, false, true);
+            grid.end_row();
+        });
+
+        ui.add_space(20.0);
+        self.links_section(ui, ctx);
+    }
+
+    /// One gallery tile: white card, logo, name under it, green dot when active.
+    fn tile(&mut self, ui: &mut Ui, texture: &TextureHandle, name: &str, size: Vec2, active: bool, soon: bool) -> bool {
+        let clickable = !soon;
+        let (rect, raw) = ui.allocate_exact_size(size, if clickable { Sense::click() } else { Sense::hover() });
+        let response = if clickable { raw.on_hover_cursor(CursorIcon::PointingHand) } else { raw };
+        let hovered = clickable && response.hovered();
+
+        // card background + border
+        ui.painter()
+            .rect_filled(rect, 14.0, if hovered { HOVER } else { Color32::WHITE });
+        if clickable {
+            ui.painter().rect_stroke(
+                rect,
+                14.0,
+                Stroke::new(1.0_f32, if hovered { Color32::from_rgb(206, 206, 206) } else { BORDER }),
+                egui::StrokeKind::Middle,
+            );
+        }        // active dot, top-right
+        if active {
+            ui.painter()
+                .circle_filled(rect.right_top() - Vec2::new(14.0, 14.0), 4.0, GREEN);
+        }
+
+        // logo fitted in the upper area of the card
+        let area = Vec2::new(size.x - 36.0, size.y - 52.0);
+        let tex_size = texture.size_vec2();
+        let scale = (area.x / tex_size.x).min(area.y / tex_size.y).min(1.6);
+        let logo = tex_size * scale * (if soon { 0.72 } else { 1.0 });
+        let logo_min = rect.min + Vec2::new((size.x - logo.x) / 2.0, (size.y - 44.0 - logo.y) / 2.0 + 6.0);
+        let tint = if soon { Color32::from_rgba_unmultiplied(215, 215, 215, 170) } else { Color32::WHITE };
+        ui.painter()
+            .image(texture.id(), Rect::from_min_size(logo_min, logo), uv_full(), tint);
+
+        // name under the logo
+        let name_color = if soon { SUBTLE } else { INK };
+        ui.painter().text(
+            rect.center_bottom() - Vec2::new(0.0, 16.0),
+            Align2::CENTER_CENTER,
+            name,
+            FontId::proportional(13.5),
+            name_color,
         );
-        self.funnel_section(ui, ctx);
+
+        response.clicked()
     }
 
-    fn card(&mut self, ui: &mut Ui, initial: &str, title: &str, tagline: &str, accent: Color32, enabled: bool) -> bool {
-        let (fill, text) = if enabled { (accent, Color32::WHITE) } else { (Color32::from_rgb(38, 38, 38), dim()) };
-        let button = Button::new(
-            RichText::new(format!("{initial}   {title}\n        {tagline}"))
-                .strong()
-                .color(text),
-        )
-        .fill(fill);
-        let response = ui
-            .add_sized([ui.available_width(), 52.0], button)
-            .interact(Sense::click());
-        let clicked = enabled && response.clicked();
-        if enabled {
-            response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    // ---------- links below the gallery ----------
+
+    fn links_section(&mut self, ui: &mut Ui, ctx: &egui::Context) {
+        let any = self.settings.moodle().is_some() || self.settings.proxmox().is_some();
+        if !any {
+            ui.label(RichText::new("Connecte un service pour obtenir ton lien MCP.").size(12.0).color(SUBTLE));
+            return;
         }
-        ui.add_space(6.0);
-        clicked
+
+        let local = mcp_endpoint(&format!("http://127.0.0.1:{}", self.port), &self.gateway.token);
+        ui.label(RichText::new("Lien MCP").size(11.5).strong().color(SUBTLE));
+        self.copy_row(ui, ctx, &local);
+        ui.add_space(10.0);
+        self.funnel_links(ui, ctx);
+        self.notice_line(ui);
     }
 
-    fn funnel_section(&mut self, ui: &mut Ui, ctx: &egui::Context) {
-        match &self.funnel_info {
+    fn funnel_links(&mut self, ui: &mut Ui, ctx: &egui::Context) {
+        match self.funnel_info.clone().filter(|info| info.present && info.logged_in) {
             None => {
-                if self.button_enabled(ui, "Vérifier Tailscale", true) {
-                    self.spawn(ctx.clone(), || {
-                        let info = funnel::info();
-                        let notice = if info.present && info.logged_in {
-                            Notice::Ok("Tailscale connecté.".into())
-                        } else {
-                            Notice::Err(info.message.clone().unwrap_or_default())
-                        };
-                        Message::Funnel(info, notice)
-                    });
-                }
-            }
-            Some(info) if !info.present => {
-                ui.colored_label(Color32::from_rgb(0xe9, 0x4f, 0x4f), "Tailscale n'est pas installé sur cette machine.");
-                if self.button_enabled(ui, "Re-vérifier", true) {
-                    self.spawn(ctx.clone(), || Message::Funnel(funnel::info(), Notice::Info));
-                }
-            }
-            Some(info) if !info.logged_in => {
-                ui.colored_label(Color32::from_rgb(0xe9, 0x4f, 0x4f), info.message.clone().unwrap_or_default());
-                if self.button_enabled(ui, "Re-vérifier", true) {
-                    self.spawn(ctx.clone(), || Message::Funnel(funnel::info(), Notice::Info));
-                }
+                ui.horizontal(|row| {
+                    if row.add(Button::new(RichText::new("Publier avec Tailscale").size(12.5).color(INK)).small()).clicked() && !self.busy {
+                        self.spawn(ctx.clone(), || Message::Funnel(funnel::info(), Notice::Info));
+                    }
+                    row.label(RichText::new("pour Claude web").size(11.5).color(SUBTLE));
+                });
             }
             Some(info) => {
                 if info.funnel_on {
@@ -243,98 +267,174 @@ impl App {
                         .as_deref()
                         .map(|host| funnel::public_connector_url(host, &self.gateway.token))
                         .unwrap_or_default();
-                    ui.colored_label(Color32::from_rgb(0x43, 0xa0, 0x5f), "URL publique active :");
-                    self.row_copy(ui, ctx, &url, true);
-                    if self.button_enabled(ui, "Retirer l'URL publique", true) {
-                        self.spawn(ctx.clone(), move || {
+                    ui.label(RichText::new("Lien public (Claude web — connecteur personnalisé)").size(11.5).strong().color(SUBTLE));
+                    self.copy_row(ui, ctx, &url);
+                    ui.add_space(4.0);
+                    if !self.busy && ui.add(Button::new(RichText::new("Retirer le lien public").size(11.5).color(SUBTLE)).small()).clicked() {
+                        self.spawn(ctx.clone(), || {
                             let note = funnel::funnel_disable();
                             Message::Funnel(funnel::info(), Notice::Ok(note))
                         });
                     }
                 } else {
-                    if self.button_enabled(ui, "Publier via Tailscale Funnel", true) {
-                        let port = self.port;
-                        self.spawn(ctx.clone(), move || match funnel::funnel_enable(port) {
-                            Ok(note) => Message::Funnel(funnel::info(), Notice::Ok(note)),
-                            Err(message) => Message::Funnel(funnel::info(), Notice::Err(message)),
-                        });
+                    ui.horizontal(|row| {
+                        if row.add(Button::new(RichText::new("Publier via Tailscale").size(12.5).color(INK)).small()).clicked() && !self.busy {
+                            let port = self.port;
+                            self.spawn(ctx.clone(), move || match funnel::funnel_enable(port) {
+                                Ok(note) => Message::Funnel(funnel::info(), Notice::Ok(note)),
+                                Err(message) => Message::Funnel(funnel::info(), Notice::Err(message)),
+                            });
+                        }
+                        if row.add(Button::new(RichText::new("Actualiser").size(11.5).color(SUBTLE)).small()).clicked() && !self.busy {
+                            self.spawn(ctx.clone(), || Message::Funnel(funnel::info(), Notice::Info));
+                        }
+                    });
+                    if let Some(message) = &info.message {
+                        ui.label(RichText::new(message).size(11.0).color(SUBTLE));
                     }
-                    ui.label(
-                        RichText::new("Cela crée une URL du type https://ton-machine.ts.net/mcp/<token>. Seule la clé compte : garde-la pour toi.")
-                            .small()
-                            .color(dim()),
-                    );
                 }
             }
+        }
+        if self.busy {
+            ui.label(RichText::new("…").size(11.5).color(SUBTLE));
+        }
+    }
+
+    fn copy_row(&mut self, ui: &mut Ui, ctx: &egui::Context, text: &str) {
+        ui.horizontal(|row| {
+            row.label(
+                RichText::new(if text.len() > 52 { format!("{}…", &text[..46]) } else { text.to_string() })
+                    .monospace()
+                    .size(11.5)
+                    .color(INK),
+            );
+            let copied = self.copied_flash.map(|at| at.elapsed().as_secs_f32() < 1.2).unwrap_or(false);
+            if row.add(Button::new(RichText::new(if copied { "Copié ✓" } else { "Copier" }).size(11.0).color(INK)).small()).clicked() {
+                ctx.copy_text(text.to_string());
+                self.copied_flash = Some(Instant::now());
+                ctx.request_repaint_after(std::time::Duration::from_millis(1300));
+            }
+        });
+    }
+
+    fn notice_line(&mut self, ui: &mut Ui) {
+        if let Some(notice) = self.notice.clone() {
+            let (text, color) = match notice {
+                Notice::Ok(text) => (text, GREEN),
+                Notice::Err(text) => (text, RED),
+                Notice::Info => return,
+            };
+            ui.add_space(6.0);
+            ui.add_sized(
+                [ui.available_width(), 0.0],
+                egui::Label::new(RichText::new(text).size(11.5).color(color)).wrap(),
+            );
+        }
+    }
+
+    // ---------- service screens (white, minimal) ----------
+
+    fn top_bar(&mut self, ui: &mut Ui, title: &str) {
+        if ui.add(Button::new(RichText::new("←").size(15.0).color(INK)).small()).clicked() {
+            self.screen = "home";
+            self.notice = None;
+        }
+        ui.add_space(10.0);
+        ui.label(RichText::new(title).size(20.0).strong().color(INK));
+        ui.add_space(12.0);
+    }
+
+    fn field(ui: &mut Ui, label: &str, buffer: &mut String, hint: &str, secret: bool) {
+        ui.label(RichText::new(label).size(11.5).color(SUBTLE));
+        let frame = egui::Frame::new()
+            .fill(FIELD)
+            .corner_radius(8.0)
+            .stroke(Stroke::new(1.0_f32, BORDER))
+            .inner_margin(6.0);
+        frame.show(ui, |inner| {
+            inner.add(
+                TextEdit::singleline(buffer)
+                    .hint_text(hint)
+                    .desired_width(inner.available_width())
+                    .password(secret),
+            );
+        });
+        ui.add_space(8.0);
+    }
+
+    fn toggle(ui: &mut Ui, label: &str, value: &mut bool) {
+        ui.add(egui::Checkbox::new(value, RichText::new(label).size(11.5).color(SUBTLE)));
+        ui.add_space(4.0);
+    }
+
+    fn action(ui: &mut Ui, label: &str) -> bool {
+        let spacing = ui.spacing_mut();
+        spacing.button_padding = Vec2::new(14.0, 8.0);
+        let button = Button::new(RichText::new(label).color(Color32::WHITE).size(13.5)).fill(INK);
+        let response = ui.add_sized([ui.available_width(), 34.0], button);
+        ui.add_space(4.0);
+        response.clicked()
+    }
+
+    fn busy_text(&self, ui: &mut Ui) {
+        if self.busy {
+            ui.label(RichText::new("…").size(11.5).color(SUBTLE));
         }
     }
 
     fn moodle_screen(&mut self, ui: &mut Ui, ctx: &egui::Context) {
-        if self.back_button(ui) {
-            return;
+        self.top_bar(ui, "Moodle");
+        let configured = self.settings.moodle.is_some();
+
+        if Self::toggle_alt(ui, "C'est une autre école", &mut self.draft.other_school) {
+            Self::field(ui, "Adresse Moodle", &mut self.draft.url, "https://moodle.mon-ecole.ca", false);
         }
-        ui.heading("Moodle");
+        Self::field(ui, "Nom d'utilisateur", &mut self.draft.username, "prenom.nom", false);
+        Self::field(ui, "Mot de passe", &mut self.draft.password, "", true);
+        if Self::toggle_alt(ui, "Coller un token à la place", &mut self.draft.use_token) {
+            Self::field(ui, "Token", &mut self.draft.token, "token du service mobile", true);
+        }
+        ui.add_space(2.0);
+        Self::toggle(ui, "Autoriser aussi les modifications (dépôt de devoirs…)", &mut self.draft.allow_write);
         ui.add_space(4.0);
-        let shown = self.settings.moodle.as_ref().and_then(|current| current.url.clone());
-        if let Some(url) = shown {
-            self.row_copy(ui, ctx, &url, false);
-        }
-        ui.add_space(6.0);
-        ui.label("Adresse du site Moodle");
-        ui.add(
-            TextEdit::singleline(&mut self.draft.url)
-                .hint_text("moodle.polymtl.ca")
-                .desired_width(f32::INFINITY),
-        );
-        ui.add_space(6.0);
-        ui.label("Méthode A — identifiant Poly (le plus simple)");
-        ui.add(
-            TextEdit::singleline(&mut self.draft.username)
-                .hint_text("prenom.nom")
-                .desired_width(f32::INFINITY),
-        );
-        ui.add(
-            TextEdit::singleline(&mut self.draft.password)
-                .password(true)
-                .hint_text("mot de passe (pas gardé sur disque)")
-                .desired_width(f32::INFINITY),
-        );
-        ui.add_space(6.0);
-        ui.label("Méthode B — coller un token mobile existant");
-        ui.add(
-            TextEdit::singleline(&mut self.draft.token)
-                .password(true)
-                .hint_text("optionnel : remplit A et B pour tester")
-                .desired_width(f32::INFINITY),
-        );
-        ui.add_space(8.0);
-        ui.checkbox(
-            &mut self.draft.allow_write,
-            "Autoriser les modifications (dépôts, messages…)",
-        );
-        ui.checkbox(&mut self.draft.ack, "J'utilise mes propres identifiants selon les règles de l'école.");
-        ui.add_space(8.0);
         self.notice_line(ui);
-        self.busy_line(ui);
-        let ready = self.draft.ack && !self.busy;
+        self.busy_text(ui);
+
+        let site = if self.draft.other_school && !self.draft.url.trim().is_empty() {
+            self.draft.url.clone()
+        } else {
+            MOODLE_DEFAULT_URL.to_string()
+        };
         let draft = self.draft.clone();
-        if self.button_enabled(ui, "Connecter Moodle", ready) {
+        if Self::action(ui, "Enregistrer") && !self.busy {
             self.spawn(ctx.clone(), move || {
                 let mut fresh = Settings::load();
-                match crate::mcp::activate_moodle(
-                    &mut fresh,
-                    &draft.url,
-                    &draft.username,
-                    &draft.password,
-                    &draft.token,
-                    draft.allow_write,
-                ) {
+                let result = if draft.use_token && !draft.token.trim().is_empty() {
+                    crate::mcp::activate_moodle(
+                        &mut fresh,
+                        &site,
+                        "",
+                        "",
+                        &draft.token,
+                        draft.allow_write,
+                    )
+                } else {
+                    crate::mcp::activate_moodle(
+                        &mut fresh,
+                        &site,
+                        &draft.username,
+                        &draft.password,
+                        "",
+                        draft.allow_write,
+                    )
+                };
+                match result {
                     Ok(message) => Message::Done(Notice::Ok(message), true),
                     Err(message) => Message::Done(Notice::Err(message), false),
                 }
             });
         }
-        if self.settings.moodle.is_some() && self.button_enabled(ui, "Désactiver Moodle", !self.busy) {
+        if configured && self.button_plain(ui, "Se déconnecter") && !self.busy {
             self.spawn(ctx.clone(), || {
                 let mut fresh = Settings::load();
                 crate::mcp::disable_service(&mut fresh, "moodle");
@@ -344,48 +444,20 @@ impl App {
     }
 
     fn proxmox_screen(&mut self, ui: &mut Ui, ctx: &egui::Context) {
-        if self.back_button(ui) {
-            return;
-        }
-        ui.heading("Proxmox VE");
+        self.top_bar(ui, "Proxmox");
+        let configured = self.settings.proxmox.is_some();
+
+        Self::field(ui, "Adresse du serveur", &mut self.draft.url, "https://mon-pve:8006", false);
+        Self::field(ui, "ID du token API", &mut self.draft.token_id, "prenom.nom@pam!student-mcp", false);
+        Self::field(ui, "Secret du token", &mut self.draft.secret, "généré dans Datacenter → API Tokens", true);
+        ui.add_space(2.0);
+        Self::toggle(ui, "Autoriser aussi start/stop/reboot des machines", &mut self.draft.allow_write);
         ui.add_space(4.0);
-        let shown = self.settings.proxmox.as_ref().and_then(|current| {
-            let token_id = current.token_id.clone()?;
-            let url = current.url.clone()?;
-            Some(format!("{url} — {token_id}"))
-        });
-        if let Some(line) = shown {
-            self.row_copy(ui, ctx, &line, false);
-        }
-        ui.add_space(6.0);
-        ui.label("Adresse du serveur (racine)");
-        ui.add(
-            TextEdit::singleline(&mut self.draft.url)
-                .hint_text("https://mon-pve:8006")
-                .desired_width(f32::INFINITY),
-        );
-        ui.label("ID du token API");
-        ui.add(
-            TextEdit::singleline(&mut self.draft.token_id)
-                .hint_text("utilisateur@pam!etudiant-mcp")
-                .desired_width(f32::INFINITY),
-        );
-        ui.label("Secret du token");
-        ui.add(
-            TextEdit::singleline(&mut self.draft.secret)
-                .password(true)
-                .hint_text("clé secrète générée par le datacenter Proxmox")
-                .desired_width(f32::INFINITY),
-        );
-        ui.add_space(8.0);
-        ui.checkbox(&mut self.draft.allow_write, "Autoriser start/stop/reboot des machines");
-        ui.checkbox(&mut self.draft.ack, "Ce serveur Proxmox est le mien ; j'assume les actions.");
-        ui.add_space(8.0);
         self.notice_line(ui);
-        self.busy_line(ui);
-        let ready = self.draft.ack && !self.busy;
+        self.busy_text(ui);
+
         let draft = self.draft.clone();
-        if self.button_enabled(ui, "Connecter Proxmox", ready) {
+        if Self::action(ui, "Enregistrer") && !self.busy {
             self.spawn(ctx.clone(), move || {
                 let mut fresh = Settings::load();
                 match crate::mcp::activate_proxmox(&mut fresh, &draft.url, &draft.token_id, &draft.secret, draft.allow_write) {
@@ -394,7 +466,7 @@ impl App {
                 }
             });
         }
-        if self.settings.proxmox.is_some() && self.button_enabled(ui, "Désactiver Proxmox", !self.busy) {
+        if configured && self.button_plain(ui, "Se déconnecter") && !self.busy {
             self.spawn(ctx.clone(), || {
                 let mut fresh = Settings::load();
                 crate::mcp::disable_service(&mut fresh, "proxmox");
@@ -403,74 +475,25 @@ impl App {
         }
     }
 
-    // ---------- shared pieces ----------
-
-    fn back_button(&mut self, ui: &mut Ui) -> bool {
-        let go_back = ui.add(Button::new("← Accueil")).clicked();
-        ui.add_space(6.0);
-        go_back
-    }
-
-    fn button_enabled(&mut self, ui: &mut Ui, label: &str, enabled: bool) -> bool {
-        let response = ui.add_enabled(enabled, Button::new(label).min_size(egui::vec2(ui.available_width(), 28.0)));
-        let clicked = response.clicked();
+    fn toggle_alt(ui: &mut Ui, label: &str, value: &mut bool) -> bool {
+        let changed = ui.add(egui::Checkbox::new(value, RichText::new(label).size(11.5).color(SUBTLE))).clicked();
         ui.add_space(4.0);
-        clicked
+        changed
     }
 
-    fn row_copy(&mut self, ui: &mut Ui, ctx: &egui::Context, text: &str, monospace: bool) {
-        ui.horizontal(|row| {
-            let label = if monospace {
-                RichText::new(text).monospace().small()
-            } else {
-                RichText::new(text).small()
-            };
-            row.add(Label::new(label).sense(Sense::click()));
-            let copy_label = if self.copied_flash.map(|at| at.elapsed().as_secs_f32() < 1.2).unwrap_or(false) {
-                "Copié !"
-            } else {
-                "Copier"
-            };
-            if row.add(Button::new(RichText::new(copy_label).small())).clicked() {
-                ctx.copy_text(text.to_string());
-                self.copied_flash = Some(Instant::now());
-                ctx.request_repaint_after(std::time::Duration::from_millis(1300));
-            }
-        });
-    }
-
-    fn notice_line(&mut self, ui: &mut Ui) {
-        if let Some(notice) = &self.notice {
-            let (text, color) = match notice {
-                Notice::Ok(text) => (text, Color32::from_rgb(0x43, 0xa0, 0x5f)),
-                Notice::Err(text) => (text, Color32::from_rgb(0xe9, 0x4f, 0x4f)),
-                Notice::Info => return,
-            };
-            ui.colored_label(color, text);
-            ui.add_space(4.0);
-        }
-    }
-
-    fn busy_line(&mut self, ui: &mut Ui) {
-        if self.busy {
-            ui.label(RichText::new("Travail en cours…").color(dim()));
-            ui.add_space(4.0);
-        }
-    }
-
-    fn footer(&self, ui: &mut Ui) {
-        ui.add_space(10.0);
-        ui.label(
-            RichText::new(format!(
-                "Config : {} — MCP stdio aussi dispo (student-mcp sans commande).",
-                crate::config::config_path().display()
-            ))
-            .small()
-            .color(dim()),
+    fn button_plain(&mut self, ui: &mut Ui, label: &str) -> bool {
+        ui.add_space(2.0);
+        let response = ui.add(
+            Button::new(RichText::new(label).size(12.0).color(SUBTLE))
+                .fill(Color32::WHITE)
+                .stroke(Stroke::new(1.0_f32, BORDER)),
         );
+        response.clicked()
     }
 
-    fn spawn(&mut self, ctx: egui::Context, job: impl FnOnce() -> Message + Send + 'static) {
+    // ---------- plumbing ----------
+
+    fn spawn(&mut self, ctx: Context, job: impl FnOnce() -> Message + Send + 'static) {
         let (sender, receiver): (Sender<Message>, Receiver<Message>) = channel();
         self.rx = Some(receiver);
         self.busy = true;
@@ -482,12 +505,8 @@ impl App {
     }
 
     fn poll_jobs(&mut self) {
-        let Some(receiver) = self.rx.as_ref() else {
-            return;
-        };
-        let Ok(message) = receiver.try_recv() else {
-            return;
-        };
+        let Some(receiver) = self.rx.as_ref() else { return };
+        let Ok(message) = receiver.try_recv() else { return };
         self.rx = None;
         self.busy = false;
         match message {
@@ -510,7 +529,6 @@ impl App {
     }
 }
 
-fn dot(ui: &mut Ui, color: Color32) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(10.0, 10.0), Sense::hover());
-    ui.painter().circle_filled(rect.center(), 5.0, color);
+fn uv_full() -> Rect {
+    Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0))
 }

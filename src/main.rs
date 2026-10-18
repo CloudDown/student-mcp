@@ -3,6 +3,7 @@ mod config;
 mod funnel;
 mod gui;
 mod http;
+mod logos;
 mod mcp;
 mod moodle;
 mod proxmox;
