@@ -1,45 +1,65 @@
-<h1 align="center">Student MCP</h1>
-<p align="center">Installe une fois, connecte tes services étudiants (Moodle, Proxmox…), branche l'URL dans Claude. Un petit binaire, zéro Node.js, page de configuration locale.</p>
+# student-mcp
 
-## Install
+Un petit **binaire Rust** (une fenêtre + un serveur MCP local) qui connecte les services étudiants aux assistants IA — pour l'instant **Moodle** (`moodle.polymtl.ca`) et **Proxmox**, et plus tard : dossier étudiant, courriel.
 
-```sh
-# macOS / Linux
+- 🪟 **Fenêtre popup minimaliste** : tu cliques un service, tu tapes tes identifiants, c'est tout (pas d'interface web).
+- 🔌 **Serveur MCP local** : stdio pour Claude Desktop / OpenCode, HTTP `/mcp/<token>` pour Claude web via Tailscale Funnel.
+- 🔐 Status quo : le token Moodle est démasqué en interne, jamais stocké en clair dans l'URL ; les mots de passe ne sont jamais écrits sur disque.
+- 📦 Installation : une commande, tout est embarqué (binaire statique), et GitHub Actions compile 6 plateformes.
+
+## Installation
+
+macOS / Linux :
+
+```bash
 curl -fsSL https://raw.githubusercontent.com/CloudDown/student-mcp/main/install.sh | bash
 ```
 
+Windows (PowerShell) :
+
 ```powershell
-# Windows (PowerShell)
 irm https://raw.githubusercontent.com/CloudDown/student-mcp/main/install.ps1 | iex
 ```
 
-Manual ZIPs: [latest release](https://github.com/CloudDown/student-mcp/releases/latest).
+La fenêtre s'ouvre : ajoute **Moodle** (identifiants poly, ou token mobile), **Proxmox** (token API), puis ferme-la — les identifiants restent dans `~/.student-mcp.json`.
 
-## Configure (la page blanche)
+## Utiliser les outils
 
-1. À l'installation, la page `http://localhost:8420` s'ouvre : une carte par service.
-2. Clique sur **Moodle** (ou **Proxmox**), entre tes identifiants — le mot de passe sert une seule fois, jamais stocké.
-3. Copie l'**URL du connecteur** affichée sur la page.
-4. Claude → Paramètres → **Connecteurs** → Ajouter un connecteur personnalisé → colle l'URL.
-   Tu peux ensuite demander : *« Mes prochains travaux ? »*, *« Mes notes de Calcul ? »*, *« Démarre la VM 101 »*.
+### Claude Desktop / OpenCode / autre MCP local (stdio)
 
-## Lien public (Tailscale Funnel)
+Pointe ton assistant sur le binaire :
 
-Pour que Claude (app, téléphone) rejoigne ton MCP depuis n'importe où :
-
-- installe [Tailscale](https://tailscale.com/download) et connecte-toi (`tailscale login`),
-- clique **« Exposer via Tailscale »** sur la page (ou `sudo tailscale funnel --bg 8420`).
-
-L'URL publique `https://<ton-appareil>.ts.net/mcp/<token>` est protégée par un token secret : n'importe qui sans l'URL n'y a pas accès ; les écritures (Moodle, Proxmox) restent désactivées par défaut.
-
-## Clients IA locaux (stdio)
-
-OpenCode ou Claude Desktop sur le même appareil ? Mets le binaire directement en serveur MCP local (stdio) :
-
-```sh
-# dans ~/.config/opencode/opencode.json (mcp.moodle) :
-# "mcp": { "moodle": { "command": ["student-mcp"], } }        (v2)
-# ou lance student-mcp install et laisse le faire.
+```json
+{ "student-mcp": { "command": "~/.student-mcp/bin/student-mcp" } }
 ```
 
-<p align="center"><a href="docs/GUIDE.md">Docs (FR)</a> · MIT (catalog GPL) · Not an official Polytechnique Montréal tool.</p>
+Le mode stdio lit la config à chaque appel : ajoute ou retire un service dans la fenêtre, les outils changent sans redémarrer l'assistant.
+
+### Claude web (connecteur personnalisé)
+
+1. Dans la fenêtre : bouton **« Publier via Tailscale Funnel »**.
+2. L'URL ressemble à `https://ton-machine.ts.net/mcp/<token>`.
+3. Claude → ⚙️ Connecteurs → *Ajouter un connecteur personnalisé* → colle l'URL.
+
+Le token dans l'URL est le seul secret ; sans lui, la requête recoit un 401. « Retirer l'URL publique » fais `tailscale funnel off`.
+
+## Outils disponibles
+
+Toujours : `student_status`. Dès qu'un service est actif, ses outils apparaissent :
+- **Moodle** : `moodle_status`, `moodle_my_courses`, `moodle_course_content`, `moodle_assignments`, `moodle_quizzes`, `moodle_grades`, `moodle_calendar`, `ws_discover`, `ws_schema`, `ws_call` (catalogue Moodle embarqué, ~750 fonctions)
+- **Proxmox** : `proxmox_status`, `proxmox_list_vms`, `proxmox_vm_status`, `proxmox_vm_start`, `proxmox_vm_stop`, `proxmox_vm_reboot`
+
+Les écritures (dépôt de fichiers, stop VM…) restent verrouillées tant que tu n'as pas coché « autoriser les modifications » dans la fenêtre.
+
+## Développer
+
+```bash
+cargo test          # 9 tests unitaires
+cargo run -- up     # fenêtre + HTTP
+cargo run           # MCP stdio
+cargo build --release  # binaire léger (opt-level=z, lto, strip)
+```
+
+Structure : `src/main.rs` (CLI), `gui.rs` (popup egui), `mcp.rs` (JSON-RPC + outils), `http.rs` (serveur MCP HTTP std-lib), `stdio.rs`, `moodle.rs` / `proxmox.rs` (clients), `funnel.rs` (Tailscale), `catalog.rs` (catalogue embarqué), `config.rs` (`~/.student-mcp.json`).
+
+Licence : MIT.

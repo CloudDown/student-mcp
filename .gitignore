@@ -1,7 +1,10 @@
+target/
 node_modules/
 dist/
 build/
 release/
 .env
 *.log
-.moodle-ws-mcp.json
+*.moodle-ws-mcp.json
+*.pyc
+__pycache__/

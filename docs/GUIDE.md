@@ -1,84 +1,63 @@
-# Student MCP
+# Guide student-mcp
 
-> **English** — Student MCP is a tiny local MCP (Model Context Protocol) server with a white configuration page: log into your student services (Moodle, Proxmox…), copy the connector URL into Claude, done. A public HTTPS link is one click away via Tailscale Funnel. No Node.js needed.
->
-> **Install:** macOS/Linux: `curl -fsSL https://raw.githubusercontent.com/CloudDown/student-mcp/main/install.sh | bash` — Windows (PowerShell): `irm https://raw.githubusercontent.com/CloudDown/student-mcp/main/install.ps1 | iex`.
->
-> *Not an official Polytechnique Montréal tool.* The rest of this guide is in French.
+Petite fenêtre + serveur MCP local. Tout-en-un, aucun framework web.
 
-## Le principe
+## 1. Ce que tu vois à l'ouverture
 
-1. **Installer** — une commande, une exécutable unique (~100 Mo), rien d'autre.
-2. **Configurer sur la page** — `student-mcp up` ouvre `http://localhost:8420` : une page blanche, une carte par service. Tu cliques, tu entres tes identifiants, c'est tout.
-3. **Connecter Claude** — copie l'URL du connecteur dans *Paramètres → Connecteurs → Ajouter un connecteur personnalisé*.
-
-## Installer
-
-**Mac ou Linux** — colle ceci dans le Terminal :
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/CloudDown/student-mcp/main/install.sh | bash
+```
+student-mcp  v0.2.0
+● Serveur MCP local : 127.0.0.1:8420
+Connecteur local (Claude Desktop, OpenCode…):
+  http://127.0.0.1:8420/mcp/<token>            [Copier]
+Services
+  [M   Moodle  — Actif / « Cours, devoirs, notes… »]
+  [P   Proxmox — Actif / « VMs et containers » ]
+  [D   Dossier étudiant — Bientôt]
+  [@   Courriel Poly  — Bientôt]
+Lien public (optionnel)
+  [Vérifier Tailscale] ou [Publier via Tailscale Funnel]
 ```
 
-**Windows** — colle ceci dans PowerShell :
+## 2. Connecter un service
 
-```powershell
-irm https://raw.githubusercontent.com/CloudDown/student-mcp/main/install.ps1 | iex
+**Moodle.** Deux méthodes.
+1. *Identifiant Poly* : prenom.nom + mot de passe → le binaire appelle `/login/token.php` avec le service mobile `moodle_mobile_app` ; seul le **token** est sauvegardé, jamais le mot de passe.
+2. *Token existant* : colle un token mobile (plus sûr si tu as une double auth).
+
+**Proxmox.** Datacenter → Permissions → API Tokens → crée un token (par ex. `etudiant@pam!mcp`), copie son *secret*, entre `https://ton-pve:8006`, l'ID du token et le secret.
+
+Si le serveur a un certificat autosigné, l'app refusera la connexion (HTTPS strict) : mets un vrai certificat ou fais signer le PVE.
+
+## 3. Assister IA local
+
+- **Claude Desktop / OpenCode / beaucoup d'autres** : indique le binaire en commande stdio :
+  - macOS / Linux : `~/.student-mcp/bin/student-mcp`
+  - Windows : `%LOCALAPPDATA%\student-mcp\student-mcp.exe`
+- La liste des outils suit la fenêtre : ajoute/enlève un service, les outils apparaissent/disparaissent au prochain appel (config relue à chaque commande).
+
+## 4. Lien public pour le web Claude
+
+1. Installe et connecte **Tailscale** (une fois) : `tailscale login`.
+2. Dans la fenêtre → **Publier via Tailscale Funnel** ; si le daemon Linux demande sudo, la fenêtre affiche la commande exacte (`sudo tailscale funnel --bg 8420`).
+3. Colle `https://ton-machine.ts.net/mcp/<token>` dans Claude (connecteur personnalisé).
+4. Pour couper : **Retirer l'URL publique** ou `tailscale funnel off`.
+
+Le token protège l'URL : sans lui 401. Tu peux recharger le token en supprimant `gateway.token` dans `~/.student-mcp.json`.
+
+## 5. Commandes
+
+```
+student-mcp            # MCP stdio (assistant IA local)
+student-mcp up         # fenêtre + serveur HTTP local
+student-mcp up --port=9000
+student-mcp install    # réouvre la fenêtre (posée par l'installateur)
+student-mcp version
 ```
 
-ZIP manuels : [versions Windows, Mac et Linux](https://github.com/CloudDown/student-mcp/releases/latest).
+## 6. Dépannage
 
-## Services
-
-| Service | État | Authentification |
-|---|---|---|
-| **Moodle** (PolyMTL ou tout autre) | Actif | Identifiant + mot de passe (token récupéré automatiquement) ou `privatetoken` collé |
-| **Proxmox** (laboratoire, club, auto-hébergé) | Actif | Token API `utilisateur@domaine!token` + secret |
-| Dossier étudiant / courriel Poly | Plus tard | Aucune API publique : cartes visibles en grisé sur la page |
-
-Le mot de passe Moodle sert **une seule fois** (il n'est enregistré nulle part) ;
-seul le token signale ton compte. Le secret Proxmox est stocké dans
-`~/.student-mcp.json` (permissions 600). Tout peut être désactivé d'un clic.
-
-## Lien public infini (Tailscale Funnel)
-
-Depuis chez toi, en classe ou sur ton téléphone :
-
-1. Installe Tailscale (une fois) : `tailscale login` (ou l'app Windows/Mac).
-2. Clique **« Exposer via Tailscale »** sur la page, ou : `sudo tailscale funnel --bg 8420`.
-3. Utilise l'URL **publique** `https://<appareil>.ts.net/mcp/<token>` dans Claude.
-
-Ce que ça implique :
-
-- l'URL contient un **token secret** : sans elle, pas d'accès ; garde-la pour toi ;
-- les outils d'écriture (dépôt de fichiers Moodle, démarrage/extinction VM) restent
-  **désactivés par défaut** ; tu les actives explicitement sur chaque service ;
-- retirer le lien : `tailscale funnel off` ou le bouton sur la page.
-
-## Clients IA locaux (stdio)
-
-Sur le même ordinateur, OpenCode et Claude Desktop n'ont pas besoin d'Internet :
-
-```sh
-student-mcp install   # configure OpenCode ou Claude Desktop en mode stdio
-```
-
-ou ajoute `student-mcp` (le binaire installé dans `~/.student-mcp/`) comme serveur
-MCP local. Le mode stdio lit la même configuration (`~/.student-mcp.json`,
-variables d'env `MOODLE_URL`/`MOODLE_TOKEN`, `PROXMOX_URL`/`PROXMOX_TOKEN_ID`/`PROXMOX_TOKEN_SECRET`).
-
-## Outils exposés
-
-`student_status`, puis par service :
-`moodle_status`, `moodle_my_courses`, `moodle_course_content`, `moodle_assignments`,
-`moodle_quizzes`, `moodle_grades`, `moodle_calendar`, `ws_discover`, `ws_schema`,
-`ws_call` · `proxmox_status`, `proxmox_list_vms`, `proxmox_vm_status`,
-`proxmox_vm_start`, `proxmox_vm_stop`, `proxmox_vm_reboot`.
-
-Le connecteur n'accède qu'aux données autorisées par ton propre compte. Les
-exécutables Windows et Mac ne sont pas signés : ton système peut demander une
-confirmation au premier lancement.
-
-Code source sous licence MIT ; catalogue issu de Moodle sous GPL :
-[licences](../catalog/LICENSE.md). Projet indépendant de Moodle et de
-Polytechnique Montréal.
+- **La fenêtre ne s'ouvre pas (SSH)** : la fenêtre a besoin d'un écran ; sur un serveur headless, utilise uniquement le mode stdio.
+- **Port déjà pris** : `up` essaie automatiquement 8420→8429 ; force-en un avec `--port=`.
+- **Moodle refuse le login SSO** : la double auth bloque `/login/token.php` → passe par la méthode token existant.
+- **Le Funnel ne part pas** : Tailscale installé ? connecté ? (`tailscale status`) puis `sudo tailscale funnel --bg 8420`.
+- **Certificat PVE invalide** : l'app refuse en HTTPS strict ; corrige le certificat du serveur.

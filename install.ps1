@@ -34,10 +34,13 @@ try {
         & $binary --help
         if ($LASTEXITCODE -ne 0) { throw "Vérification impossible (code $LASTEXITCODE)." }
     } else {
-        # A new process attached to this console keeps the Moodle prompts
-        # interactive even when this script came from `irm ... | iex`.
-        $result = Start-Process -FilePath $binary -ArgumentList 'install' -NoNewWindow -Wait -PassThru
-        if ($result.ExitCode -ne 0) { throw "Installation interrompue (code $($result.ExitCode))." }
+        # Persist the binary, then pop the small window without blocking the installer.
+        $installDir = Join-Path $env:LOCALAPPDATA 'student-mcp'
+        [void](New-Item -ItemType Directory -Path $installDir -Force)
+        $destination = Join-Path $installDir 'student-mcp.exe'
+        Copy-Item -Path $binary -Destination $destination -Force
+        Start-Process -FilePath $destination -ArgumentList 'up'
+        Write-Host "La fenêtre student-mcp s'ouvre. Fichier installé : $destination"
     }
 } finally {
     Remove-Item -Path $temp -Recurse -Force -ErrorAction SilentlyContinue

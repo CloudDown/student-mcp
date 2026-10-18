@@ -30,7 +30,7 @@ file="student-mcp-${system}-${arch}.zip"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-printf 'Téléchargement de Moodle MCP pour %s %s...\n' "$system" "$arch"
+printf 'Téléchargement de student-mcp pour %s %s...\n' "$system" "$arch"
 curl --fail --location --silent --show-error --retry 2 --proto '=https' --proto-redir '=https' "$base/$file" -o "$tmp/$file"
 curl --fail --location --silent --show-error --retry 2 --proto '=https' --proto-redir '=https' "$base/$file.sha256" -o "$tmp/$file.sha256"
 
@@ -64,6 +64,11 @@ chmod +x "$binary"
 if [ "${MOODLE_INSTALL_CHECK_ONLY:-}" = 1 ]; then
   "$binary" --help
 else
-  # `curl | bash` consumes stdin; the Moodle wizard must read from the TTY.
-  "$binary" install </dev/tty
+  # Persist the binary, then pop the small window in the background.
+  install_dir="$HOME/.student-mcp/bin"
+  mkdir -p "$install_dir"
+  cp "$binary" "$install_dir/student-mcp"
+  chmod +x "$install_dir/student-mcp"
+  nohup "$install_dir/student-mcp" up > "$HOME/.student-mcp/window.log" 2>&1 &
+  printf "La fenêtre student-mcp s'ouvre. Fichier installé : %s\n" "$install_dir/student-mcp"
 fi
