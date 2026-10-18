@@ -17,13 +17,13 @@ def main() -> None:
         raise SystemExit("Usage: python scripts/archive-release.py <platform-arch>")
 
     root = Path(__file__).resolve().parent.parent
-    binary = root / "build" / ("polymtl-moodle-connect.exe" if label.startswith("windows") else "polymtl-moodle-connect")
+    binary = root / "build" / ("student-mcp.exe" if label.startswith("windows") else "student-mcp")
     if not binary.is_file():
         raise SystemExit(f"Missing build artifact: {binary}")
     installer = "Installer.cmd" if label.startswith("windows") else "Installer.command" if label.startswith("macos") else "Installer.sh"
     outdir = root / "release"
     outdir.mkdir(exist_ok=True)
-    archive = outdir / f"polymtl-moodle-connect-{label}.zip"
+    archive = outdir / f"student-mcp-{label}.zip"
 
     with ZipFile(archive, "w", ZIP_DEFLATED, compresslevel=9) as zip_file:
         for source, name in [

@@ -25,7 +25,7 @@ async function safe(action: () => Promise<unknown>): Promise<CallToolResult> {
 export function createServer(config: MoodleConfig, client = new MoodleClient(config)): McpServer {
   const bundle = loadCatalog();
   const catalog = FunctionIndex.fromCatalog(bundle);
-  const server = new McpServer({ name: "polymtl-moodle-connect", version: "0.1.1" });
+  const server = new McpServer({ name: "student-mcp", version: "0.1.1" });
   let siteInfoPromise: Promise<SiteInfo> | undefined;
   const siteInfo = () => {
     // Retry on a transient failure rather than caching it until restart.

@@ -1,4 +1,4 @@
-# PowerShell: irm https://raw.githubusercontent.com/CloudDown/polymtl-moodle-connect/main/install.ps1 | iex
+# PowerShell: irm https://raw.githubusercontent.com/CloudDown/student-mcp/main/install.ps1 | iex
 $ErrorActionPreference = 'Stop'
 $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
 switch ($arch) {
@@ -7,8 +7,8 @@ switch ($arch) {
     default { throw "Architecture Windows non prise en charge : $arch" }
 }
 
-$base = 'https://github.com/CloudDown/polymtl-moodle-connect/releases/latest/download'
-$name = "polymtl-moodle-connect-$platform.zip"
+$base = 'https://github.com/CloudDown/student-mcp/releases/latest/download'
+$name = "student-mcp-$platform.zip"
 $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("moodle-mcp-" + [guid]::NewGuid().ToString('N'))
 [void](New-Item -ItemType Directory -Path $temp -Force)
 
@@ -26,7 +26,7 @@ try {
 
     $folder = Join-Path $temp 'app'
     Expand-Archive -Path $zip -DestinationPath $folder -Force
-    $binary = Join-Path $folder 'polymtl-moodle-connect.exe'
+    $binary = Join-Path $folder 'student-mcp.exe'
     if (-not (Test-Path -Path $binary -PathType Leaf)) {
         throw 'Le téléchargement ne contient pas le programme attendu.'
     }

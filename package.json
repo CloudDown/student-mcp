@@ -1,5 +1,5 @@
 {
-  "name": "polymtl-moodle-connect",
+  "name": "student-mcp",
   "version": "0.1.1",
   "description": "One-command local Moodle connector for Polytechnique Montreal students.",
   "keywords": [
@@ -13,7 +13,7 @@
   "license": "MIT AND GPL-3.0-or-later",
   "type": "module",
   "bin": {
-    "polymtl-moodle-connect": "dist/index.js"
+    "student-mcp": "dist/index.js"
   },
   "main": "dist/index.js",
   "files": [
@@ -27,7 +27,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "build:binary": "bun build --compile --no-compile-autoload-dotenv --no-compile-autoload-bunfig ./scripts/binary-entry.ts --outfile build/polymtl-moodle-connect",
+    "build:binary": "bun build --compile --no-compile-autoload-dotenv --no-compile-autoload-bunfig ./scripts/binary-entry.ts --outfile build/student-mcp",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "catalog:generate": "node scripts/generate-catalog.mjs",

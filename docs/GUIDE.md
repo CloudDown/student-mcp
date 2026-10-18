@@ -1,8 +1,8 @@
-# PolyMoodle Connect
+# Student MCP
 
-> **English** — PolyMoodle Connect is an MCP (Model Context Protocol) server that lets OpenCode or Claude Desktop read your Moodle courses, assignments, deadlines and grades. No Node.js or npm needed.
+> **English** — Student MCP is an MCP (Model Context Protocol) server that lets OpenCode or Claude Desktop read your Moodle courses, assignments, deadlines and grades. No Node.js or npm needed.
 >
-> **Install:** macOS/Linux: `curl -fsSL https://raw.githubusercontent.com/CloudDown/polymtl-moodle-connect/main/install.sh | bash` — Windows (PowerShell): `irm https://raw.githubusercontent.com/CloudDown/polymtl-moodle-connect/main/install.ps1 | iex`. The wizard asks for your Moodle URL (default `https://moodle.polymtl.ca`, any Moodle works) and credentials, then configures your app.
+> **Install:** macOS/Linux: `curl -fsSL https://raw.githubusercontent.com/CloudDown/student-mcp/main/install.sh | bash` — Windows (PowerShell): `irm https://raw.githubusercontent.com/CloudDown/student-mcp/main/install.ps1 | iex`. The wizard asks for your Moodle URL (default `https://moodle.polymtl.ca`, any Moodle works) and credentials, then configures your app.
 >
 > *Not an official Polytechnique Montréal tool.* The rest of this README is in French.
 
@@ -14,13 +14,13 @@ de Node.js ni de npm à installer.**
 **Mac ou Linux** — colle ceci dans le Terminal :
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/CloudDown/polymtl-moodle-connect/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/CloudDown/student-mcp/main/install.sh | bash
 ```
 
 **Windows** — colle ceci dans PowerShell :
 
 ```powershell
-irm https://raw.githubusercontent.com/CloudDown/polymtl-moodle-connect/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/CloudDown/student-mcp/main/install.ps1 | iex
 ```
 
 Le programme choisit automatiquement la version pour ton ordinateur, vérifie
@@ -30,7 +30,7 @@ puis choisis **OpenCode** ou **Claude Desktop**. Redémarre l'application et
 demande-lui « Vérifie ma connexion Moodle ».
 
 Autre établissement ? Entre son adresse Moodle à la première question. Si tu
-préfères télécharger un ZIP manuellement : [versions Windows, Mac et Linux](https://github.com/CloudDown/polymtl-moodle-connect/releases/latest).
+préfères télécharger un ZIP manuellement : [versions Windows, Mac et Linux](https://github.com/CloudDown/student-mcp/releases/latest).
 
 ## Quel token utiliser ?
 

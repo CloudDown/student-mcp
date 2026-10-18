@@ -60,10 +60,10 @@ jobs:
         shell: bash
         run: |
           mkdir -p build
-          bun build --compile --target=${{ matrix.target }} --no-compile-autoload-dotenv --no-compile-autoload-bunfig ./scripts/binary-entry.ts --outfile build/polymtl-moodle-connect${{ matrix.suffix }}
+          bun build --compile --target=${{ matrix.target }} --no-compile-autoload-dotenv --no-compile-autoload-bunfig ./scripts/binary-entry.ts --outfile build/student-mcp${{ matrix.suffix }}
       - name: Verify the actual executable over MCP with a mock Moodle
         shell: bash
-        run: node scripts/smoke-binary.mjs build/polymtl-moodle-connect${{ matrix.suffix }}
+        run: node scripts/smoke-binary.mjs build/student-mcp${{ matrix.suffix }}
       - name: Package ZIP and checksum
         run: python scripts/archive-release.py ${{ matrix.label }}
       - uses: actions/upload-artifact@v4

@@ -17,7 +17,7 @@ export class ConfigError extends Error {
 }
 
 export function configPath(env: NodeJS.ProcessEnv = process.env): string {
-  return env.MOODLE_CONFIG_FILE || join(homedir(), ".polymtl-moodle-connect.json");
+  return env.MOODLE_CONFIG_FILE || join(homedir(), ".student-mcp.json");
 }
 
 export function normalizeBaseUrl(input: string): string {
@@ -48,7 +48,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): MoodleConfig {
   const url = env.MOODLE_URL || saved.url;
   const token = env.MOODLE_WSTOKEN || env.MOODLE_TOKEN || saved.token;
   if (typeof url !== "string" || !url.trim() || typeof token !== "string" || !token.trim()) {
-    throw new ConfigError("Configurez MOODLE_URL et MOODLE_TOKEN, ou lancez polymtl-moodle-connect init depuis un terminal.");
+    throw new ConfigError("Configurez MOODLE_URL et MOODLE_TOKEN, ou lancez student-mcp init depuis un terminal.");
   }
 
   const timeout = Number(env.MOODLE_TIMEOUT_MS || 30_000);

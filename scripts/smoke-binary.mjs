@@ -39,7 +39,7 @@ const transport = new StdioClientTransport({
     ...getDefaultEnvironment(),
     MOODLE_URL: `http://127.0.0.1:${port}`,
     MOODLE_TOKEN: "SMOKE_TOKEN",
-    MOODLE_CONFIG_FILE: resolve(tmpdir(), "polymtl-moodle-connect-no-config-smoke.json"),
+    MOODLE_CONFIG_FILE: resolve(tmpdir(), "student-mcp-no-config-smoke.json"),
   },
   stderr: "pipe",
 });

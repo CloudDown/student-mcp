@@ -10,7 +10,7 @@ import { join, resolve } from "node:path";
 if (!process.argv[2]) throw new Error("Usage: node scripts/smoke-installer.mjs <native-binary>");
 const temp = mkdtempSync(join(tmpdir(), "moodle-install-smoke-"));
 const saved = join(temp, "settings.json");
-const installed = join(temp, "installed-polymtl-moodle-connect");
+const installed = join(temp, "installed-student-mcp");
 const xdg = join(temp, "xdg");
 const site = createServer(async (req, res) => {
   let body = "";

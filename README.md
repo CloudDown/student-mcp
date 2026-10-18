@@ -1,19 +1,19 @@
-<h1 align="center">PolyMoodle Connect</h1>
+<h1 align="center">Student MCP</h1>
 <p align="center">Let OpenCode or Claude Desktop read your Moodle courses, assignments, deadlines and grades. One command, no Node.js.</p>
 
 ## Install
 
 ```sh
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/CloudDown/polymtl-moodle-connect/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/CloudDown/student-mcp/main/install.sh | bash
 ```
 
 ```powershell
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/CloudDown/polymtl-moodle-connect/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/CloudDown/student-mcp/main/install.ps1 | iex
 ```
 
-Manual ZIPs: [latest release](https://github.com/CloudDown/polymtl-moodle-connect/releases/latest).
+Manual ZIPs: [latest release](https://github.com/CloudDown/student-mcp/releases/latest).
 
 ## Usage
 

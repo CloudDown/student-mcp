@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run from a terminal: curl -fsSL https://raw.githubusercontent.com/CloudDown/polymtl-moodle-connect/main/install.sh | bash
+# Run from a terminal: curl -fsSL https://raw.githubusercontent.com/CloudDown/student-mcp/main/install.sh | bash
 set -euo pipefail
 
 for tool in curl unzip mktemp; do
@@ -25,8 +25,8 @@ if [ "${MOODLE_INSTALL_CHECK_ONLY:-}" != 1 ] && [ ! -r /dev/tty ]; then
   exit 1
 fi
 
-base='https://github.com/CloudDown/polymtl-moodle-connect/releases/latest/download'
-file="polymtl-moodle-connect-${system}-${arch}.zip"
+base='https://github.com/CloudDown/student-mcp/releases/latest/download'
+file="student-mcp-${system}-${arch}.zip"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
@@ -54,7 +54,7 @@ if [ "$expected" != "$actual" ]; then
 fi
 
 unzip -q "$tmp/$file" -d "$tmp/app"
-binary="$tmp/app/polymtl-moodle-connect"
+binary="$tmp/app/student-mcp"
 if [ ! -f "$binary" ]; then
   printf 'Le téléchargement ne contient pas le programme attendu.\n' >&2
   exit 1

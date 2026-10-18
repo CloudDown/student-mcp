@@ -77,7 +77,7 @@ async function init(): Promise<void> {
 async function install(): Promise<void> {
   const bun = (globalThis as typeof globalThis & { Bun?: { isStandaloneExecutable?: boolean } }).Bun;
   if (!bun?.isStandaloneExecutable) {
-    throw new Error("La commande install utilise l'exécutable GitHub. Avec npm, lancez `polymtl-moodle-connect init`.");
+    throw new Error("La commande install utilise l'exécutable GitHub. Avec npm, lancez `student-mcp init`.");
   }
   await init();
   const executable = installBinary(process.execPath, process.env.MOODLE_INSTALL_PATH || installedBinaryPath());
@@ -104,7 +104,7 @@ async function main(): Promise<void> {
   if (command === "init") return init();
   if (command === "install") return install();
   if (command === "--help" || command === "-h") {
-    process.stderr.write("Utilisation : polymtl-moodle-connect [install|init]\nDepuis GitHub, utilisez install; avec npm, init.\n");
+    process.stderr.write("Utilisation : student-mcp [install|init]\nDepuis GitHub, utilisez install; avec npm, init.\n");
     return;
   }
   if (command) throw new Error("Unknown command. Use --help or init.");
