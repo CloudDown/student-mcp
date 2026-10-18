@@ -1,13 +1,16 @@
 {
   "name": "student-mcp",
-  "version": "0.1.1",
-  "description": "One-command local Moodle connector for Polytechnique Montreal students.",
+  "version": "0.2.0",
+  "description": "One local MCP dashboard for your student services (Moodle, Proxmox) — configure on a white page, paste the URL in Claude. Public HTTPS via Tailscale Funnel.",
   "keywords": [
     "mcp",
     "modelcontextprotocol",
     "moodle",
     "lms",
     "education",
+    "proxmox",
+    "tailscale",
+    "claude-connector",
     "mcp-server"
   ],
   "license": "MIT AND GPL-3.0-or-later",

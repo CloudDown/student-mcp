@@ -36,6 +36,8 @@ try {
   const script = `
     set timeout 20
     spawn $env(MCP_BINARY) install
+    expect "Mode :"
+    send "1\\r"
     expect "Adresse de votre Moodle"
     send "http://127.0.0.1:$env(MCP_PORT)\\r"
     expect "Obtenir un token"
@@ -65,7 +67,8 @@ try {
   assert.equal(existsSync(installed), true);
   assert.equal(spawnSync(installed, ["--help"]).status, 0);
   const settings = JSON.parse(readFileSync(saved, "utf8"));
-  assert.equal(settings.token, "FAKE_MOBILE_TOKEN");
+  assert.equal(settings.moodle.token, "FAKE_MOBILE_TOKEN");
+  assert.equal(settings.moodle.url, `http://127.0.0.1:${port}`);
   assert(!readFileSync(saved, "utf8").includes("FAKE_PASSWORD"));
   assert(!readFileSync(saved, "utf8").includes("NOT_FOR_REST"));
   const client = JSON.parse(readFileSync(join(xdg, "opencode", "opencode.json"), "utf8"));
