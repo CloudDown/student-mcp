@@ -392,7 +392,7 @@ impl App {
         );
 
         ui.add_space(6.0);
-        if Self::action(ui, "Voir mes liens", !self.busy) {
+        if Self::action(ui, "Voir le lien pour les IA", !self.busy) {
             self.screen = "links";
             self.notice = None;
         }
@@ -499,15 +499,35 @@ impl App {
             )
             .on_hover_text(error);
         } else if moodle_on || proxmox_on {
-            if ui
-                .put(
-                    layout.footer,
-                    Button::new(RichText::new("Mon lien pour Claude").size(13.0).color(INK))
-                        .frame(false),
-                )
-                .clicked()
-            {
+            let rect = layout.footer;
+            let response = ui
+                .interact(rect, ui.make_persistent_id("open-links"), Sense::click())
+                .on_hover_cursor(CursorIcon::PointingHand);
+            ui.painter().rect_filled(
+                rect,
+                8.0,
+                if response.hovered() {
+                    HOVER
+                } else {
+                    Color32::WHITE
+                },
+            );
+            ui.painter().rect_stroke(
+                rect,
+                8.0,
+                Stroke::new(1.0_f32, BORDER),
+                egui::StrokeKind::Inside,
+            );
+            ui.painter().text(
+                rect.center(),
+                Align2::CENTER_CENTER,
+                "Voir le lien pour les IA",
+                FontId::proportional(13.0),
+                INK,
+            );
+            if response.clicked() {
                 self.screen = "links";
+                self.notice = None;
             }
         }
     }
