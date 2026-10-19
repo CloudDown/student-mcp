@@ -31,6 +31,24 @@ fn form_bounds(bounds: Rect, expanded: bool) -> Rect {
     Rect::from_center_size(bounds.center(), size)
 }
 
+/// Centered green status line: a small dot followed by “Connected”.
+fn connected_badge(ui: &mut Ui) {
+    let galley =
+        ui.painter()
+            .layout_no_wrap("Connected".to_owned(), FontId::proportional(13.0), GREEN);
+    let (dot, gap) = (9.0, 7.0);
+    let size = Vec2::new(dot + gap + galley.size().x, 16.0);
+    let rect = ui.allocate_exact_size(size, Sense::hover()).0;
+    let center = rect.center();
+    ui.painter()
+        .circle_filled(pos2(rect.left() + dot / 2.0, center.y), 4.0, GREEN);
+    ui.painter().galley(
+        pos2(rect.left() + dot + gap, center.y - galley.size().y / 2.0),
+        galley,
+        GREEN,
+    );
+}
+
 fn configure_context(ctx: &Context) {
     let mut visuals = egui::Visuals::light();
     visuals.widgets.noninteractive.bg_fill = Color32::WHITE;
@@ -210,7 +228,7 @@ pub fn run(port_override: Option<u16>, first_run: bool) {
         }),
     );
     if let Err(error) = result {
-        eprintln!("Fenêtre impossible : {error:?} — le serveur MCP stdio reste disponible (student-mcp sans commande).");
+        eprintln!("Window unavailable: {error:?} — the stdio MCP server is still available (student-mcp with no command).");
     }
 }
 
@@ -302,11 +320,11 @@ impl App {
             Button::new(RichText::new(label).size(15.0).color(SUBTLE)).frame(false),
         )
         .on_hover_text(if disabled {
-            "Taille limite"
+            "Size limit"
         } else if label == "+" {
-            "Agrandir"
+            "Larger"
         } else {
-            "Réduire"
+            "Smaller"
         })
         .clicked()
     }
@@ -323,11 +341,6 @@ impl App {
     /// Connected state of a service: status, connection info, links and
     /// disconnection — no credentials asked again.
     fn connected_view(&mut self, ui: &mut Ui, ctx: &egui::Context, service: &str) {
-        let title = if service == "proxmox" {
-            "Proxmox"
-        } else {
-            "Moodle"
-        };
         let (url, token_id) = match service {
             "proxmox" => {
                 let config = self.settings.proxmox();
@@ -356,63 +369,45 @@ impl App {
         };
         let tools = crate::mcp::tool_definitions(&self.settings).len();
 
-        ui.vertical_centered(|ui| {
-            if let Some(logos) = &self.logos {
-                let texture = if service == "proxmox" {
-                    &logos.proxmox
-                } else {
-                    &logos.moodle
-                };
-                ui.image((texture.id(), Vec2::splat(44.0)));
-            }
-            ui.add_space(10.0);
-            ui.label(RichText::new(title).size(21.0).strong().color(INK));
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                let (rect, _) = ui.allocate_exact_size(Vec2::new(9.0, 9.0), Sense::hover());
-                ui.painter().circle_filled(rect.center(), 4.0, GREEN);
-                ui.label(RichText::new("Connecté").size(13.0).strong().color(GREEN));
-            });
-        });
-        ui.add_space(18.0);
-        Self::info_block(ui, "Serveur", &url, true);
+        ui.add_space(6.0);
+        Self::info_block(ui, "Server", &url, true);
         if !token_id.is_empty() {
             Self::info_block(ui, "Token", &token_id, true);
         }
         Self::info_block(
             ui,
-            "Accès MCP",
+            "MCP access",
             &format!(
-                "{} outils · {}",
+                "{} tools · {}",
                 tools,
                 if allow_write {
-                    "lecture + écriture"
+                    "read + write"
                 } else {
-                    "lecture seule"
+                    "read only"
                 }
             ),
             false,
         );
 
         ui.add_space(6.0);
-        if Self::action(ui, "Voir le lien pour les IA", !self.busy) {
+        if Self::action(ui, "View the link for AI tools", !self.busy) {
             self.screen = "links";
             self.notice = None;
         }
         ui.add_space(8.0);
-        if Self::action(ui, "Modifier la connexion", !self.busy) {
+        if Self::action(ui, "Change the connection", !self.busy) {
             self.draft.editing = true;
             self.notice = None;
         }
         ui.add_space(8.0);
-        if self.button_plain(ui, "Se déconnecter") && !self.busy {
+        if self.button_plain(ui, "Disconnect") && !self.busy {
             let service = service.to_string();
             self.spawn(ctx.clone(), move || {
                 let mut fresh = Settings::load();
                 crate::mcp::disable_service(&mut fresh, &service);
                 Message::Done(
                     Notice::Ok(format!(
-                        "{} déconnecté.",
+                        "{} disconnected.",
                         if service == "proxmox" {
                             "Proxmox"
                         } else {
@@ -461,7 +456,7 @@ impl App {
         ui.painter().text(
             layout.title.center(),
             Align2::CENTER_CENTER,
-            "Tes services",
+            "Your services",
             FontId::proportional(18.0),
             INK,
         );
@@ -487,8 +482,8 @@ impl App {
             proxmox_on,
             false,
         );
-        Self::tile(ui, &logos.poly, "Dossier", layout.tiles[2], false, true);
-        Self::tile(ui, &logos.outlook, "Courriel", layout.tiles[3], false, true);
+        Self::tile(ui, &logos.poly, "Files", layout.tiles[2], false, true);
+        Self::tile(ui, &logos.outlook, "Email", layout.tiles[3], false, true);
 
         if moodle_clicked || proxmox_clicked {
             self.open_service(if moodle_clicked { "moodle" } else { "proxmox" });
@@ -498,7 +493,7 @@ impl App {
         if let Some(error) = &self.bind_error {
             ui.put(
                 layout.footer,
-                egui::Label::new(RichText::new("Serveur indisponible").color(RED)),
+                egui::Label::new(RichText::new("Server unavailable").color(RED)),
             )
             .on_hover_text(error);
         } else if moodle_on || proxmox_on {
@@ -524,7 +519,7 @@ impl App {
             ui.painter().text(
                 rect.center(),
                 Align2::CENTER_CENTER,
-                "Voir le lien pour les IA",
+                "View the link for AI tools",
                 FontId::proportional(13.0),
                 INK,
             );
@@ -617,21 +612,21 @@ impl App {
             ui.painter().text(
                 rect.center_bottom() - Vec2::new(0.0, 9.0),
                 Align2::CENTER_CENTER,
-                "Connecté",
+                "Connected",
                 FontId::proportional(11.0),
                 GREEN,
             );
         }
 
         if soon {
-            response.on_hover_text("Bientôt disponible");
+            response.on_hover_text("Coming soon");
             false
         } else {
             response
                 .on_hover_text(if active {
-                    "Connecté — modifier la connexion"
+                    "Connected — change the connection"
                 } else {
-                    "Connecter ce service"
+                    "Connect this service"
                 })
                 .clicked()
         }
@@ -663,15 +658,14 @@ impl App {
     // ---------- links below the gallery ----------
 
     fn links_screen(&mut self, ui: &mut Ui, ctx: &egui::Context) {
-        if self.top_bar(ui, "Ton lien pour Claude") {
+        if self.top_bar(ui, "Your Claude link", false) {
             return;
         }
         let count = self.settings.services_active().len();
         ui.label(
             RichText::new(format!(
-                "{} service{} connecté{} · {} outils",
+                "{} service{} connected · {} tools",
                 count,
-                if count > 1 { "s" } else { "" },
                 if count > 1 { "s" } else { "" },
                 crate::mcp::tool_definitions(&self.settings).len()
             ))
@@ -683,7 +677,7 @@ impl App {
         // cached status for long, or the popup would advertise a dead link.
         let stale = self
             .funnel_checked
-            .map_or(true, |at| at.elapsed().as_secs_f32() > 5.0);
+            .is_none_or(|at| at.elapsed().as_secs_f32() > 5.0);
         if !self.busy && stale {
             self.funnel_checked = Some(Instant::now());
             self.spawn(ctx.clone(), || Message::FunnelStatus(funnel::info()));
@@ -691,10 +685,11 @@ impl App {
         self.funnel_links(ui, ctx);
         self.notice_line(ui);
         ui.add_space(16.0);
-        egui::CollapsingHeader::new(RichText::new("Utilisation locale").size(12.0).color(SUBTLE))
-            .show(ui, |ui| {
+        egui::CollapsingHeader::new(RichText::new("Local use").size(12.0).color(SUBTLE)).show(
+            ui,
+            |ui| {
                 ui.label(
-                    RichText::new("Pour les clients MCP sur cet ordinateur.")
+                    RichText::new("For MCP clients on this computer.")
                         .size(12.0)
                         .color(SUBTLE),
                 );
@@ -703,10 +698,11 @@ impl App {
                     &self.gateway.token,
                 );
                 self.copy_row(ui, ctx, &local);
-            });
+            },
+        );
         ui.add_space(20.0);
         ui.label(
-            RichText::new("Garde cette fenêtre ouverte pendant l'utilisation.")
+            RichText::new("Keep this window open while you use it.")
                 .size(11.5)
                 .color(SUBTLE),
         );
@@ -716,7 +712,7 @@ impl App {
         match self.funnel_info.clone() {
             None => {
                 ui.label(
-                    RichText::new("Vérification de Tailscale…")
+                    RichText::new("Checking Tailscale…")
                         .size(12.0)
                         .color(SUBTLE),
                 );
@@ -728,7 +724,7 @@ impl App {
                     .map(|host| funnel::public_connector_url(host, &self.gateway.token))
                     .unwrap_or_default();
                 ui.label(
-                    RichText::new("Lien public actif")
+                    RichText::new("Public link active")
                         .size(13.0)
                         .strong()
                         .color(INK),
@@ -737,16 +733,16 @@ impl App {
                 self.copy_row(ui, ctx, &url);
                 ui.add_space(12.0);
                 for step in [
-                    "1. Claude > Paramètres > Connecteurs",
-                    "2. Ajouter un connecteur personnalisé",
-                    "3. Colle le lien dans l'URL du serveur.",
+                    "1. Claude > Settings > Connectors",
+                    "2. Add a custom connector",
+                    "3. Paste the link as the server URL.",
                 ] {
                     ui.add(egui::Label::new(RichText::new(step).size(12.0).color(SUBTLE)).wrap());
                     ui.add_space(4.0);
                 }
                 ui.add_space(8.0);
                 ui.label(
-                    RichText::new("Ce lien est privé : ne le partage pas.")
+                    RichText::new("This link is private: do not share it.")
                         .size(11.5)
                         .color(SUBTLE),
                 );
@@ -754,7 +750,7 @@ impl App {
                     .add_enabled(
                         !self.busy,
                         Button::new(
-                            RichText::new("Retirer le lien public")
+                            RichText::new("Remove the public link")
                                 .size(11.5)
                                 .color(SUBTLE),
                         )
@@ -771,25 +767,25 @@ impl App {
             Some(info) if !info.present || !info.logged_in => {
                 ui.label(
                     RichText::new(if !info.present {
-                        "Installe Tailscale pour obtenir ton lien public."
+                        "Install Tailscale to get your public link."
                     } else {
-                        "Connecte-toi dans Tailscale, puis réessaie."
+                        "Sign in to Tailscale, then try again."
                     })
                     .size(13.0)
                     .color(INK),
                 );
                 ui.add_space(8.0);
                 if !info.present {
-                    ui.hyperlink_to("Télécharger Tailscale", "https://tailscale.com/download");
+                    ui.hyperlink_to("Download Tailscale", "https://tailscale.com/download");
                     ui.add_space(8.0);
                 }
-                if Self::action(ui, "Vérifier à nouveau", !self.busy) {
+                if Self::action(ui, "Check again", !self.busy) {
                     self.spawn(ctx.clone(), || Message::FunnelStatus(funnel::info()));
                 }
             }
             Some(_) => {
                 ui.label(
-                    RichText::new("Crée un lien sécurisé pour connecter Claude à tes services.")
+                    RichText::new("Create a secure link so Claude can reach your services.")
                         .size(13.0)
                         .color(SUBTLE),
                 );
@@ -797,9 +793,9 @@ impl App {
                 if Self::action(
                     ui,
                     if self.busy {
-                        "Création du lien…"
+                        "Creating the link…"
                     } else {
-                        "Créer mon lien public"
+                        "Create my public link"
                     },
                     !self.busy && self.bind_error.is_none(),
                 ) {
@@ -814,7 +810,7 @@ impl App {
         if self.busy {
             ui.add_space(6.0);
             ui.label(
-                RichText::new("Cela peut prendre quelques secondes.")
+                RichText::new("This can take a few seconds.")
                     .size(11.5)
                     .color(SUBTLE),
             );
@@ -843,13 +839,9 @@ impl App {
                 if ui
                     .add(
                         Button::new(
-                            RichText::new(if copied {
-                                "Lien copié"
-                            } else {
-                                "Copier le lien"
-                            })
-                            .size(12.0)
-                            .color(INK),
+                            RichText::new(if copied { "Link copied" } else { "Copy link" })
+                                .size(12.0)
+                                .color(INK),
                         )
                         .corner_radius(6.0),
                     )
@@ -886,16 +878,12 @@ impl App {
 
     // ---------- service screens (white, minimal) ----------
 
-    fn top_bar(&mut self, ui: &mut Ui, title: &str) -> bool {
+    fn top_bar(&mut self, ui: &mut Ui, title: &str, connected: bool) -> bool {
         let back = ui
             .add_enabled(
                 !self.busy,
-                Button::new(
-                    RichText::new("Retour aux services")
-                        .size(12.0)
-                        .color(SUBTLE),
-                )
-                .frame(false),
+                Button::new(RichText::new("Back to services").size(12.0).color(SUBTLE))
+                    .frame(false),
             )
             .clicked();
         if back {
@@ -921,13 +909,17 @@ impl App {
             if title == "Moodle" {
                 ui.label(
                     RichText::new(if self.draft.other_school {
-                        "Ton compte Moodle"
+                        "Your Moodle account"
                     } else {
                         "Polytechnique Montréal"
                     })
                     .size(12.0)
                     .color(SUBTLE),
                 );
+            }
+            if connected {
+                ui.add_space(8.0);
+                connected_badge(ui);
             }
         });
         ui.add_space(20.0);
@@ -946,7 +938,7 @@ impl App {
                 if ui
                     .add(
                         Button::new(
-                            RichText::new(if *visible { "Masquer" } else { "Afficher" })
+                            RichText::new(if *visible { "Hide" } else { "Show" })
                                 .size(11.0)
                                 .color(SUBTLE),
                         )
@@ -1032,7 +1024,7 @@ impl App {
     fn busy_text(&self, ui: &mut Ui) {
         if self.busy {
             ui.label(
-                RichText::new("Vérification de la connexion…")
+                RichText::new("Checking the connection…")
                     .size(12.0)
                     .color(SUBTLE),
             );
@@ -1041,10 +1033,11 @@ impl App {
     }
 
     fn moodle_screen(&mut self, ui: &mut Ui, ctx: &egui::Context) {
-        if self.top_bar(ui, "Moodle") {
+        let connected = self.viewing_connected();
+        if self.top_bar(ui, "Moodle", connected) {
             return;
         }
-        if self.viewing_connected() {
+        if connected {
             self.connected_view(ui, ctx, "moodle");
             return;
         }
@@ -1052,16 +1045,16 @@ impl App {
         if !self.draft.use_token {
             Self::field(
                 ui,
-                "Nom d'utilisateur",
+                "Username",
                 &mut self.draft.username,
-                "prenom.nom",
+                "firstname.lastname",
                 false,
             );
             Self::secret_field(
                 ui,
-                "Mot de passe",
+                "Password",
                 &mut self.draft.password,
-                "Mot de passe Moodle",
+                "Moodle password",
                 &mut self.draft.password_visible,
             );
         }
@@ -1069,9 +1062,9 @@ impl App {
             .add(
                 Button::new(
                     RichText::new(if self.draft.advanced {
-                        "Options avancées  −"
+                        "Advanced options  −"
                     } else {
-                        "Options avancées  +"
+                        "Advanced options  +"
                     })
                     .size(11.5)
                     .color(SUBTLE),
@@ -1084,29 +1077,25 @@ impl App {
         }
         if self.draft.advanced {
             ui.add_space(6.0);
-            Self::toggle(ui, "Autre école", &mut self.draft.other_school);
+            Self::toggle(ui, "Another school", &mut self.draft.other_school);
             if self.draft.other_school {
                 Self::field(
                     ui,
-                    "Adresse Moodle",
+                    "Moodle address",
                     &mut self.draft.url,
-                    "https://moodle.mon-ecole.ca",
+                    "https://moodle.my-school.edu",
                     false,
                 );
             }
             Self::toggle(
                 ui,
-                "Utiliser un token au lieu du mot de passe",
+                "Use a token instead of the password",
                 &mut self.draft.use_token,
             );
             if self.draft.use_token {
-                Self::field(ui, "Token", &mut self.draft.token, "Token Moodle", true);
+                Self::field(ui, "Token", &mut self.draft.token, "Moodle token", true);
             }
-            Self::toggle(
-                ui,
-                "Autoriser les modifications",
-                &mut self.draft.allow_write,
-            );
+            Self::toggle(ui, "Allow changes", &mut self.draft.allow_write);
         }
         ui.add_space(16.0);
         self.notice_line(ui);
@@ -1130,11 +1119,11 @@ impl App {
         let submit = Self::action(
             ui,
             if self.busy {
-                "Connexion…"
+                "Connecting…"
             } else if configured {
-                "Mettre à jour"
+                "Update"
             } else {
-                "Connecter Moodle"
+                "Connect Moodle"
             },
             ready,
         ) || ready && ui.input(|input| input.key_pressed(egui::Key::Enter));
@@ -1168,24 +1157,25 @@ impl App {
         }
         ui.add_space(10.0);
         ui.label(
-            RichText::new("Ton mot de passe n'est jamais enregistré.")
+            RichText::new("Your password is never stored.")
                 .size(11.5)
                 .color(SUBTLE),
         );
-        if configured && self.button_plain(ui, "Se déconnecter") && !self.busy {
+        if configured && self.button_plain(ui, "Disconnect") && !self.busy {
             self.spawn(ctx.clone(), || {
                 let mut fresh = Settings::load();
                 crate::mcp::disable_service(&mut fresh, "moodle");
-                Message::Done(Notice::Ok("Moodle déconnecté.".into()), NextScreen::Home)
+                Message::Done(Notice::Ok("Moodle disconnected.".into()), NextScreen::Home)
             });
         }
     }
 
     fn proxmox_screen(&mut self, ui: &mut Ui, ctx: &egui::Context) {
-        if self.top_bar(ui, "Proxmox") {
+        let connected = self.viewing_connected();
+        if self.top_bar(ui, "Proxmox", connected) {
             return;
         }
-        if self.viewing_connected() {
+        if connected {
             self.connected_view(ui, ctx, "proxmox");
             return;
         }
@@ -1193,32 +1183,32 @@ impl App {
 
         Self::field(
             ui,
-            "Adresse du serveur",
+            "Server address",
             &mut self.draft.url,
-            "https://mon-pve:8006",
+            "https://my-pve:8006",
             false,
         );
         Self::field(
             ui,
-            "ID du token API",
+            "API token ID",
             &mut self.draft.token_id,
-            "prenom.nom@pam!student-mcp",
+            "firstname.lastname@pam!student-mcp",
             false,
         );
         Self::secret_field(
             ui,
-            "Secret du token",
+            "Token secret",
             &mut self.draft.secret,
-            "Secret du token API",
+            "API token secret",
             &mut self.draft.password_visible,
         );
         if ui
             .add(
                 Button::new(
                     RichText::new(if self.draft.advanced {
-                        "Options avancées  −"
+                        "Advanced options  −"
                     } else {
-                        "Options avancées  +"
+                        "Advanced options  +"
                     })
                     .size(11.5)
                     .color(SUBTLE),
@@ -1230,11 +1220,7 @@ impl App {
             self.draft.advanced = !self.draft.advanced;
         }
         if self.draft.advanced {
-            Self::toggle(
-                ui,
-                "Autoriser start/stop/reboot",
-                &mut self.draft.allow_write,
-            );
+            Self::toggle(ui, "Allow start/stop/reboot", &mut self.draft.allow_write);
         }
         ui.add_space(16.0);
         self.notice_line(ui);
@@ -1248,11 +1234,11 @@ impl App {
         if Self::action(
             ui,
             if self.busy {
-                "Connexion…"
+                "Connecting…"
             } else if configured {
-                "Mettre à jour"
+                "Update"
             } else {
-                "Connecter Proxmox"
+                "Connect Proxmox"
             },
             ready,
         ) || ready && ui.input(|input| input.key_pressed(egui::Key::Enter))
@@ -1273,15 +1259,15 @@ impl App {
         }
         ui.add_space(8.0);
         ui.label(
-            RichText::new("Crée le token dans Proxmox : Datacenter > Permissions > API Tokens.")
+            RichText::new("Create the token in Proxmox: Datacenter > Permissions > API Tokens.")
                 .size(11.5)
                 .color(SUBTLE),
         );
-        if configured && self.button_plain(ui, "Se déconnecter") && !self.busy {
+        if configured && self.button_plain(ui, "Disconnect") && !self.busy {
             self.spawn(ctx.clone(), || {
                 let mut fresh = Settings::load();
                 crate::mcp::disable_service(&mut fresh, "proxmox");
-                Message::Done(Notice::Ok("Proxmox déconnecté.".into()), NextScreen::Home)
+                Message::Done(Notice::Ok("Proxmox disconnected.".into()), NextScreen::Home)
             });
         }
     }
@@ -1323,7 +1309,7 @@ impl App {
                 self.rx = None;
                 self.busy = false;
                 self.notice = Some(Notice::Err(
-                    "La connexion a été interrompue. Tu peux réessayer.".into(),
+                    "The connection was interrupted. Try again.".into(),
                 ));
                 return;
             }
@@ -1408,8 +1394,8 @@ mod gallery_tests {
                 for (index, (texture, name)) in [
                     (&logos.moodle, "Moodle"),
                     (&logos.proxmox, "Proxmox"),
-                    (&logos.poly, "Dossier"),
-                    (&logos.outlook, "Courriel"),
+                    (&logos.poly, "Files"),
+                    (&logos.outlook, "Email"),
                 ]
                 .into_iter()
                 .enumerate()

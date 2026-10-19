@@ -4,7 +4,7 @@ use eframe::egui::{self, ColorImage, Context, TextureHandle};
 pub struct Logos {
     pub moodle: TextureHandle,
     pub proxmox: TextureHandle,
-    pub poly: TextureHandle, // Dossier étudiant later: Polytechnique symbol
+    pub poly: TextureHandle,    // Student record later: Polytechnique symbol
     pub outlook: TextureHandle, // Courriel later: Outlook
 }
 

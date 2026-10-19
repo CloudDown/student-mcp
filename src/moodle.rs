@@ -30,7 +30,7 @@ fn urlencoded(pairs: &[(String, String)]) -> String {
 pub fn request_mobile_token(site: &str, username: &str, password: &str) -> Result<String, String> {
     let base = crate::config::normalize_moodle_url(site)?;
     if username.trim().is_empty() || password.is_empty() {
-        return Err("Entrez votre identifiant et votre mot de passe Moodle.".into());
+        return Err("Enter your Moodle username and password.".into());
     }
     let agent = agent();
     let body = urlencoded(&[
@@ -43,12 +43,11 @@ pub fn request_mobile_token(site: &str, username: &str, password: &str) -> Resul
         .set("Content-Type", "application/x-www-form-urlencoded")
         .send_string(&body)
         .map_err(|_| {
-            "Connexion à Moodle impossible. Vérifiez l'adresse du site et votre connexion Internet."
-                .to_string()
+            "Cannot reach Moodle. Check the site address and your Internet connection.".to_string()
         })?;
     let result: Value = response
         .into_json()
-        .map_err(|_| "Moodle n'a pas renvoyé de token.".to_string())?;
+        .map_err(|_| "Moodle did not return a token.".to_string())?;
     if let Some(token) = result
         .get("token")
         .and_then(Value::as_str)
@@ -57,9 +56,9 @@ pub fn request_mobile_token(site: &str, username: &str, password: &str) -> Resul
         return Ok(token.trim().to_string());
     }
     if result.get("errorcode").and_then(Value::as_str) == Some("invalidlogin") {
-        return Err("Moodle refuse la connexion. Vérifiez vos identifiants; avec SSO ou double authentification, demandez un token au soutien Moodle de votre école.".into());
+        return Err("Moodle refused the login. Check your credentials; with SSO or two-factor authentication, ask your school's Moodle support for a token.".into());
     }
-    Err("Moodle n'a pas fourni de token mobile. Vérifiez l'accès au service mobile avec votre école, ou choisissez l'option token existant.".into())
+    Err("Moodle did not provide a mobile token. Check mobile service access with your school, or use the existing-token option.".into())
 }
 
 /// Blocking Moodle Web Services client (one instance per request is fine).
@@ -94,14 +93,14 @@ impl MoodleClient {
             .map_err(error_for_transport)?;
         let value: Value = response
             .into_json()
-            .map_err(|_| "Moodle a renvoyé une réponse non JSON.".to_string())?;
+            .map_err(|_| "Moodle returned a non-JSON response.".to_string())?;
         Ok(scrub(value, &self.token))
     }
 
     pub fn site_info(&self) -> Result<Value, String> {
         let info = self.call("core_webservice_get_site_info", &json!({}))?;
         if info.get("exception").is_some() || info.get("userid").and_then(Value::as_i64).is_none() {
-            return Err("Ce token ne peut pas accéder à ce site Moodle. Vérifiez ses permissions et l'adresse du site.".into());
+            return Err("This token cannot access this Moodle site. Check its permissions and the site address.".into());
         }
         Ok(info)
     }
@@ -109,11 +108,8 @@ impl MoodleClient {
 
 fn error_for_transport(error: ureq::Error) -> String {
     match error {
-        ureq::Error::Status(code, _) => format!("Moodle a renvoyé une erreur HTTP {code}."),
-        _ => {
-            "Connexion à Moodle impossible. Vérifiez l'adresse du site et votre connexion Internet."
-                .into()
-        }
+        ureq::Error::Status(code, _) => format!("Moodle returned HTTP error {code}."),
+        _ => "Cannot reach Moodle. Check the site address and your Internet connection.".into(),
     }
 }
 

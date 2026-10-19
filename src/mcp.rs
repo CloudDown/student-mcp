@@ -81,7 +81,7 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
             let userid = info
                 .get("userid")
                 .and_then(Value::as_i64)
-                .ok_or("Moodle n'a pas fourni le user ID du token.")?;
+                .ok_or("Moodle did not return the token's user ID.")?;
             client.call("core_enrol_get_users_courses", &json!({ "userid": userid }))
         }),
         "moodle_course_content" => moodle_tool(settings, |config| {
@@ -154,16 +154,16 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
             let name = args
                 .get("name")
                 .and_then(Value::as_str)
-                .ok_or("Entrez name.")?;
+                .ok_or("Provide name.")?;
             let catalog = Catalog::load();
             let entry = catalog.get(name).ok_or(format!(
-                "Function {name} n'existe pas dans le catalogue Moodle."
+                "Function {name} does not exist in the Moodle catalogue."
             ))?;
             Ok(json!({
                 "name": entry.name,
                 "description": entry.description,
                 "type": if entry.write { "write" } else { "read" },
-                "note": "Consultez la documentation Moodle pour tous les paramètres; les écritures exigent l'option Écriture dans l'app.",
+                "note": "See the Moodle documentation for every parameter; writes require allowing changes in the app.",
                 "catalogRelease": catalog.release()
             }))
         }),
@@ -171,7 +171,7 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
             let name = args
                 .get("name")
                 .and_then(Value::as_str)
-                .ok_or("Entrez name.")?;
+                .ok_or("Provide name.")?;
             let client = MoodleClient::new(config);
             let payload = args.get("args").cloned().unwrap_or_else(|| json!({}));
             let info = client.site_info()?;
@@ -189,13 +189,11 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                 })
                 .collect();
             if !authorized.iter().any(|authorized| authorized == name) {
-                return Err(format!(
-                    "Function {name} n'est pas disponible pour ce token."
-                ));
+                return Err(format!("Function {name} is not available for this token."));
             }
             let catalog = Catalog::load();
             if catalog.get(name).map(|entry| entry.write).unwrap_or(true) && !config.allow_write {
-                return Err("Cet appel peut modifier Moodle. Active l'option « Autoriser les modifications » dans la fenêtre student-mcp.".into());
+                return Err("This call can change Moodle. Turn on \"Allow changes\" in the student-mcp window.".into());
             }
             client.call(name, &payload)
         }),
@@ -234,7 +232,7 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
             let found = locate_resource(client, vmid)?;
             if found.status == "running" {
                 return Ok(
-                    json!({ "vmid": vmid, "status": "running", "note": "Machine déjà allumée." }),
+                    json!({ "vmid": vmid, "status": "running", "note": "Machine already running." }),
                 );
             }
             Ok(
@@ -252,7 +250,7 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                 if force { "stop" } else { "shutdown" },
             )?;
             Ok(
-                json!({ "vmid": vmid, "node": found.node, "task": task, "note": if force { "Poweroff demandé (extinction forcée)." } else { "Arrêt propre demandé." } }),
+                json!({ "vmid": vmid, "node": found.node, "task": task, "note": if force { "Poweroff requested (forced shutdown)." } else { "Graceful shutdown requested." } }),
             )
         }),
         "proxmox_vm_reboot" => proxmox_write_tool(settings, |client| {
@@ -262,7 +260,7 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                 json!({ "vmid": vmid, "node": found.node, "task": client.vm_action(&found.node, &found.kind, vmid, "reboot")? }),
             )
         }),
-        other => Err(format!("Outil « {other} » inconnu.")),
+        other => Err(format!("Unknown tool \"{other}\".")),
     };
     match outcome {
         Ok(data) => {
@@ -278,7 +276,7 @@ fn require_integer(args: &Value, key: &str) -> Result<i64, String> {
     args.get(key)
         .and_then(Value::as_i64)
         .filter(|value| *value > 0)
-        .ok_or(format!("Entrez un entier {key} > 0."))
+        .ok_or(format!("Provide an integer {key} > 0."))
 }
 
 fn student_status(settings: &Settings) -> ToolResult {
@@ -296,7 +294,7 @@ where
 {
     let config = settings
         .moodle()
-        .ok_or("Moodle n'est pas configuré : active-le dans la fenêtre student-mcp.")?;
+        .ok_or("Moodle is not configured: connect it in the student-mcp window.")?;
     handler(&config)
 }
 
@@ -306,7 +304,7 @@ where
 {
     let config = settings
         .proxmox()
-        .ok_or("Proxmox n'est pas configuré : active-le dans la fenêtre student-mcp.")?;
+        .ok_or("Proxmox is not configured: connect it in the student-mcp window.")?;
     handler(&ProxmoxClient::new(config))
 }
 
@@ -320,7 +318,10 @@ where
         .and_then(|p| p.allow_write)
         .unwrap_or(false)
     {
-        return Err("Les modifications Proxmox sont désactivées. Reconfigure Proxmox dans la fenêtre en autorisant l'écriture.".into());
+        return Err(
+            "Proxmox changes are disabled. Reconnect Proxmox in the window and allow writing."
+                .into(),
+        );
     }
     proxmox_tool(settings, handler)
 }
@@ -344,7 +345,7 @@ pub fn handle_message(settings: &Settings, message: &Value) -> Option<Value> {
                 "protocolVersion": params.get("protocolVersion").cloned().unwrap_or_else(|| json!("2025-03-26")),
                 "capabilities": { "tools": {} },
                 "serverInfo": { "name": "student-mcp", "version": VERSION },
-                "instructions": "Connecte tes services étudiants sur la fenêtre student-mcp; les outils changent selon leurs identifiants."
+                "instructions": "Connect your student services in the student-mcp window; the tools follow your credentials."
             }
         }),
         "ping" => json!({ "jsonrpc": "2.0", "id": id, "result": {} }),
@@ -373,7 +374,7 @@ pub fn handle_message(settings: &Settings, message: &Value) -> Option<Value> {
         _ => json!({
             "jsonrpc": "2.0",
             "id": id,
-            "error": { "code": -32601, "message": format!("Méthode inconnue : {method}") }
+            "error": { "code": -32601, "message": format!("Unknown method: {method}") }
         }),
     };
     Some(response)
@@ -407,7 +408,7 @@ pub fn activate_moodle(
     });
     settings.save().ok();
     Ok(format!(
-        "Connecté à {} en tant que {}.",
+        "Connected to {} as {}.",
         info.get("sitename")
             .and_then(Value::as_str)
             .unwrap_or("Moodle"),
@@ -423,7 +424,7 @@ pub fn activate_proxmox(
     allow_write: bool,
 ) -> Result<String, String> {
     if !token_id.contains('!') {
-        return Err("L'ID de token ressemble à « etudiant@pam!mcp ».".into());
+        return Err("The token ID looks like \"student@pam!mcp\".".into());
     }
     let base_url = crate::config::normalize_proxmox_url(url)?;
     let client = ProxmoxClient::new(crate::config::ProxmoxConfig {
@@ -442,9 +443,9 @@ pub fn activate_proxmox(
         .filter_map(|node| node.get("node").and_then(Value::as_str).map(str::to_string))
         .collect();
     let summary = if names.is_empty() {
-        "Token connecté, mais aucun nœud visible (permissions limitées ?)".to_string()
+        "Token connected, but no node is visible (limited permissions?)".to_string()
     } else {
-        format!("Nœuds accessibles : {}", names.join(", "))
+        format!("Accessible nodes: {}", names.join(", "))
     };
     let release = version.get("release").and_then(Value::as_str).unwrap_or("");
     settings.proxmox = Some(crate::config::ProxmoxSettings {
@@ -454,7 +455,7 @@ pub fn activate_proxmox(
         allow_write: Some(allow_write),
     });
     settings.save().ok();
-    Ok(format!("Proxmox VE {release} connecté. {summary}"))
+    Ok(format!("Proxmox VE {release} connected. {summary}"))
 }
 
 pub fn disable_service(settings: &mut Settings, id: &str) {

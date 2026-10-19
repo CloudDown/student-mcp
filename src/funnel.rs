@@ -28,7 +28,7 @@ pub fn info() -> TailscaleInfo {
             logged_in: false,
             host: None,
             funnel_on: false,
-            message: Some("Tailscale n'est pas installé (tailscale.com/download).".to_string()),
+            message: Some("Tailscale is not installed (tailscale.com/download).".to_string()),
         };
     }
     let status = match run("tailscale", &["status", "--json"]) {
@@ -40,8 +40,7 @@ pub fn info() -> TailscaleInfo {
                 host: None,
                 funnel_on: false,
                 message: Some(
-                    "Connecte-toi à Tailscale : exécute `tailscale login` (ou ouvre l'app)."
-                        .to_string(),
+                    "Sign in to Tailscale: run `tailscale login` (or open the app).".to_string(),
                 ),
             }
         }
@@ -66,8 +65,7 @@ pub fn info() -> TailscaleInfo {
             host: None,
             funnel_on: false,
             message: Some(
-                "Connecte-toi à Tailscale : exécute `tailscale login` (ou ouvre l'app)."
-                    .to_string(),
+                "Sign in to Tailscale: run `tailscale login` (or open the app).".to_string(),
             ),
         };
     }
@@ -94,15 +92,14 @@ pub fn funnel_enable(port: u16) -> Result<String, String> {
     let info = info();
     if !info.present {
         return Err(
-            "Installe d'abord Tailscale (tailscale.com/download), connecte-toi, puis réessaie."
-                .into(),
+            "Install Tailscale first (tailscale.com/download), sign in, then try again.".into(),
         );
     }
     if !info.logged_in {
         return Err(info
             .message
             .clone()
-            .unwrap_or_else(|| "Connecte-toi à Tailscale d'abord : `tailscale login`.".into()));
+            .unwrap_or_else(|| "Sign in to Tailscale first: `tailscale login`.".into()));
     }
     let port_text = port.to_string();
     let direct_ok = run("tailscale", &["funnel", "--bg", &port_text])
@@ -114,12 +111,12 @@ pub fn funnel_enable(port: u16) -> Result<String, String> {
             .unwrap_or(false);
         if !sudo_ok {
             return Err(format!(
-                "Tailscale n'a pas pu activer le funnel automatiquement. Exécute une fois :\n  sudo tailscale funnel --bg {port}\n puis réessaie."
+                "Tailscale could not enable the funnel automatically. Run once:\n  sudo tailscale funnel --bg {port}\n then try again."
             ));
         }
     }
     Ok(format!(
-        "Funnel actif : certificat HTTPS de {} émis par Tailscale.",
+        "Funnel active: Tailscale issued the HTTPS certificate for {}.",
         info.host.as_deref().unwrap_or("?")
     ))
 }
@@ -128,5 +125,5 @@ pub fn funnel_enable(port: u16) -> Result<String, String> {
 pub fn funnel_disable() -> String {
     let _ = run("tailscale", &["funnel", "off"]);
     let _ = run("sudo", &["-n", "tailscale", "funnel", "off"]);
-    "Funnel retiré : l'URL publique ne répond plus.".to_string()
+    "Funnel removed: the public URL no longer answers.".to_string()
 }

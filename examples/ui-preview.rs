@@ -53,8 +53,8 @@ mod gui {
         }
         if scene == "proxmox-connected" {
             settings.proxmox = Some(crate::config::ProxmoxSettings {
-                url: Some("https://pve.exemple:8006".into()),
-                token_id: Some("etudiant@pam!student-mcp".into()),
+                url: Some("https://pve.example:8006".into()),
+                token_id: Some("student@pam!student-mcp".into()),
                 secret: Some("demo-secret".into()),
                 allow_write: Some(true),
             });
@@ -81,7 +81,7 @@ mod gui {
             funnel_info: Some(TailscaleInfo {
                 present: true,
                 logged_in: true,
-                host: Some("mon-ordinateur.exemple.ts.net".into()),
+                host: Some("my-computer.example.ts.net".into()),
                 funnel_on: false,
                 message: None,
             }),
@@ -93,7 +93,7 @@ mod gui {
             app.draft.editing = true;
         }
         if matches!(scene, "moodle-filled" | "busy") {
-            app.draft.username = "prenom.nom".into();
+            app.draft.username = "firstname.lastname".into();
             app.draft.password = "demo-password".into();
         }
         if scene == "moodle-advanced" {
@@ -101,13 +101,13 @@ mod gui {
             app.draft.other_school = true;
         }
         if scene == "error" {
-            app.notice = Some(Notice::Err("Moodle refuse la connexion. Vérifie ton identifiant et ton mot de passe. Si ton école utilise la double authentification, utilise un token mobile dans les options avancées.".into()));
+            app.notice = Some(Notice::Err("Moodle refused the connection. Check your username and password. If your school uses two-factor authentication, use a mobile token in the advanced options.".into()));
         }
         if scene == "links-public" {
             app.funnel_info = Some(TailscaleInfo {
                 present: true,
                 logged_in: true,
-                host: Some("mon-ordinateur.exemple.ts.net".into()),
+                host: Some("my-computer.example.ts.net".into()),
                 funnel_on: true,
                 message: None,
             });

@@ -55,20 +55,20 @@ impl ProxmoxClient {
                 .put(&url)
                 .set("Authorization", &authorization)
                 .call(),
-            _ => return Err("Méthode HTTP non supportée pour Proxmox.".into()),
+            _ => return Err("Unsupported HTTP method for Proxmox.".into()),
         };
         let response = call.map_err(|error| match error {
-            ureq::Error::Status(code, _) => format!("Proxmox a refusé la requête (HTTP {code}). Vérifiez l'ID de token et ses permissions."),
+            ureq::Error::Status(code, _) => format!("Proxmox refused the request (HTTP {code}). Check the token ID and its permissions."),
             _ => format!(
-                "Proxmox : connexion impossible ({}). Vérifiez l'adresse, le port (souvent 8006) et votre réseau.",
+                "Proxmox: cannot connect ({}). Check the address, the port (usually 8006) and your network.",
                 self.config.base_url
             ),
         })?;
         let envelope: Value = response
             .into_json()
-            .map_err(|_| format!("Proxmox a renvoyé une réponse non JSON à {path}."))?;
+            .map_err(|_| format!("Proxmox returned a non-JSON response at {path}."))?;
         if let Some(errors) = envelope.get("errors") {
-            return Err(format!("Proxmox a refusé la requête : {errors}"));
+            return Err(format!("Proxmox refused the request: {errors}"));
         }
         Ok(envelope.get("data").cloned().unwrap_or(Value::Null))
     }
@@ -142,7 +142,7 @@ pub fn locate_resource(client: &ProxmoxClient, vmid: i64) -> Result<Resource, St
                 .to_string();
             Some(Resource { node, status, kind })
         });
-    found.ok_or_else(|| format!("Aucune VM ou CT {vmid} n'est visible avec ce token Proxmox."))
+    found.ok_or_else(|| format!("No VM or CT {vmid} is visible with this Proxmox token."))
 }
 
 #[cfg(test)]

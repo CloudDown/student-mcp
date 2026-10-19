@@ -4,7 +4,7 @@ $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToSt
 switch ($arch) {
     'X64' { $platform = 'windows-x64' }
     'Arm64' { $platform = 'windows-arm64' }
-    default { throw "Architecture Windows non prise en charge : $arch" }
+    default { throw "Unsupported Windows architecture: $arch" }
 }
 
 $base = 'https://github.com/CloudDown/student-mcp/releases/latest/download'
@@ -15,24 +15,24 @@ $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("moodle-mcp-" + [guid]::New
 try {
     $zip = Join-Path $temp $name
     $checksum = "$zip.sha256"
-    Write-Host "Téléchargement de Moodle MCP pour $platform..."
+    Write-Host "Downloading student-mcp for $platform..."
     Invoke-WebRequest -Uri "$base/$name" -OutFile $zip -UseBasicParsing
     Invoke-WebRequest -Uri "$base/$name.sha256" -OutFile $checksum -UseBasicParsing
     $expected = ((Get-Content -Path $checksum -Raw).Trim() -split '\s+')[0]
     $actual = (Get-FileHash -Path $zip -Algorithm SHA256).Hash
     if ($expected.Length -ne 64 -or $expected -ine $actual) {
-        throw 'Le téléchargement ne correspond pas à son empreinte SHA-256.'
+        throw 'The download does not match its SHA-256 checksum.'
     }
 
     $folder = Join-Path $temp 'app'
     Expand-Archive -Path $zip -DestinationPath $folder -Force
     $binary = Join-Path $folder 'student-mcp.exe'
     if (-not (Test-Path -Path $binary -PathType Leaf)) {
-        throw 'Le téléchargement ne contient pas le programme attendu.'
+        throw 'The download does not contain the expected program.'
     }
     if ($env:MOODLE_INSTALL_CHECK_ONLY -eq '1') {
         & $binary --help
-        if ($LASTEXITCODE -ne 0) { throw "Vérification impossible (code $LASTEXITCODE)." }
+        if ($LASTEXITCODE -ne 0) { throw "Verification failed (code $LASTEXITCODE)." }
     } else {
         # Persist the binary, then pop the small window without blocking the installer.
         $installDir = Join-Path $env:LOCALAPPDATA 'student-mcp'
@@ -40,7 +40,7 @@ try {
         $destination = Join-Path $installDir 'student-mcp.exe'
         Copy-Item -Path $binary -Destination $destination -Force
         Start-Process -FilePath $destination -ArgumentList 'up'
-        Write-Host "La fenêtre student-mcp s'ouvre. Fichier installé : $destination"
+        Write-Host "The student-mcp window is opening. Installed file: $destination"
     }
 } finally {
     Remove-Item -Path $temp -Recurse -Force -ErrorAction SilentlyContinue

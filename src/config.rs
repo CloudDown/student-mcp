@@ -210,22 +210,20 @@ fn parse_site_url(input: &str) -> Result<Url, String> {
     let trimmed = input.trim().trim_end_matches('/');
     let parsed = Url::parse(trimmed)
         .or_else(|_| Url::parse(&format!("https://{trimmed}")))
-        .map_err(|_| "L'adresse du site n'est pas une URL valide.".to_string())?;
+        .map_err(|_| "The site address is not a valid URL.".to_string())?;
     if parsed.username() != ""
         || parsed.password().is_some()
         || parsed.query().is_some()
         || parsed.fragment().is_some()
     {
-        return Err(
-            "L'adresse ne doit pas contenir d'identifiants, de requête ou de fragment.".to_string(),
-        );
+        return Err("The address must not contain credentials, a query or a fragment.".to_string());
     }
     let localhost = matches!(
         parsed.host_str(),
         Some("localhost") | Some("127.0.0.1") | Some("[::1]")
     );
     if parsed.scheme() != "https" && !(parsed.scheme() == "http" && localhost) {
-        return Err("L'adresse doit utiliser HTTPS (HTTP seulement pour localhost).".to_string());
+        return Err("The address must use HTTPS (HTTP is only allowed for localhost).".to_string());
     }
     Ok(parsed)
 }
@@ -238,8 +236,7 @@ pub fn normalize_moodle_url(input: &str) -> Result<String, String> {
         // Case-insensitive suffix cut: rebuild from the prefix.
         let original = url.as_str();
         let cut = &original[..original.len() - suffix.len()];
-        url = Url::parse(cut)
-            .map_err(|_| "L'adresse du site n'est pas une URL valide.".to_string())?;
+        url = Url::parse(cut).map_err(|_| "The site address is not a valid URL.".to_string())?;
     }
     let mut form = url.origin().ascii_serialization();
     let path = url.path().trim_end_matches('/').to_string();
@@ -254,12 +251,12 @@ pub fn normalize_proxmox_url(input: &str) -> Result<String, String> {
     let original = url.as_str();
     if original.to_lowercase().ends_with("/api2/json") {
         url = Url::parse(&original[..original.len() - "/api2/json".len()])
-            .map_err(|_| "L'adresse du site n'est pas une URL valide.".to_string())?;
+            .map_err(|_| "The site address is not a valid URL.".to_string())?;
     }
     let path = url.path().trim_end_matches('/');
     if !path.is_empty() {
         return Err(
-            "L'adresse Proxmox doit pointer vers la racine de l'hôte (ex. https://mon-pve:8006)."
+            "The Proxmox address must point to the host root (e.g. https://my-pve:8006)."
                 .to_string(),
         );
     }
@@ -379,8 +376,8 @@ mod tests {
             "https://pve:8006"
         );
         assert_eq!(
-            normalize_proxmox_url("pve.exemple.ca").unwrap(),
-            "https://pve.exemple.ca"
+            normalize_proxmox_url("pve.example.ca").unwrap(),
+            "https://pve.example.ca"
         );
         assert_eq!(
             normalize_moodle_url("moodle.polymtl.ca/").unwrap(),

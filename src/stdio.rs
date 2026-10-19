@@ -20,7 +20,9 @@ pub fn run() {
         // Each call re-reads the settings so changes from the popup apply immediately.
         let settings = Settings::load();
         if let Some(reply) = handle_message(&settings, &message) {
-            let Ok(text) = serde_json::to_string(&reply) else { break };
+            let Ok(text) = serde_json::to_string(&reply) else {
+                break;
+            };
             if writeln!(out, "{text}").and_then(|_| out.flush()).is_err() {
                 break; // client is gone: shut down with it
             }

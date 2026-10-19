@@ -28,7 +28,7 @@ pub fn serve(listener: TcpListener) -> Result<(), String> {
             Err(_) => continue, // transient accept failure: keep serving
         }
     }
-    Err("Serveur local arrêté.".to_string())
+    Err("Local server stopped.".to_string())
 }
 
 struct Request {
@@ -79,7 +79,7 @@ fn read_request(stream: &mut TcpStream) -> Result<Option<Request>, HttpError> {
             break position;
         }
         if buffer.len() > MAX_HEADER {
-            return Err((431, "{\"error\":\"En-têtes trop gros.\"}".to_string()));
+            return Err((431, "{\"error\":\"Headers too large.\"}".to_string()));
         }
         let read = stream.read(&mut chunk).map_err(broken)?;
         if read == 0 {
@@ -96,7 +96,7 @@ fn read_request(stream: &mut TcpStream) -> Result<Option<Request>, HttpError> {
     let method = first.next().unwrap_or_default().to_uppercase();
     let target = first.next().unwrap_or_default().to_string();
     if method.is_empty() || target.is_empty() {
-        return Err((400, "{\"error\":\"Requête HTTP mal formée.\"}".to_string()));
+        return Err((400, "{\"error\":\"Malformed HTTP request.\"}".to_string()));
     }
     let mut content_length = 0usize;
     let mut session = None;
@@ -118,10 +118,7 @@ fn read_request(stream: &mut TcpStream) -> Result<Option<Request>, HttpError> {
         }
     }
     if content_length > MAX_BODY {
-        return Err((
-            413,
-            "{\"error\":\"Corps de requête trop gros.\"}".to_string(),
-        ));
+        return Err((413, "{\"error\":\"Request body too large.\"}".to_string()));
     }
     let mut body: Vec<u8> = Vec::new();
     let body_start = header_end + 4;
@@ -149,7 +146,7 @@ fn read_request(stream: &mut TcpStream) -> Result<Option<Request>, HttpError> {
 }
 
 fn broken(_: impl Sized) -> HttpError {
-    (400, "{\"error\":\"Connexion interrompue.\"}".to_string())
+    (400, "{\"error\":\"Connection interrupted.\"}".to_string())
 }
 
 fn find_double_crlf(buffer: &[u8]) -> Option<usize> {
@@ -193,7 +190,7 @@ fn route(
             return (
                 401,
                 vec![("WWW-Authenticate".to_string(), "Bearer".to_string())],
-                json!({ "error": "Token manquant ou invalide." })
+                json!({ "error": "Missing or invalid token." })
                     .to_string()
                     .into_bytes(),
             );
@@ -203,7 +200,7 @@ fn route(
             "GET" => (
                 405,
                 vec![("Allow".to_string(), "POST".to_string())],
-                json!({ "jsonrpc": "2.0", "error": { "code": -32601, "message": "GET non supporté : ce serveur répond en JSON direct (POST seulement)." } })
+                json!({ "jsonrpc": "2.0", "error": { "code": -32601, "message": "GET not supported: this server answers with plain JSON (POST only)." } })
                     .to_string()
                     .into_bytes(),
             ),
@@ -216,16 +213,16 @@ fn route(
                 (204, Vec::new(), Vec::new())
             }
             "POST" => post_mcp(request, sessions),
-            _ => jsonrpc_error(405, "Méthode HTTP non supportée."),
+            _ => jsonrpc_error(405, "Unsupported HTTP method."),
         }
     } else if request.path == "/" || request.path.is_empty() {
         let message = json!({
             "app": "student-mcp",
-            "hint": "Pointe ton assistant IA vers /mcp/<token> ; le token est dans la fenêtre student-mcp."
+            "hint": "Point your AI assistant at /mcp/<token>; the token is in the student-mcp window."
         });
         (200, Vec::new(), message.to_string().into_bytes())
     } else {
-        jsonrpc_error(404, "Page introuvable.")
+        jsonrpc_error(404, "Not found.")
     }
 }
 
@@ -249,7 +246,7 @@ fn post_mcp(
             return (
                 400,
                 Vec::new(),
-                json!({ "jsonrpc": "2.0", "error": { "code": -32700, "message": "JSON invalide." } }).to_string().into_bytes(),
+                json!({ "jsonrpc": "2.0", "error": { "code": -32700, "message": "Invalid JSON." } }).to_string().into_bytes(),
             );
         }
     };
@@ -284,7 +281,7 @@ fn post_mcp(
             })
             .unwrap_or(false);
         if !known {
-            return jsonrpc_error(400, "Session MCP inconnue : réinitialise d'abord.");
+            return jsonrpc_error(400, "Unknown MCP session: initialize first.");
         }
     }
     let settings = Settings::load();

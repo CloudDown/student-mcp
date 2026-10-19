@@ -1,63 +1,80 @@
-# Guide student-mcp
+# student-mcp guide
 
-Petite fenêtre + serveur MCP local. Tout-en-un, aucun framework web.
+A small window plus a local MCP server. All in one, no web framework.
 
-## 1. Ce que tu vois à l'ouverture
+## 1. What you see when it opens
 
 ```
 student-mcp  v0.2.0
-● Serveur MCP local : 127.0.0.1:8420
-Connecteur local (Claude Desktop, OpenCode…):
-  http://127.0.0.1:8420/mcp/<token>            [Copier]
-Services
-  [M   Moodle  — Actif / « Cours, devoirs, notes… »]
-  [P   Proxmox — Actif / « VMs et containers » ]
-  [D   Dossier étudiant — Bientôt]
-  [@   Courriel Poly  — Bientôt]
-Lien public (optionnel)
-  [Vérifier Tailscale] ou [Publier via Tailscale Funnel]
+● Local MCP server: 127.0.0.1:8420
+Local connector (Claude Desktop, OpenCode…):
+  http://127.0.0.1:8420/mcp/<token>            [Copy link]
+Your services
+  [M   Moodle  — Connected / "Courses, assignments, grades…"]
+  [P   Proxmox — Connected / "VMs and containers"           ]
+  [D   Student record — Coming soon]
+  [@   Poly email     — Coming soon]
+[View the link for AI tools]
 ```
 
-## 2. Connecter un service
+Services you have already connected show up in green, with a summary and a
+**Disconnect** button instead of the credential form.
 
-**Moodle.** Deux méthodes.
-1. *Identifiant Poly* : prenom.nom + mot de passe → le binaire appelle `/login/token.php` avec le service mobile `moodle_mobile_app` ; seul le **token** est sauvegardé, jamais le mot de passe.
-2. *Token existant* : colle un token mobile (plus sûr si tu as une double auth).
+## 2. Connecting a service
 
-**Proxmox.** Datacenter → Permissions → API Tokens → crée un token (par ex. `etudiant@pam!mcp`), copie son *secret*, entre `https://ton-pve:8006`, l'ID du token et le secret.
+**Moodle.** Two ways.
+1. *Poly credentials*: firstname.lastname + password → the binary calls
+   `/login/token.php` with the `moodle_mobile_app` service; only the **token**
+   is saved, never the password.
+2. *Existing token*: paste a mobile token (safer when you use two-factor auth).
 
-Si le serveur a un certificat autosigné, l'app refusera la connexion (HTTPS strict) : mets un vrai certificat ou fais signer le PVE.
+**Proxmox.** Datacenter → Permissions → API Tokens → create a token (for
+example `student@pam!mcp`), copy its *secret*, then enter
+`https://your-pve:8006`, the token ID and the secret.
 
-## 3. Assister IA local
+If the server uses a self-signed certificate the app refuses the connection
+(strict HTTPS): use a real certificate or have the PVE certificate signed.
 
-- **Claude Desktop / OpenCode / beaucoup d'autres** : indique le binaire en commande stdio :
-  - macOS / Linux : `~/.student-mcp/bin/student-mcp`
-  - Windows : `%LOCALAPPDATA%\student-mcp\student-mcp.exe`
-- La liste des outils suit la fenêtre : ajoute/enlève un service, les outils apparaissent/disparaissent au prochain appel (config relue à chaque commande).
+## 3. Local AI assistant
 
-## 4. Lien public pour le web Claude
+- **Claude Desktop / OpenCode / many others**: point the assistant at the binary
+  as a stdio command:
+  - macOS / Linux: `~/.student-mcp/bin/student-mcp`
+  - Windows: `%LOCALAPPDATA%\student-mcp\student-mcp.exe`
+- The tool list follows the window: add or remove a service and the tools appear
+  or disappear on the next call (the config is re-read every time).
 
-1. Installe et connecte **Tailscale** (une fois) : `tailscale login`.
-2. Dans la fenêtre → **Publier via Tailscale Funnel** ; si le daemon Linux demande sudo, la fenêtre affiche la commande exacte (`sudo tailscale funnel --bg 8420`).
-3. Colle `https://ton-machine.ts.net/mcp/<token>` dans Claude (connecteur personnalisé).
-4. Pour couper : **Retirer l'URL publique** ou `tailscale funnel off`.
+## 4. Public link for Claude web
 
-Le token protège l'URL : sans lui 401. Tu peux recharger le token en supprimant `gateway.token` dans `~/.student-mcp.json`.
+1. Install and sign in to **Tailscale** once: `tailscale login`.
+2. In the window → **Create my public link**. If the Linux daemon needs sudo,
+   the window shows the exact command (`sudo tailscale funnel --bg 8420`).
+3. Paste `https://your-machine.ts.net/mcp/<token>` into Claude
+   (custom connector) and choose "Continue anyway" when it warns about OAuth.
+4. To stop: **Remove the public link**, or run `tailscale funnel off`.
 
-## 5. Commandes
+The token protects the URL: without it you get a 401. You can rotate the token
+by deleting `gateway.token` in `~/.student-mcp.json`.
+
+## 5. Commands
 
 ```
-student-mcp            # MCP stdio (assistant IA local)
-student-mcp up         # fenêtre + serveur HTTP local
+student-mcp            # MCP stdio (local AI assistant)
+student-mcp up         # window + local HTTP server
 student-mcp up --port=9000
-student-mcp install    # réouvre la fenêtre (posée par l'installateur)
+student-mcp install    # reopens the window (used by the installer)
 student-mcp version
 ```
 
-## 6. Dépannage
+## 6. Troubleshooting
 
-- **La fenêtre ne s'ouvre pas (SSH)** : la fenêtre a besoin d'un écran ; sur un serveur headless, utilise uniquement le mode stdio.
-- **Port déjà pris** : `up` essaie automatiquement 8420→8429 ; force-en un avec `--port=`.
-- **Moodle refuse le login SSO** : la double auth bloque `/login/token.php` → passe par la méthode token existant.
-- **Le Funnel ne part pas** : Tailscale installé ? connecté ? (`tailscale status`) puis `sudo tailscale funnel --bg 8420`.
-- **Certificat PVE invalide** : l'app refuse en HTTPS strict ; corrige le certificat du serveur.
+- **The window does not open (SSH)**: the window needs a display; on a headless
+  server use the stdio mode only.
+- **Port already taken**: `up` tries 8420→8429 automatically; force one with
+  `--port=`.
+- **Moodle rejects the SSO login**: two-factor auth blocks `/login/token.php` →
+  use the existing-token method.
+- **The Funnel does not start**: is Tailscale installed? signed in?
+  (`tailscale status`) then `sudo tailscale funnel --bg 8420`.
+- **Invalid PVE certificate**: the app refuses under strict HTTPS; fix the
+  server certificate.
