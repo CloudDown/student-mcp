@@ -1,4 +1,4 @@
-use crate::config::{token_matches, random_hex, Settings};
+use crate::config::{random_hex, token_matches, Settings};
 use crate::mcp::handle_message;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -41,20 +41,28 @@ struct Request {
     close: bool,
 }
 
-fn connection(mut stream: TcpStream, sessions: Arc<Mutex<HashMap<String, ()>>>) -> std::io::Result<()> {
+fn connection(
+    mut stream: TcpStream,
+    sessions: Arc<Mutex<HashMap<String, ()>>>,
+) -> std::io::Result<()> {
     loop {
         let request = match read_request(&mut stream) {
             Ok(Some(request)) => request,
             Ok(None) => return Ok(()), // client closed cleanly
             Err(error) => {
                 let (status, body) = error;
-                respond(&stream, status, &[("Content-Type", "application/json; charset=utf-8")], body.as_bytes())?;
+                respond(
+                    &stream,
+                    status,
+                    &[("Content-Type", "application/json; charset=utf-8")],
+                    body.as_bytes(),
+                )?;
                 return Ok(());
             }
         };
         let (status, headers, body) = route(&request, &sessions);
         let terminate = request.close || status == 204;
-        write_response(&stream, status, headers, &body, !terminate)?; 
+        write_response(&stream, status, headers, &body, !terminate)?;
         if terminate {
             return Ok(());
         }
@@ -110,7 +118,10 @@ fn read_request(stream: &mut TcpStream) -> Result<Option<Request>, HttpError> {
         }
     }
     if content_length > MAX_BODY {
-        return Err((413, "{\"error\":\"Corps de requête trop gros.\"}".to_string()));
+        return Err((
+            413,
+            "{\"error\":\"Corps de requête trop gros.\"}".to_string(),
+        ));
     }
     let mut body: Vec<u8> = Vec::new();
     let body_start = header_end + 4;
@@ -126,7 +137,15 @@ fn read_request(stream: &mut TcpStream) -> Result<Option<Request>, HttpError> {
     }
     body.truncate(content_length);
     let path = target.split('?').next().unwrap_or("").to_string();
-    Ok(Some(Request { method, path, accept_sse, session, authorization, body, close }))
+    Ok(Some(Request {
+        method,
+        path,
+        accept_sse,
+        session,
+        authorization,
+        body,
+        close,
+    }))
 }
 
 fn broken(_: impl Sized) -> HttpError {
@@ -138,7 +157,10 @@ fn find_double_crlf(buffer: &[u8]) -> Option<usize> {
         return None;
     }
     (0..=buffer.len() - 4).find(|index| {
-        buffer[*index] == b'\r' && buffer[index + 1] == b'\n' && buffer[index + 2] == b'\r' && buffer[index + 3] == b'\n'
+        buffer[*index] == b'\r'
+            && buffer[index + 1] == b'\n'
+            && buffer[index + 2] == b'\r'
+            && buffer[index + 3] == b'\n'
     })
 }
 
@@ -151,26 +173,37 @@ fn bearer(authorization: &Option<String>) -> Option<String> {
         .map(str::to_string)
 }
 
-fn route(request: &Request, sessions: &Arc<Mutex<HashMap<String, ()>>>) -> (u16, Vec<(String, String)>, Vec<u8>) {
+fn route(
+    request: &Request,
+    sessions: &Arc<Mutex<HashMap<String, ()>>>,
+) -> (u16, Vec<(String, String)>, Vec<u8>) {
     if request.path == "/mcp" || request.path.starts_with("/mcp/") {
         let settings = Settings::load();
         let gateway_token = settings.gateway().token;
-        let path_token = request.path["/mcp".len()..].trim_start_matches('/').trim().to_string();
-        let provided = bearer(&request.authorization).or(if path_token.is_empty() { None } else { Some(path_token) });
+        let path_token = request.path["/mcp".len()..]
+            .trim_start_matches('/')
+            .trim()
+            .to_string();
+        let provided = bearer(&request.authorization).or(if path_token.is_empty() {
+            None
+        } else {
+            Some(path_token)
+        });
         if !token_matches(&gateway_token, provided.as_deref()) {
             return (
                 401,
                 vec![("WWW-Authenticate".to_string(), "Bearer".to_string())],
-                json!({ "error": "Token manquant ou invalide." }).to_string().into_bytes(),
+                json!({ "error": "Token manquant ou invalide." })
+                    .to_string()
+                    .into_bytes(),
             );
         }
         match request.method.as_str() {
-            "OPTIONS" => (
-                204,
-                vec![],
-                Vec::new(),
+            "OPTIONS" => (204, vec![], Vec::new()),
+            "GET" => jsonrpc_error(
+                405,
+                "GET non supporté : ce serveur répond en JSON direct (POST seulement).",
             ),
-            "GET" => jsonrpc_error(405, "GET non supporté : ce serveur répond en JSON direct (POST seulement)."),
             "DELETE" => {
                 if let Some(session) = &request.session {
                     if let Ok(mut map) = sessions.lock() {
@@ -197,11 +230,16 @@ fn jsonrpc_error(status: u16, message: &str) -> (u16, Vec<(String, String)>, Vec
     (
         status,
         Vec::new(),
-        json!({ "jsonrpc": "2.0", "error": { "code": -32601, "message": message } }).to_string().into_bytes(),
+        json!({ "jsonrpc": "2.0", "error": { "code": -32601, "message": message } })
+            .to_string()
+            .into_bytes(),
     )
 }
 
-fn post_mcp(request: &Request, sessions: &Arc<Mutex<HashMap<String, ()>>>) -> (u16, Vec<(String, String)>, Vec<u8>) {
+fn post_mcp(
+    request: &Request,
+    sessions: &Arc<Mutex<HashMap<String, ()>>>,
+) -> (u16, Vec<(String, String)>, Vec<u8>) {
     let message: Value = match serde_json::from_slice(&request.body) {
         Ok(message) => message,
         Err(_) => {
@@ -216,7 +254,11 @@ fn post_mcp(request: &Request, sessions: &Arc<Mutex<HashMap<String, ()>>>) -> (u
     if is_notification {
         return (202, Vec::new(), Vec::new());
     }
-    let method = message.get("method").and_then(Value::as_str).unwrap_or_default().to_string();
+    let method = message
+        .get("method")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
     let mut headers: Vec<(String, String)> = Vec::new();
     if method == "initialize" {
         let fresh = random_hex(16);
@@ -231,7 +273,12 @@ fn post_mcp(request: &Request, sessions: &Arc<Mutex<HashMap<String, ()>>>) -> (u
         let known = request
             .session
             .as_ref()
-            .map(|session| sessions.lock().map(|map| map.contains_key(session)).unwrap_or(false))
+            .map(|session| {
+                sessions
+                    .lock()
+                    .map(|map| map.contains_key(session))
+                    .unwrap_or(false)
+            })
             .unwrap_or(false);
         if !known {
             return jsonrpc_error(400, "Session MCP inconnue : réinitialise d'abord.");
@@ -248,7 +295,13 @@ fn post_mcp(request: &Request, sessions: &Arc<Mutex<HashMap<String, ()>>>) -> (u
     }
 }
 
-fn write_response(stream: &TcpStream, status: u16, headers: Vec<(String, String)>, body: &[u8], keep_alive: bool) -> std::io::Result<()> {
+fn write_response(
+    stream: &TcpStream,
+    status: u16,
+    headers: Vec<(String, String)>,
+    body: &[u8],
+    keep_alive: bool,
+) -> std::io::Result<()> {
     let mut head = format!("HTTP/1.1 {status}\r\n");
     for (key, value) in &headers {
         head.push_str(&format!("{key}: {value}\r\n"));
@@ -259,7 +312,11 @@ fn write_response(stream: &TcpStream, status: u16, headers: Vec<(String, String)
         head.push_str("Cache-Control: no-store\r\n");
         head.push_str("Access-Control-Allow-Origin: *\r\n");
     }
-    head.push_str(if keep_alive { "Connection: keep-alive\r\n" } else { "Connection: close\r\n" });
+    head.push_str(if keep_alive {
+        "Connection: keep-alive\r\n"
+    } else {
+        "Connection: close\r\n"
+    });
     head.push_str("\r\n");
     let mut response = head.into_bytes();
     response.extend_from_slice(body);
@@ -269,7 +326,15 @@ fn write_response(stream: &TcpStream, status: u16, headers: Vec<(String, String)
     Ok(())
 }
 
-fn respond(stream: &TcpStream, status: u16, headers: &[(&str, &str)], body: &[u8]) -> std::io::Result<()> {
-    let headers: Vec<(String, String)> = headers.iter().map(|(k, v)| ((*k).to_string(), (*v).to_string())).collect();
+fn respond(
+    stream: &TcpStream,
+    status: u16,
+    headers: &[(&str, &str)],
+    body: &[u8],
+) -> std::io::Result<()> {
+    let headers: Vec<(String, String)> = headers
+        .iter()
+        .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+        .collect();
     write_response(stream, status, headers, body, false)
 }

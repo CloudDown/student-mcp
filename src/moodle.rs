@@ -4,7 +4,14 @@ use std::time::Duration;
 
 const MOBILE_SERVICE: &str = "moodle_mobile_app";
 const TIMEOUT: Duration = Duration::from_secs(30);
-const SENSITIVE_KEYS: [&str; 6] = ["wstoken", "token", "userprivateaccesskey", "privateaccesskey", "accesskey", "password"];
+const SENSITIVE_KEYS: [&str; 6] = [
+    "wstoken",
+    "token",
+    "userprivateaccesskey",
+    "privateaccesskey",
+    "accesskey",
+    "password",
+];
 
 fn agent() -> ureq::Agent {
     ureq::AgentBuilder::new().timeout(TIMEOUT).build()
@@ -35,9 +42,18 @@ pub fn request_mobile_token(site: &str, username: &str, password: &str) -> Resul
         .post(&format!("{base}/login/token.php"))
         .set("Content-Type", "application/x-www-form-urlencoded")
         .send_string(&body)
-        .map_err(|_| "Connexion à Moodle impossible. Vérifiez l'adresse du site et votre connexion Internet.".to_string())?;
-    let result: Value = response.into_json().map_err(|_| "Moodle n'a pas renvoyé de token.".to_string())?;
-    if let Some(token) = result.get("token").and_then(Value::as_str).filter(|t| !t.trim().is_empty()) {
+        .map_err(|_| {
+            "Connexion à Moodle impossible. Vérifiez l'adresse du site et votre connexion Internet."
+                .to_string()
+        })?;
+    let result: Value = response
+        .into_json()
+        .map_err(|_| "Moodle n'a pas renvoyé de token.".to_string())?;
+    if let Some(token) = result
+        .get("token")
+        .and_then(Value::as_str)
+        .filter(|t| !t.trim().is_empty())
+    {
         return Ok(token.trim().to_string());
     }
     if result.get("errorcode").and_then(Value::as_str) == Some("invalidlogin") {
@@ -76,7 +92,9 @@ impl MoodleClient {
             .set("Content-Type", "application/x-www-form-urlencoded")
             .send_string(&urlencoded(&form))
             .map_err(error_for_transport)?;
-        let value: Value = response.into_json().map_err(|_| "Moodle a renvoyé une réponse non JSON.".to_string())?;
+        let value: Value = response
+            .into_json()
+            .map_err(|_| "Moodle a renvoyé une réponse non JSON.".to_string())?;
         Ok(scrub(value, &self.token))
     }
 
@@ -92,7 +110,10 @@ impl MoodleClient {
 fn error_for_transport(error: ureq::Error) -> String {
     match error {
         ureq::Error::Status(code, _) => format!("Moodle a renvoyé une erreur HTTP {code}."),
-        _ => "Connexion à Moodle impossible. Vérifiez l'adresse du site et votre connexion Internet.".into(),
+        _ => {
+            "Connexion à Moodle impossible. Vérifiez l'adresse du site et votre connexion Internet."
+                .into()
+        }
     }
 }
 
@@ -107,7 +128,11 @@ pub fn append_params(value: &Value, form: &mut Vec<(String, String)>, key: &str)
         }
         Value::Object(map) => {
             for (child, item) in map {
-                let child_key = if key.is_empty() { child.clone() } else { format!("{key}[{child}]") };
+                let child_key = if key.is_empty() {
+                    child.clone()
+                } else {
+                    format!("{key}[{child}]")
+                };
                 append_params(item, form, &child_key);
             }
         }
@@ -119,7 +144,11 @@ pub fn append_params(value: &Value, form: &mut Vec<(String, String)>, key: &str)
                 Value::String(text) => text.clone(),
                 _ => return,
             };
-            let key = if key.is_empty() { "unnamed".to_string() } else { key.to_string() };
+            let key = if key.is_empty() {
+                "unnamed".to_string()
+            } else {
+                key.to_string()
+            };
             form.push((key, text));
         }
     }
@@ -129,11 +158,16 @@ pub fn append_params(value: &Value, form: &mut Vec<(String, String)>, key: &str)
 pub fn scrub(value: Value, token: &str) -> Value {
     match value {
         Value::String(text) => Value::String(text.replace(token, "[redacted]")),
-        Value::Array(items) => Value::Array(items.into_iter().map(|item| scrub(item, token)).collect()),
+        Value::Array(items) => {
+            Value::Array(items.into_iter().map(|item| scrub(item, token)).collect())
+        }
         Value::Object(map) => Value::Object(
             map.into_iter()
                 .map(|(key, item)| {
-                    let cleaned = if SENSITIVE_KEYS.iter().any(|sensitive| key.eq_ignore_ascii_case(sensitive)) {
+                    let cleaned = if SENSITIVE_KEYS
+                        .iter()
+                        .any(|sensitive| key.eq_ignore_ascii_case(sensitive))
+                    {
                         Value::String("[redacted]".into())
                     } else {
                         scrub(item, token)
@@ -153,7 +187,11 @@ mod tests {
     #[test]
     fn params_flatten_like_moodle_expects() {
         let mut form = Vec::new();
-        append_params(&json!({ "courseid": 42, "courseids": [7, 8] }), &mut form, "");
+        append_params(
+            &json!({ "courseid": 42, "courseids": [7, 8] }),
+            &mut form,
+            "",
+        );
         assert!(form.contains(&("courseid".to_string(), "42".to_string())));
         assert!(form.contains(&("courseids[0]".to_string(), "7".to_string())));
         assert!(form.contains(&("courseids[1]".to_string(), "8".to_string())));
@@ -161,7 +199,10 @@ mod tests {
 
     #[test]
     fn scrub_hides_tokens_and_passwords() {
-        let value = scrub(json!({ "wstoken": "SECRET", "other": "contains SECRET here", "ok": 1 }), "SECRET");
+        let value = scrub(
+            json!({ "wstoken": "SECRET", "other": "contains SECRET here", "ok": 1 }),
+            "SECRET",
+        );
         assert_eq!(value["wstoken"], json!("[redacted]"));
         assert_eq!(value["other"], json!("contains [redacted] here"));
         assert_eq!(value["ok"], json!(1));

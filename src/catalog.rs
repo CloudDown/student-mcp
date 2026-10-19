@@ -18,7 +18,11 @@ pub struct Catalog {
 impl Catalog {
     pub fn load() -> Catalog {
         let parsed: Value = serde_json::from_str(CATALOG_JSON).unwrap_or(Value::Null);
-        let release = parsed.get("moodle").and_then(|moodle| moodle.get("release")).and_then(Value::as_str).map(str::to_string);
+        let release = parsed
+            .get("moodle")
+            .and_then(|moodle| moodle.get("release"))
+            .and_then(Value::as_str)
+            .map(str::to_string);
         let entries = parsed
             .get("functions")
             .and_then(Value::as_array)
@@ -27,9 +31,17 @@ impl Catalog {
             .into_iter()
             .filter_map(|entry| {
                 let name = entry.get("name").and_then(Value::as_str)?.to_string();
-                let description = entry.get("description").and_then(Value::as_str).unwrap_or("").to_string();
+                let description = entry
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
                 let write = entry.get("type").and_then(Value::as_str) == Some("write");
-                Some(CatalogEntry { name, description, write })
+                Some(CatalogEntry {
+                    name,
+                    description,
+                    write,
+                })
             })
             .collect();
         Catalog { entries, release }
@@ -44,7 +56,11 @@ impl Catalog {
         let needle = query.trim().to_lowercase();
         self.entries
             .iter()
-            .filter(|entry| needle.is_empty() || entry.name.to_lowercase().contains(&needle) || entry.description.to_lowercase().contains(&needle))
+            .filter(|entry| {
+                needle.is_empty()
+                    || entry.name.to_lowercase().contains(&needle)
+                    || entry.description.to_lowercase().contains(&needle)
+            })
             .take(limit.max(1))
             .cloned()
             .collect()
@@ -80,7 +96,9 @@ mod tests {
         let catalog = Catalog::load();
         assert!(catalog.entries.len() > 700);
         assert!(catalog.release.is_some());
-        let entry = catalog.get("core_enrol_get_users_courses").expect("read function in catalog");
+        let entry = catalog
+            .get("core_enrol_get_users_courses")
+            .expect("read function in catalog");
         assert!(!entry.write);
     }
 
@@ -89,6 +107,8 @@ mod tests {
         let catalog = Catalog::load();
         let results = catalog.search("enrol_get_users", 5);
         assert!(!results.is_empty());
-        assert!(results.iter().any(|entry| entry.name == "core_enrol_get_users_courses"));
+        assert!(results
+            .iter()
+            .any(|entry| entry.name == "core_enrol_get_users_courses"));
     }
 }

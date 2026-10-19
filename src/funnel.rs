@@ -39,12 +39,19 @@ pub fn info() -> TailscaleInfo {
                 logged_in: false,
                 host: None,
                 funnel_on: false,
-                message: Some("Connecte-toi à Tailscale : exécute `tailscale login` (ou ouvre l'app).".to_string()),
+                message: Some(
+                    "Connecte-toi à Tailscale : exécute `tailscale login` (ou ouvre l'app)."
+                        .to_string(),
+                ),
             }
         }
     };
     let parsed: Option<Value> = serde_json::from_str(&output_text(&status)).ok();
-    let backend_running = parsed.as_ref().and_then(|v| v.get("BackendState")).and_then(Value::as_str) == Some("Running");
+    let backend_running = parsed
+        .as_ref()
+        .and_then(|v| v.get("BackendState"))
+        .and_then(Value::as_str)
+        == Some("Running");
     let host = parsed
         .as_ref()
         .and_then(|v| v.get("Self"))
@@ -58,12 +65,23 @@ pub fn info() -> TailscaleInfo {
             logged_in: false,
             host: None,
             funnel_on: false,
-            message: Some("Connecte-toi à Tailscale : exécute `tailscale login` (ou ouvre l'app).".to_string()),
+            message: Some(
+                "Connecte-toi à Tailscale : exécute `tailscale login` (ou ouvre l'app)."
+                    .to_string(),
+            ),
         };
     }
-    let serve_status = run("tailscale", &["serve", "status"]).map(|output| output_text(&output)).unwrap_or_default();
+    let serve_status = run("tailscale", &["serve", "status"])
+        .map(|output| output_text(&output))
+        .unwrap_or_default();
     let funnel_on = serve_status.to_lowercase().contains("funnel");
-    TailscaleInfo { present: true, logged_in: true, host, funnel_on, message: None }
+    TailscaleInfo {
+        present: true,
+        logged_in: true,
+        host,
+        funnel_on,
+        message: None,
+    }
 }
 
 /// Public HTTPS connector URL advertised through Tailscale Funnel.
@@ -75,10 +93,16 @@ pub fn public_connector_url(host: &str, token: &str) -> String {
 pub fn funnel_enable(port: u16) -> Result<String, String> {
     let info = info();
     if !info.present {
-        return Err("Installe d'abord Tailscale (tailscale.com/download), connecte-toi, puis réessaie.".into());
+        return Err(
+            "Installe d'abord Tailscale (tailscale.com/download), connecte-toi, puis réessaie."
+                .into(),
+        );
     }
     if !info.logged_in {
-        return Err(info.message.clone().unwrap_or_else(|| "Connecte-toi à Tailscale d'abord : `tailscale login`.".into()));
+        return Err(info
+            .message
+            .clone()
+            .unwrap_or_else(|| "Connecte-toi à Tailscale d'abord : `tailscale login`.".into()));
     }
     let port_text = port.to_string();
     let direct_ok = run("tailscale", &["funnel", "--bg", &port_text])
