@@ -388,7 +388,7 @@ mod tests {
             "https://moodle.polymtl.ca"
         );
         assert!(normalize_proxmox_url("https://user:pass@pve:8006").is_err());
-        assert!(normalize_proxmox_url("https://pve:8006/dossier").is_err());
+        assert!(normalize_proxmox_url("https://pve:8006/folder").is_err());
         assert!(normalize_moodle_url("ftp://moodle.polymtl.ca").is_err());
     }
 }
