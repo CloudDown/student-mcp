@@ -232,6 +232,9 @@ impl eframe::App for App {
                             ui.set_width(bounds.width());
                             egui::ScrollArea::vertical()
                                 .id_salt(("screen", self.screen))
+                                .scroll_bar_visibility(
+                                    egui::scroll_area::ScrollBarVisibility::AlwaysHidden,
+                                )
                                 .auto_shrink([false, false])
                                 .show(ui, |ui| {
                                     ui.set_width(ui.available_width());
@@ -264,26 +267,20 @@ impl App {
         let _ = self.settings.save();
     }
 
-    /// Small `− / % / +` control pinned to the bottom-right corner.
+    /// Small bordered-less `− / +` control pinned to the bottom-right corner.
     fn scale_control(&mut self, ctx: &Context) {
         let step = crate::config::SCALE_STEP;
-        let percent = format!("{} %", (self.scale * 100.0).round() as i32);
         egui::Area::new(egui::Id::new("scale-control"))
             .anchor(Align2::RIGHT_BOTTOM, [-10.0, -10.0])
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
                 let mut changed = None;
                 ui.horizontal(|row| {
-                    row.spacing_mut().item_spacing = Vec2::new(4.0, 0.0);
-                    if Self::round_button(row, "−", self.scale <= crate::config::SCALE_MIN) {
+                    row.spacing_mut().item_spacing = Vec2::new(10.0, 0.0);
+                    if Self::zoom_button(row, "−", self.scale <= crate::config::SCALE_MIN) {
                         changed = Some(-step);
                     }
-                    row.add(
-                        egui::Label::new(RichText::new(&percent).size(10.0).color(SUBTLE))
-                            .sense(Sense::hover()),
-                    )
-                    .on_hover_text("Taille de l'interface");
-                    if Self::round_button(row, "+", self.scale >= crate::config::SCALE_MAX) {
+                    if Self::zoom_button(row, "+", self.scale >= crate::config::SCALE_MAX) {
                         changed = Some(step);
                     }
                 });
@@ -293,14 +290,10 @@ impl App {
             });
     }
 
-    fn round_button(ui: &mut Ui, label: &str, disabled: bool) -> bool {
+    fn zoom_button(ui: &mut Ui, label: &str, disabled: bool) -> bool {
         ui.add_enabled(
             !disabled,
-            Button::new(RichText::new(label).size(13.0).color(INK))
-                .min_size(Vec2::splat(24.0))
-                .corner_radius(12.0)
-                .fill(Color32::WHITE)
-                .stroke(Stroke::new(1.0_f32, BORDER)),
+            Button::new(RichText::new(label).size(15.0).color(SUBTLE)).frame(false),
         )
         .on_hover_text(if disabled {
             "Taille limite"
