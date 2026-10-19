@@ -44,6 +44,22 @@ pub struct Settings {
     pub gateway: GatewaySettings,
     pub moodle: Option<MoodleSettings>,
     pub proxmox: Option<ProxmoxSettings>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scale: Option<f32>,
+}
+
+/// Interface zoom persisted in the config; 1.0 keeps the platform default.
+pub const DEFAULT_SCALE: f32 = 1.2;
+pub const SCALE_MIN: f32 = 0.8;
+pub const SCALE_MAX: f32 = 2.0;
+pub const SCALE_STEP: f32 = 0.1;
+
+impl Settings {
+    pub fn scale(&self) -> f32 {
+        self.scale
+            .unwrap_or(DEFAULT_SCALE)
+            .clamp(SCALE_MIN, SCALE_MAX)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -175,13 +191,19 @@ pub fn mcp_endpoint(origin: &str, token: &str) -> String {
 
 /// Constant-time comparison so request timing leaks nothing.
 pub fn token_matches(expected: &str, provided: Option<&str>) -> bool {
-    let Some(provided) = provided else { return false };
+    let Some(provided) = provided else {
+        return false;
+    };
     if provided.is_empty() || expected.is_empty() {
         return false;
     }
     let a = expected.as_bytes();
     let b = provided.as_bytes();
-    a.len() == b.len() && a.iter().zip(b.iter()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+    a.len() == b.len()
+        && a.iter()
+            .zip(b.iter())
+            .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+            == 0
 }
 
 fn parse_site_url(input: &str) -> Result<Url, String> {
@@ -189,10 +211,19 @@ fn parse_site_url(input: &str) -> Result<Url, String> {
     let parsed = Url::parse(trimmed)
         .or_else(|_| Url::parse(&format!("https://{trimmed}")))
         .map_err(|_| "L'adresse du site n'est pas une URL valide.".to_string())?;
-    if parsed.username() != "" || parsed.password().is_some() || parsed.query().is_some() || parsed.fragment().is_some() {
-        return Err("L'adresse ne doit pas contenir d'identifiants, de requête ou de fragment.".to_string());
+    if parsed.username() != ""
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err(
+            "L'adresse ne doit pas contenir d'identifiants, de requête ou de fragment.".to_string(),
+        );
     }
-    let localhost = matches!(parsed.host_str(), Some("localhost") | Some("127.0.0.1") | Some("[::1]"));
+    let localhost = matches!(
+        parsed.host_str(),
+        Some("localhost") | Some("127.0.0.1") | Some("[::1]")
+    );
     if parsed.scheme() != "https" && !(parsed.scheme() == "http" && localhost) {
         return Err("L'adresse doit utiliser HTTPS (HTTP seulement pour localhost).".to_string());
     }
@@ -207,7 +238,8 @@ pub fn normalize_moodle_url(input: &str) -> Result<String, String> {
         // Case-insensitive suffix cut: rebuild from the prefix.
         let original = url.as_str();
         let cut = &original[..original.len() - suffix.len()];
-        url = Url::parse(cut).map_err(|_| "L'adresse du site n'est pas une URL valide.".to_string())?;
+        url = Url::parse(cut)
+            .map_err(|_| "L'adresse du site n'est pas une URL valide.".to_string())?;
     }
     let mut form = url.origin().ascii_serialization();
     let path = url.path().trim_end_matches('/').to_string();
@@ -226,7 +258,10 @@ pub fn normalize_proxmox_url(input: &str) -> Result<String, String> {
     }
     let path = url.path().trim_end_matches('/');
     if !path.is_empty() {
-        return Err("L'adresse Proxmox doit pointer vers la racine de l'hôte (ex. https://mon-pve:8006).".to_string());
+        return Err(
+            "L'adresse Proxmox doit pointer vers la racine de l'hôte (ex. https://mon-pve:8006)."
+                .to_string(),
+        );
     }
     Ok(url.origin().ascii_serialization())
 }
@@ -263,14 +298,36 @@ mod tests {
     fn with_temp_config<T>(test: impl FnOnce() -> T) -> T {
         // The config path is process-global: serialize env-touching tests.
         static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        let dir = std::env::temp_dir().join(format!("student-mcp-{}-{}", std::process::id(), random_hex(4)));
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let dir = std::env::temp_dir().join(format!(
+            "student-mcp-{}-{}",
+            std::process::id(),
+            random_hex(4)
+        ));
         std::fs::create_dir_all(&dir).expect("temp dir");
         std::env::set_var("STUDENT_MCP_CONFIG_FILE", dir.join("settings.json"));
         let result = test();
         std::env::remove_var("STUDENT_MCP_CONFIG_FILE");
         std::fs::remove_dir_all(dir).ok();
         result
+    }
+
+    #[test]
+    fn scale_clamps_and_persists() {
+        with_temp_config(|| {
+            let mut settings = Settings::load();
+            assert!((settings.scale() - DEFAULT_SCALE).abs() < f32::EPSILON);
+            settings.scale = Some(9.9);
+            assert_eq!(settings.scale(), SCALE_MAX);
+            settings.scale = Some(0.1);
+            assert_eq!(settings.scale(), SCALE_MIN);
+            settings.scale = Some(1.5);
+            let _ = settings.save();
+            let reloaded = Settings::load();
+            assert_eq!(reloaded.scale, Some(1.5));
+        });
     }
 
     #[test]
@@ -317,10 +374,22 @@ mod tests {
 
     #[test]
     fn urls_normalize() {
-        assert_eq!(normalize_proxmox_url(" https://pve:8006/api2/json/ ").unwrap(), "https://pve:8006");
-        assert_eq!(normalize_proxmox_url("pve.exemple.ca").unwrap(), "https://pve.exemple.ca");
-        assert_eq!(normalize_moodle_url("moodle.polymtl.ca/").unwrap(), "https://moodle.polymtl.ca");
-        assert_eq!(normalize_moodle_url("https://moodle.polymtl.ca").unwrap(), "https://moodle.polymtl.ca");
+        assert_eq!(
+            normalize_proxmox_url(" https://pve:8006/api2/json/ ").unwrap(),
+            "https://pve:8006"
+        );
+        assert_eq!(
+            normalize_proxmox_url("pve.exemple.ca").unwrap(),
+            "https://pve.exemple.ca"
+        );
+        assert_eq!(
+            normalize_moodle_url("moodle.polymtl.ca/").unwrap(),
+            "https://moodle.polymtl.ca"
+        );
+        assert_eq!(
+            normalize_moodle_url("https://moodle.polymtl.ca").unwrap(),
+            "https://moodle.polymtl.ca"
+        );
         assert!(normalize_proxmox_url("https://user:pass@pve:8006").is_err());
         assert!(normalize_proxmox_url("https://pve:8006/dossier").is_err());
         assert!(normalize_moodle_url("ftp://moodle.polymtl.ca").is_err());
