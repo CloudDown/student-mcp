@@ -27,9 +27,12 @@ mod gui {
         "gallery",
         "gallery-connected",
         "moodle",
+        "moodle-connected",
+        "moodle-editing",
         "moodle-filled",
         "moodle-advanced",
         "proxmox",
+        "proxmox-connected",
         "links",
         "links-public",
         "error",
@@ -38,11 +41,22 @@ mod gui {
 
     fn fixture(ctx: &Context, scene: &str) -> App {
         let mut settings = Settings::default();
-        if matches!(scene, "gallery-connected" | "links" | "links-public") {
+        if matches!(
+            scene,
+            "gallery-connected" | "links" | "links-public" | "moodle-connected" | "moodle-editing"
+        ) {
             settings.moodle = Some(crate::config::MoodleSettings {
                 url: Some(MOODLE_DEFAULT_URL.into()),
                 token: Some("demo-moodle-token".into()),
                 allow_write: Some(false),
+            });
+        }
+        if scene == "proxmox-connected" {
+            settings.proxmox = Some(crate::config::ProxmoxSettings {
+                url: Some("https://pve.exemple:8006".into()),
+                token_id: Some("etudiant@pam!student-mcp".into()),
+                secret: Some("demo-secret".into()),
+                allow_write: Some(true),
             });
         }
         let mut app = App {
@@ -56,7 +70,7 @@ mod gui {
             bind_error: None,
             screen: match scene {
                 "gallery" | "gallery-connected" => "home",
-                "proxmox" => "proxmox",
+                "proxmox" | "proxmox-connected" => "proxmox",
                 "links" | "links-public" => "links",
                 _ => "moodle",
             },
@@ -74,6 +88,9 @@ mod gui {
             copied_flash: None,
             scale: crate::config::DEFAULT_SCALE,
         };
+        if scene == "moodle-editing" {
+            app.draft.editing = true;
+        }
         if matches!(scene, "moodle-filled" | "busy") {
             app.draft.username = "prenom.nom".into();
             app.draft.password = "demo-password".into();

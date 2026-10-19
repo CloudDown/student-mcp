@@ -115,6 +115,8 @@ struct Draft {
     use_token: bool,
     advanced: bool,
     password_visible: bool,
+    /// True only when the user explicitly asks to change an existing connection.
+    editing: bool,
 }
 
 pub struct App {
@@ -222,7 +224,8 @@ impl eframe::App for App {
                     let wide = self.draft.advanced
                         || self.notice.is_some()
                         || self.screen == "proxmox"
-                        || self.screen == "links";
+                        || self.screen == "links"
+                        || self.viewing_connected();
                     let bounds = form_bounds(ui.available_rect_before_wrap(), wide);
                     ui.scope_builder(
                         egui::UiBuilder::new()
@@ -304,6 +307,141 @@ impl App {
         })
         .clicked()
     }
+    /// True when the current screen should show the connected summary instead
+    /// of the credential form.
+    fn viewing_connected(&self) -> bool {
+        match self.screen {
+            "moodle" => self.settings.moodle().is_some() && !self.draft.editing,
+            "proxmox" => self.settings.proxmox().is_some() && !self.draft.editing,
+            _ => false,
+        }
+    }
+
+    /// Connected state of a service: status, connection info, links and
+    /// disconnection — no credentials asked again.
+    fn connected_view(&mut self, ui: &mut Ui, ctx: &egui::Context, service: &str) {
+        let title = if service == "proxmox" {
+            "Proxmox"
+        } else {
+            "Moodle"
+        };
+        let (url, token_id) = match service {
+            "proxmox" => {
+                let config = self.settings.proxmox();
+                (
+                    config
+                        .as_ref()
+                        .map(|c| c.base_url.clone())
+                        .unwrap_or_default(),
+                    config.map(|c| c.token_id).unwrap_or_default(),
+                )
+            }
+            _ => {
+                let config = self.settings.moodle();
+                (
+                    config
+                        .as_ref()
+                        .map(|c| c.base_url.clone())
+                        .unwrap_or_default(),
+                    String::new(),
+                )
+            }
+        };
+        let allow_write = match service {
+            "proxmox" => self.settings.proxmox().is_some_and(|c| c.allow_write),
+            _ => self.settings.moodle().is_some_and(|c| c.allow_write),
+        };
+        let tools = crate::mcp::tool_definitions(&self.settings).len();
+
+        ui.vertical_centered(|ui| {
+            if let Some(logos) = &self.logos {
+                let texture = if service == "proxmox" {
+                    &logos.proxmox
+                } else {
+                    &logos.moodle
+                };
+                ui.image((texture.id(), Vec2::splat(44.0)));
+            }
+            ui.add_space(10.0);
+            ui.label(RichText::new(title).size(21.0).strong().color(INK));
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                let (rect, _) = ui.allocate_exact_size(Vec2::new(9.0, 9.0), Sense::hover());
+                ui.painter().circle_filled(rect.center(), 4.0, GREEN);
+                ui.label(RichText::new("Connecté").size(13.0).strong().color(GREEN));
+            });
+        });
+        ui.add_space(18.0);
+        Self::info_block(ui, "Serveur", &url, true);
+        if !token_id.is_empty() {
+            Self::info_block(ui, "Token", &token_id, true);
+        }
+        Self::info_block(
+            ui,
+            "Accès MCP",
+            &format!(
+                "{} outils · {}",
+                tools,
+                if allow_write {
+                    "lecture + écriture"
+                } else {
+                    "lecture seule"
+                }
+            ),
+            false,
+        );
+
+        ui.add_space(6.0);
+        if Self::action(ui, "Voir mes liens", !self.busy) {
+            self.screen = "links";
+            self.notice = None;
+        }
+        ui.add_space(8.0);
+        if Self::action(ui, "Modifier la connexion", !self.busy) {
+            self.draft.editing = true;
+            self.notice = None;
+        }
+        ui.add_space(8.0);
+        if self.button_plain(ui, "Se déconnecter") && !self.busy {
+            let service = service.to_string();
+            self.spawn(ctx.clone(), move || {
+                let mut fresh = Settings::load();
+                crate::mcp::disable_service(&mut fresh, &service);
+                Message::Done(
+                    Notice::Ok(format!(
+                        "{} déconnecté.",
+                        if service == "proxmox" {
+                            "Proxmox"
+                        } else {
+                            "Moodle"
+                        }
+                    )),
+                    NextScreen::Home,
+                )
+            });
+        }
+    }
+
+    fn info_block(ui: &mut Ui, label: &str, value: &str, mono: bool) {
+        ui.label(RichText::new(label).size(11.5).color(SUBTLE));
+        ui.add_space(4.0);
+        egui::Frame::new()
+            .fill(FIELD)
+            .stroke(Stroke::new(1.0_f32, BORDER))
+            .corner_radius(8.0)
+            .inner_margin(10.0)
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                let text = RichText::new(value).size(12.0).color(INK);
+                ui.add(
+                    egui::Label::new(if mono { text.monospace() } else { text })
+                        .wrap()
+                        .selectable(true),
+                );
+            });
+        ui.add_space(12.0);
+    }
+
     fn body(&mut self, ui: &mut Ui, ctx: &egui::Context) {
         match self.screen {
             "moodle" => self.moodle_screen(ui, ctx),
@@ -478,6 +616,7 @@ impl App {
 
     fn open_service(&mut self, service: &'static str) {
         self.draft = Draft::default();
+        self.draft.editing = false;
         self.screen = service;
         match service {
             "moodle" => {
@@ -876,7 +1015,11 @@ impl App {
         if self.top_bar(ui, "Moodle") {
             return;
         }
-        let configured = self.settings.moodle.is_some();
+        if self.viewing_connected() {
+            self.connected_view(ui, ctx, "moodle");
+            return;
+        }
+        let configured = self.settings.moodle().is_some();
         if !self.draft.use_token {
             Self::field(
                 ui,
@@ -1013,7 +1156,11 @@ impl App {
         if self.top_bar(ui, "Proxmox") {
             return;
         }
-        let configured = self.settings.proxmox.is_some();
+        if self.viewing_connected() {
+            self.connected_view(ui, ctx, "proxmox");
+            return;
+        }
+        let configured = self.settings.proxmox().is_some();
 
         Self::field(
             ui,
