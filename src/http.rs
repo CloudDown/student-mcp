@@ -200,9 +200,12 @@ fn route(
         }
         match request.method.as_str() {
             "OPTIONS" => (204, vec![], Vec::new()),
-            "GET" => jsonrpc_error(
+            "GET" => (
                 405,
-                "GET non supporté : ce serveur répond en JSON direct (POST seulement).",
+                vec![("Allow".to_string(), "POST".to_string())],
+                json!({ "jsonrpc": "2.0", "error": { "code": -32601, "message": "GET non supporté : ce serveur répond en JSON direct (POST seulement)." } })
+                    .to_string()
+                    .into_bytes(),
             ),
             "DELETE" => {
                 if let Some(session) = &request.session {

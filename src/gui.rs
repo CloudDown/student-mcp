@@ -131,6 +131,8 @@ pub struct App {
     notice: Option<Notice>,
     rx: Option<Receiver<Message>>,
     funnel_info: Option<TailscaleInfo>,
+    /// When the funnel status was last checked (kept fresh on the links screen).
+    funnel_checked: Option<Instant>,
     copied_flash: Option<(String, Instant)>,
     /// Interface zoom factor, persisted in the config file.
     scale: f32,
@@ -198,6 +200,7 @@ pub fn run(port_override: Option<u16>, first_run: bool) {
                 notice: None,
                 rx: None,
                 funnel_info: None,
+                funnel_checked: None,
                 copied_flash: None,
                 scale: crate::config::DEFAULT_SCALE,
             };
@@ -676,6 +679,15 @@ impl App {
             .color(GREEN),
         );
         ui.add_space(16.0);
+        // The funnel can be turned off by anything on the machine: never trust a
+        // cached status for long, or the popup would advertise a dead link.
+        let stale = self
+            .funnel_checked
+            .map_or(true, |at| at.elapsed().as_secs_f32() > 5.0);
+        if !self.busy && stale {
+            self.funnel_checked = Some(Instant::now());
+            self.spawn(ctx.clone(), || Message::FunnelStatus(funnel::info()));
+        }
         self.funnel_links(ui, ctx);
         self.notice_line(ui);
         ui.add_space(16.0);
@@ -708,9 +720,6 @@ impl App {
                         .size(12.0)
                         .color(SUBTLE),
                 );
-                if !self.busy {
-                    self.spawn(ctx.clone(), || Message::FunnelStatus(funnel::info()));
-                }
             }
             Some(info) if info.funnel_on => {
                 let url = info

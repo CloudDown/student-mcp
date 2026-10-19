@@ -86,6 +86,7 @@ mod gui {
                 message: None,
             }),
             copied_flash: None,
+            funnel_checked: Some(Instant::now()),
             scale: crate::config::DEFAULT_SCALE,
         };
         if scene == "moodle-editing" {
