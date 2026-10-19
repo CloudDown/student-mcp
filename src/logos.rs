@@ -1,6 +1,6 @@
 use eframe::egui::{self, ColorImage, Context, TextureHandle};
 
-/// Embedded service logos (white-background wordmarks, PNG).
+/// Embedded service app icons, decoded once for the native gallery.
 pub struct Logos {
     pub moodle: TextureHandle,
     pub proxmox: TextureHandle,
@@ -32,8 +32,8 @@ fn texture(ctx: &Context, name: &str, bytes: &[u8]) -> TextureHandle {
 impl Logos {
     pub fn load(ctx: &Context) -> Logos {
         Logos {
-            moodle: texture(ctx, "moodle", include_bytes!("../assets/moodle.png")),
-            proxmox: texture(ctx, "proxmox", include_bytes!("../assets/proxmox.png")),
+            moodle: texture(ctx, "moodle", include_bytes!("../assets/moodle-icon.png")),
+            proxmox: texture(ctx, "proxmox", include_bytes!("../assets/proxmox-icon.png")),
             poly: texture(ctx, "poly", include_bytes!("../assets/poly.png")),
             outlook: texture(ctx, "outlook", include_bytes!("../assets/outlook.png")),
         }

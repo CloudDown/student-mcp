@@ -2,8 +2,8 @@ use crate::config::{mcp_endpoint, Gateway, Settings};
 use crate::funnel::{self, TailscaleInfo};
 use crate::logos::Logos;
 use eframe::egui::{
-    self, pos2, Align2, Button, CentralPanel, Color32, Context, CursorIcon, FontId, Grid, Rect,
-    RichText, Sense, Stroke, TextEdit, TextureHandle, Ui, Vec2,
+    self, pos2, Align2, Button, CentralPanel, Color32, Context, CursorIcon, FontId, Rect, RichText,
+    Sense, Stroke, TextEdit, TextureHandle, Ui, Vec2,
 };
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Instant;
@@ -18,6 +18,38 @@ const GREEN: Color32 = Color32::from_rgb(52, 168, 83);
 const RED: Color32 = Color32::from_rgb(224, 67, 67);
 
 const MOODLE_DEFAULT_URL: &str = "https://moodle.polymtl.ca";
+
+/// Fixed, balanced proportions; position is derived from the panel, not its cursor.
+struct GalleryLayout {
+    title: Rect,
+    tiles: [Rect; 4],
+    footer: Rect,
+}
+
+impl GalleryLayout {
+    fn new(bounds: Rect) -> Self {
+        let gap = 16.0;
+        let side = ((bounds.width() - gap) / 2.0).min(136.0);
+        let width = side * 2.0 + gap;
+        let height = width + 88.0;
+        let origin = pos2(
+            bounds.center().x - width / 2.0,
+            bounds.top() + ((bounds.height() - height) / 2.0).max(0.0),
+        );
+        let grid_origin = origin + Vec2::new(0.0, 48.0);
+        Self {
+            title: Rect::from_min_size(origin, Vec2::new(width, 24.0)),
+            tiles: std::array::from_fn(|index| {
+                let offset = Vec2::new((index % 2) as f32, (index / 2) as f32) * (side + gap);
+                Rect::from_min_size(grid_origin + offset, Vec2::splat(side))
+            }),
+            footer: Rect::from_min_size(
+                grid_origin + Vec2::new(0.0, width + 12.0),
+                Vec2::new(width, 28.0),
+            ),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 enum Notice {
@@ -65,6 +97,22 @@ pub struct App {
     copied_flash: Option<Instant>,
 }
 
+fn native_options() -> eframe::NativeOptions {
+    eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_title("student-mcp")
+            .with_app_id("student-mcp")
+            .with_inner_size([430.0, 540.0])
+            .with_min_inner_size([390.0, 490.0]),
+        // Mesa's Wayland EGL vsync can block eglSwapBuffers when a window is
+        // occluded or moved to another workspace. This stalls the UI thread,
+        // including compositor ping/pong handling. Keep Linux swaps nonblocking;
+        // eframe still redraws only on demand (no continuous repaint loop).
+        vsync: !cfg!(target_os = "linux"),
+        ..Default::default()
+    }
+}
+
 pub fn run(port_override: Option<u16>, first_run: bool) {
     let settings = Settings::load();
     if first_run {
@@ -94,16 +142,9 @@ pub fn run(port_override: Option<u16>, first_run: bool) {
     let port = chosen.unwrap_or(base_port);
     gateway.port = port;
 
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("student-mcp")
-            .with_inner_size([430.0, 540.0])
-            .with_min_inner_size([390.0, 490.0]),
-        ..Default::default()
-    };
     let result = eframe::run_native(
         "student-mcp",
-        options,
+        native_options(),
         Box::new(move |cc| {
             let mut visuals = egui::Visuals::light();
             visuals.widgets.noninteractive.bg_fill = Color32::WHITE;
@@ -141,9 +182,13 @@ impl eframe::App for App {
         CentralPanel::default()
             .frame(egui::Frame::new().fill(Color32::WHITE).inner_margin(24.0))
             .show(ctx, |ui| {
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| self.body(ui, ctx));
+                if self.screen == "home" {
+                    self.home_screen(ui);
+                } else {
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| self.body(ui, ctx));
+                }
             });
     }
 }
@@ -161,42 +206,38 @@ impl App {
     // ---------- home: the gallery ----------
 
     fn home_screen(&mut self, ui: &mut Ui) {
-        ui.add_space(12.0);
-        ui.vertical_centered(|ui| {
-            ui.label(RichText::new("Tes services").size(18.0).strong().color(INK));
-        });
-        ui.add_space(20.0);
-
+        let layout = GalleryLayout::new(ui.available_rect_before_wrap());
+        ui.painter().text(
+            layout.title.center(),
+            Align2::CENTER_CENTER,
+            "Tes services",
+            FontId::proportional(18.0),
+            INK,
+        );
         let Some(logos) = self.logos.as_ref() else {
             return;
         };
         let moodle_on = self.settings.moodle().is_some();
         let proxmox_on = self.settings.proxmox().is_some();
 
-        let tile_size = 136.0;
-        let gallery_width = tile_size * 2.0 + 18.0;
-        ui.add_space(((ui.available_width() - gallery_width) * 0.5).max(0.0));
-
-        let (moodle_clicked, proxmox_clicked) = Grid::new("gallery")
-            .spacing([18.0, 18.0])
-            .show(ui, |grid| {
-                let moodle_clicked =
-                    Self::tile(grid, &logos.moodle, "Moodle", tile_size, moodle_on, false);
-                let proxmox_clicked = Self::tile(
-                    grid,
-                    &logos.proxmox,
-                    "Proxmox",
-                    tile_size,
-                    proxmox_on,
-                    false,
-                );
-                grid.end_row();
-                Self::tile(grid, &logos.poly, "Dossier", tile_size, false, true);
-                Self::tile(grid, &logos.outlook, "Courriel", tile_size, false, true);
-                grid.end_row();
-                (moodle_clicked, proxmox_clicked)
-            })
-            .inner;
+        let moodle_clicked = Self::tile(
+            ui,
+            &logos.moodle,
+            "Moodle",
+            layout.tiles[0],
+            moodle_on,
+            false,
+        );
+        let proxmox_clicked = Self::tile(
+            ui,
+            &logos.proxmox,
+            "Proxmox",
+            layout.tiles[1],
+            proxmox_on,
+            false,
+        );
+        Self::tile(ui, &logos.poly, "Dossier", layout.tiles[2], false, true);
+        Self::tile(ui, &logos.outlook, "Courriel", layout.tiles[3], false, true);
 
         if moodle_clicked || proxmox_clicked {
             self.draft = Draft::default();
@@ -204,15 +245,16 @@ impl App {
             self.notice = None;
         }
 
-        ui.add_space(18.0);
         if let Some(error) = &self.bind_error {
-            ui.colored_label(RED, format!("Serveur local indisponible : {error}"));
-        }
-        if self.settings.moodle().is_some() || self.settings.proxmox().is_some() {
-            ui.separator();
-            ui.add_space(10.0);
+            ui.put(
+                layout.footer,
+                egui::Label::new(RichText::new("Serveur indisponible").color(RED)),
+            )
+            .on_hover_text(error);
+        } else if moodle_on || proxmox_on {
             if ui
-                .add(
+                .put(
+                    layout.footer,
                     Button::new(RichText::new("Voir mon lien  →").size(13.0).color(INK))
                         .frame(false),
                 )
@@ -228,13 +270,14 @@ impl App {
         ui: &mut Ui,
         texture: &TextureHandle,
         name: &str,
-        size: f32,
+        rect: Rect,
         active: bool,
         soon: bool,
     ) -> bool {
         let clickable = !soon;
-        let (rect, raw) = ui.allocate_exact_size(
-            Vec2::splat(size),
+        let raw = ui.interact(
+            rect,
+            ui.make_persistent_id(("service", name)),
             if clickable {
                 Sense::click()
             } else {
@@ -247,16 +290,20 @@ impl App {
             raw
         };
         let hovered = clickable && response.hovered();
+        response
+            .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, clickable, name));
 
         ui.painter()
-            .rect_filled(rect, 12.0, if hovered { HOVER } else { Color32::WHITE });
+            .rect_filled(rect, 14.0, if hovered { HOVER } else { Color32::WHITE });
         ui.painter().rect_stroke(
             rect,
-            12.0,
+            14.0,
             Stroke::new(
                 1.0_f32,
-                if hovered {
-                    Color32::from_rgb(205, 205, 205)
+                if response.has_focus() {
+                    INK
+                } else if hovered {
+                    Color32::from_rgb(200, 200, 200)
                 } else {
                     BORDER
                 },
@@ -268,13 +315,15 @@ impl App {
                 .circle_filled(rect.right_top() - Vec2::new(13.0, 13.0), 3.5, GREEN);
         }
 
-        // Crop to a square viewport so wide wordmarks and square icons align equally.
-        let logo_side = size * 0.54;
+        // Fit the complete app symbol without cropping or stretching it.
+        let logo_bounds = Vec2::splat(rect.width() * 0.42);
+        let texture_size = texture.size_vec2();
+        let scale = (logo_bounds.x / texture_size.x).min(logo_bounds.y / texture_size.y);
         let logo_rect =
-            Rect::from_center_size(rect.center() - Vec2::new(0.0, 9.0), Vec2::splat(logo_side));
-        let uv = square_uv(texture.size_vec2());
+            Rect::from_center_size(rect.center() - Vec2::new(0.0, 12.0), texture_size * scale);
+        let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
         let tint = if soon {
-            Color32::from_white_alpha(105)
+            Color32::from_white_alpha(125)
         } else {
             Color32::WHITE
         };
@@ -282,14 +331,19 @@ impl App {
 
         let name_color = if soon { SUBTLE } else { INK };
         ui.painter().text(
-            rect.center_bottom() - Vec2::new(0.0, 17.0),
+            rect.center_bottom() - Vec2::new(0.0, 25.0),
             Align2::CENTER_CENTER,
             name,
             FontId::proportional(13.0),
             name_color,
         );
 
-        response.clicked()
+        if soon {
+            response.on_hover_text("Bientôt disponible");
+            false
+        } else {
+            response.clicked()
+        }
     }
 
     // ---------- links below the gallery ----------
@@ -763,12 +817,84 @@ impl App {
     }
 }
 
-fn square_uv(size: Vec2) -> Rect {
-    let side = size.x.min(size.y);
-    let u = side / size.x;
-    let v = side / size.y;
-    Rect::from_min_max(
-        pos2((1.0 - u) * 0.5, (1.0 - v) * 0.5),
-        pos2((1.0 + u) * 0.5, (1.0 + v) * 0.5),
-    )
+#[cfg(test)]
+mod gallery_tests {
+    use super::*;
+
+    #[test]
+    fn linux_window_avoids_blocking_vsync_and_identifies_itself() {
+        let options = native_options();
+        assert_eq!(options.vsync, !cfg!(target_os = "linux"));
+        assert_eq!(options.viewport.app_id.as_deref(), Some("student-mcp"));
+    }
+
+    #[test]
+    fn gallery_is_square_and_centered_at_different_window_sizes() {
+        for size in [
+            Vec2::new(342.0, 442.0),
+            Vec2::new(382.0, 492.0),
+            Vec2::new(833.0, 480.0),
+        ] {
+            let bounds = Rect::from_min_size(pos2(24.0, 24.0), size);
+            let layout = GalleryLayout::new(bounds);
+            let grid = layout.tiles[0].union(layout.tiles[3]);
+            let content = layout.title.union(layout.footer);
+            assert_eq!(grid.width(), grid.height());
+            assert_eq!(grid.center().x, bounds.center().x);
+            assert_eq!(content.center(), bounds.center());
+            assert!(bounds.contains_rect(content));
+            for tile in layout.tiles {
+                assert_eq!(tile.size(), Vec2::splat(136.0));
+            }
+            assert_eq!(layout.tiles[1].left() - layout.tiles[0].right(), 16.0);
+            assert_eq!(layout.tiles[2].top() - layout.tiles[0].bottom(), 16.0);
+        }
+    }
+
+    #[test]
+    fn gallery_renders_all_icons_without_a_display() {
+        let ctx = Context::default();
+        let output = ctx.run(egui::RawInput::default(), |ctx| {
+            let logos = Logos::load(ctx);
+            CentralPanel::default().show(ctx, |ui| {
+                let layout = GalleryLayout::new(Rect::from_min_size(
+                    pos2(24.0, 24.0),
+                    Vec2::new(382.0, 492.0),
+                ));
+                for (index, (texture, name)) in [
+                    (&logos.moodle, "Moodle"),
+                    (&logos.proxmox, "Proxmox"),
+                    (&logos.poly, "Dossier"),
+                    (&logos.outlook, "Courriel"),
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    assert!(!App::tile(
+                        ui,
+                        texture,
+                        name,
+                        layout.tiles[index],
+                        false,
+                        index >= 2
+                    ));
+                }
+            });
+        });
+        let images: Vec<_> = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Mesh(mesh) if mesh.texture_id != egui::TextureId::default() => {
+                    Some(mesh)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(images.len(), 4);
+        for image in images {
+            assert!(image.vertices.iter().any(|v| v.uv == pos2(0.0, 0.0)));
+            assert!(image.vertices.iter().any(|v| v.uv == pos2(1.0, 1.0)));
+        }
+    }
 }
