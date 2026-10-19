@@ -411,6 +411,10 @@ impl App {
                 1.0_f32,
                 if response.has_focus() {
                     INK
+                } else if hovered && active {
+                    Color32::from_rgb(46, 140, 70)
+                } else if active {
+                    GREEN
                 } else if hovered {
                     Color32::from_rgb(200, 200, 200)
                 } else {
@@ -419,10 +423,6 @@ impl App {
             ),
             egui::StrokeKind::Inside,
         );
-        if active {
-            ui.painter()
-                .circle_filled(rect.right_top() - Vec2::new(13.0, 13.0), 3.5, GREEN);
-        }
 
         // Fit the complete app symbol without cropping or stretching it.
         let logo_bounds = Vec2::splat(rect.width() * 0.42);
@@ -438,7 +438,13 @@ impl App {
         };
         ui.painter().image(texture.id(), logo_rect, uv, tint);
 
-        let name_color = if soon { SUBTLE } else { INK };
+        let name_color = if soon {
+            SUBTLE
+        } else if active {
+            GREEN
+        } else {
+            INK
+        };
         ui.painter().text(
             rect.center_bottom() - Vec2::new(0.0, 25.0),
             Align2::CENTER_CENTER,
@@ -446,6 +452,15 @@ impl App {
             FontId::proportional(13.0),
             name_color,
         );
+        if active {
+            ui.painter().text(
+                rect.center_bottom() - Vec2::new(0.0, 9.0),
+                Align2::CENTER_CENTER,
+                "Connecté",
+                FontId::proportional(11.0),
+                GREEN,
+            );
+        }
 
         if soon {
             response.on_hover_text("Bientôt disponible");
