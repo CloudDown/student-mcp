@@ -27,18 +27,25 @@ try {
     $folder = Join-Path $temp 'app'
     Expand-Archive -Path $zip -DestinationPath $folder -Force
     $binary = Join-Path $folder 'student-mcp.exe'
-    if (-not (Test-Path -Path $binary -PathType Leaf)) {
-        throw 'The download does not contain the expected program.'
+    $sidecar = Join-Path $folder 'cloudflared.exe'
+    $license = Join-Path $folder 'LICENSE-cloudflared.txt'
+    if (-not (Test-Path -Path $binary -PathType Leaf) -or
+        -not (Test-Path -Path $sidecar -PathType Leaf) -or
+        -not (Test-Path -Path $license -PathType Leaf)) {
+        throw 'The download does not contain the app and its Cloudflare tunnel component.'
     }
     if ($env:MOODLE_INSTALL_CHECK_ONLY -eq '1') {
         & $binary --help
         if ($LASTEXITCODE -ne 0) { throw "Verification failed (code $LASTEXITCODE)." }
+        & $sidecar --version
+        if ($LASTEXITCODE -ne 0) { throw "Cloudflare component verification failed (code $LASTEXITCODE)." }
     } else {
         # Persist the binary, then pop the small window without blocking the installer.
         $installDir = Join-Path $env:LOCALAPPDATA 'student-mcp'
         [void](New-Item -ItemType Directory -Path $installDir -Force)
         $destination = Join-Path $installDir 'student-mcp.exe'
         Copy-Item -Path $binary -Destination $destination -Force
+        Copy-Item -Path $sidecar, $license -Destination $installDir -Force
         Start-Process -FilePath $destination -ArgumentList 'up'
         Write-Host "The student-mcp window is opening. Installed file: $destination"
     }

@@ -38,12 +38,31 @@ pub struct ProxmoxSettings {
     pub allow_write: Option<bool>,
 }
 
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BrightspaceSettings {
+    pub url: Option<String>,
+    pub token: Option<String>,
+}
+
+// Never include access tokens when debugging settings.
+impl std::fmt::Debug for BrightspaceSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BrightspaceSettings")
+            .field("url", &self.url)
+            .field("token", &"[redacted]")
+            .finish()
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     pub gateway: GatewaySettings,
     pub moodle: Option<MoodleSettings>,
     pub proxmox: Option<ProxmoxSettings>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub brightspace: Option<BrightspaceSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scale: Option<f32>,
 }
@@ -81,6 +100,12 @@ pub struct ProxmoxConfig {
     pub token_id: String,
     pub secret: String,
     pub allow_write: bool,
+}
+
+#[derive(Clone)]
+pub struct BrightspaceConfig {
+    pub base_url: String,
+    pub token: String,
 }
 
 impl Settings {
@@ -147,20 +172,34 @@ impl Settings {
         match service {
             "moodle" => self.moodle = None,
             "proxmox" => self.proxmox = None,
+            "brightspace" => self.brightspace = None,
             _ => {}
         }
     }
 
     pub fn services_active(&self) -> Vec<String> {
-        ["moodle", "proxmox"]
+        ["moodle", "brightspace", "proxmox"]
             .into_iter()
             .filter(|id| match *id {
                 "moodle" => self.moodle().is_some(),
                 "proxmox" => self.proxmox().is_some(),
+                "brightspace" => self.brightspace().is_some(),
                 _ => false,
             })
             .map(str::to_string)
             .collect()
+    }
+
+    pub fn brightspace(&self) -> Option<BrightspaceConfig> {
+        let saved = self.brightspace.as_ref()?;
+        let token = saved.token.as_deref()?.trim();
+        if token.is_empty() || token.chars().any(char::is_whitespace) {
+            return None;
+        }
+        Some(BrightspaceConfig {
+            base_url: normalize_brightspace_url(saved.url.as_deref()?).ok()?,
+            token: token.to_string(),
+        })
     }
 }
 
@@ -263,6 +302,14 @@ pub fn normalize_proxmox_url(input: &str) -> Result<String, String> {
     Ok(url.origin().ascii_serialization())
 }
 
+pub fn normalize_brightspace_url(input: &str) -> Result<String, String> {
+    let url = parse_site_url(input)?;
+    if !matches!(url.path().trim_end_matches('/'), "" | "/d2l" | "/d2l/home") {
+        return Err("Use your Brightspace site address, e.g. https://mycourses.mcgill.ca.".into());
+    }
+    Ok(url.origin().ascii_serialization())
+}
+
 fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     let temp = path.with_extension(format!("json.tmp-{}", std::process::id()));
@@ -289,10 +336,10 @@ fn set_private(path: &Path) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    fn with_temp_config<T>(test: impl FnOnce() -> T) -> T {
+    pub(crate) fn with_temp_config<T>(test: impl FnOnce() -> T) -> T {
         // The config path is process-global: serialize env-touching tests.
         static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
         let _guard = ENV_LOCK
@@ -390,5 +437,43 @@ mod tests {
         assert!(normalize_proxmox_url("https://user:pass@pve:8006").is_err());
         assert!(normalize_proxmox_url("https://pve:8006/folder").is_err());
         assert!(normalize_moodle_url("ftp://moodle.polymtl.ca").is_err());
+    }
+
+    #[test]
+    fn brightspace_settings_validate_roundtrip_and_disconnect() {
+        for input in [
+            "mycourses.mcgill.ca",
+            "https://mycourses.mcgill.ca/d2l/home/",
+        ] {
+            assert_eq!(
+                normalize_brightspace_url(input).unwrap(),
+                "https://mycourses.mcgill.ca"
+            );
+        }
+        for input in [
+            "http://school.example",
+            "https://user:password@school.example",
+            "https://school.example/?token=secret",
+            "https://school.example/unexpected",
+        ] {
+            assert!(normalize_brightspace_url(input).is_err());
+        }
+        with_temp_config(|| {
+            let settings = Settings {
+                brightspace: Some(BrightspaceSettings {
+                    url: Some("https://school.example".into()),
+                    token: Some("private-token".into()),
+                }),
+                ..Default::default()
+            };
+            settings.save().unwrap();
+            let mut loaded = Settings::load();
+            assert_eq!(loaded.brightspace().unwrap().token, "private-token");
+            assert_eq!(loaded.services_active(), vec!["brightspace"]);
+            assert!(!format!("{:?}", loaded.brightspace).contains("private-token"));
+            loaded.disable("brightspace");
+            loaded.save().unwrap();
+            assert!(Settings::load().brightspace().is_none());
+        });
     }
 }

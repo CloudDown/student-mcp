@@ -51,6 +51,7 @@ jobs:
             libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
             libfontconfig1-dev libgtk2.0-dev 2>/dev/null || true
       - run: cargo test --release --locked
+      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - run: cargo build --release --locked --target ${{ matrix.target }}
       - name: Smoke the MCP over stdio (linux-x64 only)
         if: matrix.label == 'linux-x64'
@@ -60,9 +61,15 @@ jobs:
             '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}' \
             '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
             | target/x86_64-unknown-linux-gnu/release/student-mcp | grep -q student_status
+      - name: Fetch verified Cloudflare tunnel sidecar
+        shell: bash
+        run: python3 scripts/fetch-cloudflared.py --label ${{ matrix.label }} --output sidecar
+      - name: Smoke the tunnel component
+        shell: bash
+        run: ./sidecar/cloudflared${{ runner.os == 'Windows' && '.exe' || '' }} --version
       - name: Package ZIP and checksum
         shell: bash
-        run: python3 scripts/archive-release.py --label ${{ matrix.label }} --binary target/${{ matrix.target }}/release/student-mcp${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: python3 scripts/archive-release.py --label ${{ matrix.label }} --binary target/${{ matrix.target }}/release/student-mcp${{ runner.os == 'Windows' && '.exe' || '' }} --sidecar-dir sidecar
       - uses: actions/upload-artifact@v4
         with:
           name: installer-${{ matrix.label }}

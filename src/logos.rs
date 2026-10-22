@@ -1,41 +1,98 @@
 use eframe::egui::{self, ColorImage, Context, TextureHandle};
 
-/// Embedded service app icons, decoded once for the native gallery.
+/// Embedded service app icons, decoded at build time for the native gallery.
 pub struct Logos {
     pub moodle: TextureHandle,
     pub proxmox: TextureHandle,
-    pub poly: TextureHandle,    // Student record later: Polytechnique symbol
-    pub outlook: TextureHandle, // Courriel later: Outlook
-}
-
-/// Clonic handles: egui textures are Arc-backed Rc handles, cloning is cheap.
-impl Clone for Logos {
-    fn clone(&self) -> Self {
-        Logos {
-            moodle: self.moodle.clone(),
-            proxmox: self.proxmox.clone(),
-            poly: self.poly.clone(),
-            outlook: self.outlook.clone(),
-        }
-    }
+    pub brightspace: TextureHandle,
 }
 
 fn texture(ctx: &Context, name: &str, bytes: &[u8]) -> TextureHandle {
-    let decoded = image::load_from_memory(bytes)
-        .expect("bundled logo decodes")
-        .to_rgba8();
-    let size = [decoded.width() as usize, decoded.height() as usize];
-    let image = ColorImage::from_rgba_unmultiplied(size, decoded.as_raw());
+    let image = color_image(bytes);
     ctx.load_texture(name, image, egui::TextureOptions::LINEAR)
+}
+
+fn color_image(bytes: &[u8]) -> ColorImage {
+    let width = u32::from_le_bytes(bytes[..4].try_into().unwrap()) as usize;
+    let height = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+    ColorImage::from_rgba_unmultiplied([width, height], &bytes[8..])
 }
 
 impl Logos {
     pub fn load(ctx: &Context) -> Logos {
         Logos {
-            moodle: texture(ctx, "moodle", include_bytes!("../assets/moodle-icon.png")),
-            proxmox: texture(ctx, "proxmox", include_bytes!("../assets/proxmox-icon.png")),
-            poly: texture(ctx, "poly", include_bytes!("../assets/poly.png")),
-            outlook: texture(ctx, "outlook", include_bytes!("../assets/outlook.png")),
+            moodle: texture(
+                ctx,
+                "moodle",
+                include_bytes!(concat!(env!("OUT_DIR"), "/moodle.rgba")),
+            ),
+            proxmox: texture(
+                ctx,
+                "proxmox",
+                include_bytes!(concat!(env!("OUT_DIR"), "/proxmox.rgba")),
+            ),
+            brightspace: texture(
+                ctx,
+                "brightspace",
+                include_bytes!(concat!(env!("OUT_DIR"), "/brightspace.rgba")),
+            ),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ICONS: [(&[u8], &[u8]); 3] = [
+        (
+            include_bytes!("../assets/moodle-icon.png"),
+            include_bytes!(concat!(env!("OUT_DIR"), "/moodle.rgba")),
+        ),
+        (
+            include_bytes!("../assets/proxmox-icon.png"),
+            include_bytes!(concat!(env!("OUT_DIR"), "/proxmox.rgba")),
+        ),
+        (
+            include_bytes!("../assets/brightspace-icon.png"),
+            include_bytes!(concat!(env!("OUT_DIR"), "/brightspace.rgba")),
+        ),
+    ];
+
+    fn from_png(bytes: &[u8]) -> ColorImage {
+        let decoded = image::load_from_memory(bytes).unwrap().to_rgba8();
+        ColorImage::from_rgba_unmultiplied(
+            [decoded.width() as usize, decoded.height() as usize],
+            decoded.as_raw(),
+        )
+    }
+
+    #[test]
+    fn prepared_icons_preserve_every_pixel() {
+        for (png, rgba) in ICONS {
+            let original = from_png(png);
+            let prepared = color_image(rgba);
+            assert_eq!(original.size, prepared.size);
+            assert_eq!(original.pixels, prepared.pixels);
+        }
+    }
+
+    #[test]
+    #[ignore = "manual performance measurement"]
+    fn benchmark_logo_loading() {
+        use std::{hint::black_box, time::Instant};
+        for prepared in [false, true] {
+            let start = Instant::now();
+            for _ in 0..100 {
+                for (png, rgba) in ICONS {
+                    black_box(if prepared {
+                        color_image(rgba)
+                    } else {
+                        from_png(png)
+                    });
+                }
+            }
+            eprintln!("100 logo sets (prepared={prepared}): {:?}", start.elapsed());
         }
     }
 }

@@ -49,6 +49,9 @@ pub fn tool_definitions(settings: &Settings) -> Vec<Value> {
         ]);
         tools.extend(proxmox.as_array().cloned().unwrap_or_default());
     }
+    if settings.brightspace().is_some() {
+        tools.extend(crate::brightspace::tools());
+    }
     // inputSchema is required by MCP even when a tool takes no arguments.
     // A strict client can reject the entire tools/list result if one is missing.
     for tool in &mut tools {
@@ -64,6 +67,10 @@ pub fn tool_definitions(settings: &Settings) -> Vec<Value> {
 pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
     let outcome = match name {
         "student_status" => student_status(settings),
+        "brightspace_status"
+        | "brightspace_my_courses"
+        | "brightspace_course_content"
+        | "brightspace_grades" => brightspace_tool(settings, name, args),
         "moodle_status" => moodle_tool(settings, |config| {
             let client = MoodleClient::new(config);
             let info = client.site_info()?;
@@ -298,6 +305,27 @@ where
     handler(&config)
 }
 
+fn brightspace_tool(settings: &Settings, name: &str, args: &Value) -> ToolResult {
+    let config = settings
+        .brightspace()
+        .ok_or("Brightspace is not configured: connect it in the student-mcp window.")?;
+    let client = crate::brightspace::BrightspaceClient::new(config);
+    match name {
+        "brightspace_status" => client.whoami(),
+        "brightspace_my_courses" => {
+            let bookmark = match args.get("bookmark") {
+                None => None,
+                Some(Value::String(value)) => Some(value.as_str()),
+                _ => return Err("Provide bookmark as a string.".into()),
+            };
+            client.courses(bookmark)
+        }
+        "brightspace_course_content" => client.content(require_integer(args, "courseid")?),
+        "brightspace_grades" => client.grades(require_integer(args, "courseid")?),
+        _ => Err("Unknown Brightspace tool.".into()),
+    }
+}
+
 fn proxmox_tool<F>(settings: &Settings, handler: F) -> ToolResult
 where
     F: FnOnce(&ProxmoxClient) -> Result<Value, String>,
@@ -463,15 +491,89 @@ pub fn disable_service(settings: &mut Settings, id: &str) {
     settings.save().ok();
 }
 
+/// Live connectivity check for one configured service, for the "manage" screen.
+pub fn test_service(settings: &Settings, id: &str) -> Result<String, String> {
+    match id {
+        "brightspace" => {
+            let config = settings
+                .brightspace()
+                .ok_or("Brightspace is not connected anymore.")?;
+            crate::brightspace::BrightspaceClient::new(config).whoami()?;
+            Ok("Brightspace connected (read only).".into())
+        }
+        "proxmox" => {
+            let config = settings
+                .proxmox()
+                .ok_or("Proxmox is not connected anymore.")?;
+            let client = ProxmoxClient::new(config);
+            let version = client.version()?;
+            let release = version
+                .get("release")
+                .and_then(Value::as_str)
+                .unwrap_or("?");
+            let names: Vec<String> = client
+                .nodes()
+                .ok()
+                .and_then(|nodes| nodes.as_array().cloned())
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|node| node.get("node").and_then(Value::as_str).map(str::to_string))
+                .collect();
+            Ok(if names.is_empty() {
+                format!("Proxmox VE {release} · no node visible with this token")
+            } else {
+                format!("Proxmox VE {release} · {}", names.join(", "))
+            })
+        }
+        "moodle" => {
+            let config = settings
+                .moodle()
+                .ok_or("Moodle is not connected anymore.")?;
+            let client = MoodleClient::new(&config);
+            let info = client.site_info()?;
+            Ok(format!(
+                "{} · signed in as {} (Moodle {})",
+                info.get("sitename")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Moodle"),
+                info.get("username").and_then(Value::as_str).unwrap_or("?"),
+                info.get("release").and_then(Value::as_str).unwrap_or("?")
+            ))
+        }
+        _ => Err("Unknown service.".into()),
+    }
+}
+
 #[cfg(test)]
 mod protocol_tests {
     use super::*;
     use crate::config::{MoodleSettings, ProxmoxSettings};
 
     #[test]
+    fn connectivity_check_rejects_unconfigured_services_without_a_network_call() {
+        let settings = Settings::default();
+        assert_eq!(
+            test_service(&settings, "moodle").unwrap_err(),
+            "Moodle is not connected anymore."
+        );
+        assert_eq!(
+            test_service(&settings, "proxmox").unwrap_err(),
+            "Proxmox is not connected anymore."
+        );
+        assert_eq!(
+            test_service(&settings, "other").unwrap_err(),
+            "Unknown service."
+        );
+    }
+
+    #[test]
     fn every_advertised_tool_has_an_object_input_schema() {
         let mut settings = Settings::default();
-        for enabled in 0..4 {
+        for enabled in 0..8 {
+            settings.brightspace = (enabled & 4 != 0).then(|| crate::config::BrightspaceSettings {
+                url: Some("https://school.example".into()),
+                token: Some("test-token".into()),
+            });
             settings.moodle = (enabled & 1 != 0).then(|| MoodleSettings {
                 url: Some("https://moodle.example.org".into()),
                 token: Some("test-token".into()),
@@ -493,7 +595,9 @@ mod protocol_tests {
             let tools = reply["result"]["tools"].as_array().unwrap();
             assert_eq!(
                 tools.len(),
-                1 + if enabled & 1 != 0 { 10 } else { 0 } + if enabled & 2 != 0 { 6 } else { 0 }
+                1 + if enabled & 1 != 0 { 10 } else { 0 }
+                    + if enabled & 2 != 0 { 6 } else { 0 }
+                    + if enabled & 4 != 0 { 4 } else { 0 }
             );
             for tool in tools {
                 assert_eq!(
@@ -523,5 +627,19 @@ mod protocol_tests {
         )
         .unwrap();
         assert_eq!(reply["result"]["isError"], false);
+    }
+
+    #[test]
+    fn brightspace_tools_are_read_only_and_require_a_connection() {
+        for tool in crate::brightspace::tools() {
+            assert_eq!(tool["annotations"]["readOnlyHint"], true);
+            let reply = dispatch_tool(
+                &Settings::default(),
+                tool["name"].as_str().unwrap(),
+                &json!({}),
+            );
+            assert_eq!(reply["isError"], true);
+        }
+        assert!(test_service(&Settings::default(), "brightspace").is_err());
     }
 }

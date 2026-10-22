@@ -1,4 +1,5 @@
 use serde_json::{json, Value};
+use std::sync::OnceLock;
 
 static CATALOG_JSON: &str = include_str!("../catalog/functions.json");
 
@@ -16,7 +17,12 @@ pub struct Catalog {
 }
 
 impl Catalog {
-    pub fn load() -> Catalog {
+    pub fn load() -> &'static Catalog {
+        static CATALOG: OnceLock<Catalog> = OnceLock::new();
+        CATALOG.get_or_init(Self::parse)
+    }
+
+    fn parse() -> Catalog {
         let parsed: Value = serde_json::from_str(CATALOG_JSON).unwrap_or(Value::Null);
         let release = parsed
             .get("moodle")
@@ -26,9 +32,8 @@ impl Catalog {
         let entries = parsed
             .get("functions")
             .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default()
             .into_iter()
+            .flatten()
             .filter_map(|entry| {
                 let name = entry.get("name").and_then(Value::as_str)?.to_string();
                 let description = entry
@@ -110,5 +115,39 @@ mod tests {
         assert!(results
             .iter()
             .any(|entry| entry.name == "core_enrol_get_users_courses"));
+    }
+
+    #[test]
+    fn shared_catalog_matches_fresh_parse() {
+        let fresh = Catalog::parse();
+        let cached = Catalog::load();
+        assert!(std::ptr::eq(cached, Catalog::load()));
+        assert_eq!(fresh.release(), cached.release());
+        assert_eq!(fresh.len(), cached.len());
+        for entry in &fresh.entries {
+            let actual = cached.get(&entry.name).unwrap();
+            assert_eq!(entry.description, actual.description);
+            assert_eq!(entry.write, actual.write);
+        }
+    }
+
+    #[test]
+    #[ignore = "manual performance measurement"]
+    fn benchmark_catalog_loading() {
+        use std::{hint::black_box, time::Instant};
+        let start = Instant::now();
+        for _ in 0..100 {
+            black_box(Catalog::parse());
+        }
+        let fresh = start.elapsed();
+        black_box(Catalog::load());
+        let start = Instant::now();
+        for _ in 0..100 {
+            black_box(Catalog::load());
+        }
+        eprintln!(
+            "100 catalog loads: fresh={fresh:?}, cached={:?}",
+            start.elapsed()
+        );
     }
 }

@@ -2,22 +2,35 @@
 name = "student-mcp"
 version = "0.3.0"
 edition = "2021"
-description = "Tiny local MCP popup for student services: Moodle, Brightspace, Proxmox, and a Claude connector over Tailscale Funnel."
+description = "Local MCP popup for student services with an automatic Cloudflare Quick Tunnel link."
 license = "MIT"
 
 [dependencies]
 eframe = { version = "0.33", default-features = false, features = ["glow", "x11", "wayland", "default_fonts"] }
 getrandom = "0.2"
-image = { version = "0.25", default-features = false, features = ["png"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ureq = { version = "2", features = ["json", "tls"] }
 url = "2"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+ksni = { version = "0.3.7", features = ["blocking"] }
+winit = { version = "0.30", default-features = false, features = ["x11"] }
+
+[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
+tray-icon = { version = "0.26.1", default-features = false }
+
+[build-dependencies]
+png = "0.18"
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
+
 [profile.dev]
-opt-level = "s"
-lto = true
-codegen-units = 1
+# Keep local rebuilds fast; release builds retain full size optimizations.
+opt-level = 1
+lto = false
+codegen-units = 16
 panic = "abort"
 
 [profile.release]

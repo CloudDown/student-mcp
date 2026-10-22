@@ -1,5 +1,8 @@
+mod background;
+mod brightspace;
 mod catalog;
 mod config;
+#[allow(dead_code)] // Legacy Tailscale helpers; never alter existing Funnel routes.
 mod funnel;
 mod gui;
 mod http;
@@ -8,6 +11,7 @@ mod mcp;
 mod moodle;
 mod proxmox;
 mod stdio;
+mod tunnel;
 
 use config::VERSION;
 
@@ -37,12 +41,12 @@ fn port_from(args: &[String]) -> Option<u16> {
 
 fn usage() {
     eprintln!(
-        "student-mcp: your local MCP for Moodle, Proxmox and other student services.
+        "student-mcp: your local MCP for Moodle, Brightspace and Proxmox.
 
 Commands:
   student-mcp (no command)        stdio MCP server for local AI clients
   student-mcp up [--port=8420]    Small configuration window + local MCP
-                                  (public link through Tailscale Funnel, button in the window)
+                                  (automatic public link through Cloudflare Quick Tunnels)
   student-mcp install             Opens the configuration window
   student-mcp version
 
