@@ -1,8 +1,9 @@
 # student-mcp
 
 A small **Rust binary** (a window + a local MCP server) that connects student
-services to AI assistants: **Moodle**, **Brightspace / myCourses** (with an
-institution-authorized OAuth token), and **Proxmox**.
+services to AI assistants: **Moodle**, **Omnivox** (through a local
+[omnivox-mcp](https://github.com/Beat-YT/omnivox-mcp) gateway), and **Brightspace /
+myCourses** (with an institution-authorized OAuth token).
 
 - 🪟 **Minimal popup window**: click a service, type your credentials, that's it (no web UI).
 - 🔌 **MCP server**: stdio for local clients, automatic HTTPS `/mcp/<token>` link for web AI connectors through Cloudflare Quick Tunnels.
@@ -23,8 +24,7 @@ Windows (PowerShell):
 irm https://raw.githubusercontent.com/CloudDown/student-mcp/main/install.ps1 | iex
 ```
 
-The window shows course platforms first (**Moodle**, **Brightspace**), with
-**Proxmox** on a separate technical-services row. Click a logo to connect.
+The window shows course platforms (**Moodle**, **Omnivox**, **Brightspace**). Click a logo to connect.
 Successful connections
 return to the home screen with a green outline around the connected logo.
 Credentials stay in `~/.student-mcp.json`.
@@ -50,11 +50,17 @@ On pure Wayland without XWayland, background hiding is disabled and closing quit
 If the Linux tray service disappears, a hidden window is restored.
 This does not start the app automatically when logging into the computer.
 
-Brightspace is read-only: enter the institution's site address and an approved
-OAuth access token, not your school password. Tokens expire and must currently
-be replaced manually; browser OAuth and automatic refresh are not implemented.
-This does not guarantee that McGill or another institution allows student API
-access. See [the guide](docs/GUIDE.md#quebec-integration-targets) for remaining targets.
+Omnivox is read-only: Skytech has no public student API, so this app talks to a
+local [omnivox-mcp](https://github.com/Beat-YT/omnivox-mcp) gateway. Log in there
+(MFA included), then enter its address and access key — not your Omnivox
+password.
+
+Brightspace / myCourses (McGill and other D2L schools) is read-only: enter the
+institution's site address and an approved OAuth access token, not your school
+password. Tokens expire and must currently be replaced manually; browser OAuth
+and automatic refresh are not implemented. This does not guarantee that McGill
+or another institution allows student API access. See
+[the guide](docs/GUIDE.md#quebec-integration-targets) for remaining targets.
 
 ## Using the tools
 
@@ -105,10 +111,10 @@ AI or subscription supports custom MCP connectors.
 Always: `student_status`. As soon as a service is connected, its tools appear:
 
 - **Moodle**: `moodle_status`, `moodle_my_courses`, `moodle_course_content`, `moodle_assignments`, `moodle_quizzes`, `moodle_grades`, `moodle_calendar`, `ws_discover`, `ws_schema`, `ws_call` (embedded Moodle catalogue, ~750 functions)
-- **Proxmox**: `proxmox_status`, `proxmox_list_vms`, `proxmox_vm_status`, `proxmox_vm_start`, `proxmox_vm_stop`, `proxmox_vm_reboot`
+- **Omnivox** (read only, via omnivox-mcp): `omnivox_status`, `omnivox_my_courses`, `omnivox_course_documents`, `omnivox_assignments`, `omnivox_grades`, `omnivox_schedule`, `omnivox_calendar`
 - **Brightspace** (read only): `brightspace_status`, `brightspace_my_courses` (paged), `brightspace_course_content`, `brightspace_grades`
 
-Writes (dropping files, stopping a VM…) stay locked until you tick **“Allow changes”** in the window.
+Writes stay locked until you tick **“Allow changes”** in the window.
 
 ## Development
 
@@ -144,7 +150,7 @@ Release packaging pins the sidecar version and upstream SHA-256 digests in
 sidecar can run on each CI platform. Update those pins when updating cloudflared.
 
 Layout: `src/main.rs` (CLI), `gui.rs` (egui popup), `mcp.rs` (JSON-RPC + tools),
-`http.rs` (std-only MCP HTTP server), `stdio.rs`, `moodle.rs` / `proxmox.rs`
+`http.rs` (std-only MCP HTTP server), `stdio.rs`, `moodle.rs` / `omnivox.rs` / `brightspace.rs`
 (clients), `funnel.rs` (legacy Tailscale helpers, unused by the app), `catalog.rs` (embedded catalogue),
 `tunnel.rs` (managed Quick Tunnel child process), `config.rs` (`~/.student-mcp.json`).
 `background.rs` owns the tray icon and hide/reopen/quit lifecycle. Linux uses

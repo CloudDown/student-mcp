@@ -3,7 +3,7 @@ use eframe::egui::{self, ColorImage, Context, TextureHandle};
 /// Embedded service app icons, decoded at build time for the native gallery.
 pub struct Logos {
     pub moodle: TextureHandle,
-    pub proxmox: TextureHandle,
+    pub omnivox: TextureHandle,
     pub brightspace: TextureHandle,
 }
 
@@ -26,10 +26,10 @@ impl Logos {
                 "moodle",
                 include_bytes!(concat!(env!("OUT_DIR"), "/moodle.rgba")),
             ),
-            proxmox: texture(
+            omnivox: texture(
                 ctx,
-                "proxmox",
-                include_bytes!(concat!(env!("OUT_DIR"), "/proxmox.rgba")),
+                "omnivox",
+                include_bytes!(concat!(env!("OUT_DIR"), "/omnivox.rgba")),
             ),
             brightspace: texture(
                 ctx,
@@ -50,8 +50,8 @@ mod tests {
             include_bytes!(concat!(env!("OUT_DIR"), "/moodle.rgba")),
         ),
         (
-            include_bytes!("../assets/proxmox-icon.png"),
-            include_bytes!(concat!(env!("OUT_DIR"), "/proxmox.rgba")),
+            include_bytes!("../assets/omnivox-icon.png"),
+            include_bytes!(concat!(env!("OUT_DIR"), "/omnivox.rgba")),
         ),
         (
             include_bytes!("../assets/brightspace-icon.png"),

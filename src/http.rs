@@ -4,8 +4,8 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 const MAX_HEADER: usize = 32 * 1024;
 const MAX_BODY: usize = 2 * 1024 * 1024;
@@ -69,7 +69,12 @@ fn connection(
             }
         };
         if !enabled.load(Ordering::SeqCst) {
-            respond(&stream, 503, &[("Content-Type", "application/json")], b"{\"error\":\"Local link disabled.\"}")?;
+            respond(
+                &stream,
+                503,
+                &[("Content-Type", "application/json")],
+                b"{\"error\":\"Local link disabled.\"}",
+            )?;
             return Ok(());
         }
         let (status, headers, body) = route(&request, &sessions);
@@ -448,11 +453,20 @@ mod tests {
                 connection(stream, Arc::new(Mutex::new(HashMap::new())), control).unwrap();
             });
             let mut client = TcpStream::connect(address).unwrap();
-            client.set_read_timeout(Some(std::time::Duration::from_secs(2))).unwrap();
+            client
+                .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                .unwrap();
             client.write_all(b"GET /.well-known/oauth-authorization-server HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").unwrap();
             let mut response = String::new();
             client.read_to_string(&mut response).unwrap();
-            assert!(response.starts_with(if active { "HTTP/1.1 404" } else { "HTTP/1.1 503" }), "{response}");
+            assert!(
+                response.starts_with(if active {
+                    "HTTP/1.1 404"
+                } else {
+                    "HTTP/1.1 503"
+                }),
+                "{response}"
+            );
             worker.join().unwrap();
         }
     }

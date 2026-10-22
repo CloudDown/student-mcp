@@ -1,7 +1,6 @@
 use crate::catalog::Catalog;
 use crate::config::{Settings, VERSION};
 use crate::moodle::{request_mobile_token, MoodleClient};
-use crate::proxmox::{locate_resource, ProxmoxClient};
 use serde_json::{json, Value};
 
 pub type ToolResult = Result<Value, String>;
@@ -28,26 +27,8 @@ pub fn tool_definitions(settings: &Settings) -> Vec<Value> {
         ]);
         tools.extend(moodle.as_array().cloned().unwrap_or_default());
     }
-    if settings.proxmox().is_some() {
-        let allowed = settings
-            .proxmox
-            .as_ref()
-            .and_then(|p| p.allow_write)
-            .unwrap_or(false);
-        let write_annotation = if allowed {
-            json!({ "readOnlyHint": false, "destructiveHint": true })
-        } else {
-            json!({ "readOnlyHint": true })
-        };
-        let proxmox = json!([
-            { "name": "proxmox_status", "description": "Show the connected Proxmox server version and the nodes this token can see.", "annotations": { "readOnlyHint": true } },
-            { "name": "proxmox_list_vms", "description": "List every VM and LXC container this Proxmox token can see, with node and status.", "annotations": { "readOnlyHint": true } },
-            { "name": "proxmox_vm_status", "description": "Show detailed status of one VM or LXC container by its VMID.", "inputSchema": { "type": "object", "properties": { "vmid": { "type": "integer", "minimum": 1 } }, "required": ["vmid"] }, "annotations": { "readOnlyHint": true } },
-            { "name": "proxmox_vm_start", "description": "Start a stopped VM or LXC container. Requires Proxmox writing enabled.", "inputSchema": { "type": "object", "properties": { "vmid": { "type": "integer", "minimum": 1 } }, "required": ["vmid"] }, "annotations": { "readOnlyHint": false } },
-            { "name": "proxmox_vm_stop", "description": "Stop (graceful shutdown, or hard poweroff with force=true) a running VM or LXC container.", "inputSchema": { "type": "object", "properties": { "vmid": { "type": "integer", "minimum": 1 }, "force": { "type": "boolean" } }, "required": ["vmid"] }, "annotations": write_annotation },
-            { "name": "proxmox_vm_reboot", "description": "Reboot a running VM or LXC container. Requires Proxmox writing enabled.", "inputSchema": { "type": "object", "properties": { "vmid": { "type": "integer", "minimum": 1 } }, "required": ["vmid"] }, "annotations": write_annotation }
-        ]);
-        tools.extend(proxmox.as_array().cloned().unwrap_or_default());
+    if settings.omnivox().is_some() {
+        tools.extend(crate::omnivox::tools());
     }
     if settings.brightspace().is_some() {
         tools.extend(crate::brightspace::tools());
@@ -67,6 +48,13 @@ pub fn tool_definitions(settings: &Settings) -> Vec<Value> {
 pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
     let outcome = match name {
         "student_status" => student_status(settings),
+        "omnivox_status"
+        | "omnivox_my_courses"
+        | "omnivox_course_documents"
+        | "omnivox_assignments"
+        | "omnivox_grades"
+        | "omnivox_schedule"
+        | "omnivox_calendar" => omnivox_tool(settings, name, args),
         "brightspace_status"
         | "brightspace_my_courses"
         | "brightspace_course_content"
@@ -204,69 +192,6 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
             }
             client.call(name, &payload)
         }),
-        "proxmox_status" => proxmox_tool(settings, |client| {
-            Ok(json!({ "version": client.version()?, "nodes": client.nodes()? }))
-        }),
-        "proxmox_list_vms" => proxmox_tool(settings, |client| {
-            let resources = client.resources()?;
-            let machines: Vec<Value> = resources
-                .as_array()
-                .cloned()
-                .unwrap_or_default()
-                .into_iter()
-                .filter_map(|entry| {
-                    let vmid = entry.get("vmid").and_then(Value::as_i64)?;
-                    Some(json!({
-                        "vmid": vmid,
-                        "name": entry.get("name").cloned().unwrap_or(Value::Null),
-                        "node": entry.get("node").cloned().unwrap_or(Value::Null),
-                        "status": entry.get("status").cloned().unwrap_or(Value::Null),
-                        "type": entry.get("type").cloned().unwrap_or(Value::Null)
-                    }))
-                })
-                .collect();
-            Ok(json!({ "count": machines.len(), "machines": machines }))
-        }),
-        "proxmox_vm_status" => proxmox_tool(settings, |client| {
-            let vmid = require_integer(args, "vmid")?;
-            let found = locate_resource(client, vmid)?;
-            Ok(
-                json!({ "vmid": vmid, "node": found.node, "type": found.kind, "status": found.status, "detail": client.vm_detail(&found.node, &found.kind, vmid)? }),
-            )
-        }),
-        "proxmox_vm_start" => proxmox_write_tool(settings, |client| {
-            let vmid = require_integer(args, "vmid")?;
-            let found = locate_resource(client, vmid)?;
-            if found.status == "running" {
-                return Ok(
-                    json!({ "vmid": vmid, "status": "running", "note": "Machine already running." }),
-                );
-            }
-            Ok(
-                json!({ "vmid": vmid, "node": found.node, "started": true, "task": client.vm_action(&found.node, &found.kind, vmid, "start")? }),
-            )
-        }),
-        "proxmox_vm_stop" => proxmox_write_tool(settings, |client| {
-            let vmid = require_integer(args, "vmid")?;
-            let force = args.get("force").and_then(Value::as_bool).unwrap_or(false);
-            let found = locate_resource(client, vmid)?;
-            let task = client.vm_action(
-                &found.node,
-                &found.kind,
-                vmid,
-                if force { "stop" } else { "shutdown" },
-            )?;
-            Ok(
-                json!({ "vmid": vmid, "node": found.node, "task": task, "note": if force { "Poweroff requested (forced shutdown)." } else { "Graceful shutdown requested." } }),
-            )
-        }),
-        "proxmox_vm_reboot" => proxmox_write_tool(settings, |client| {
-            let vmid = require_integer(args, "vmid")?;
-            let found = locate_resource(client, vmid)?;
-            Ok(
-                json!({ "vmid": vmid, "node": found.node, "task": client.vm_action(&found.node, &found.kind, vmid, "reboot")? }),
-            )
-        }),
         other => Err(format!("Unknown tool \"{other}\".")),
     };
     match outcome {
@@ -290,8 +215,7 @@ fn student_status(settings: &Settings) -> ToolResult {
     Ok(json!({
         "version": VERSION,
         "services": settings.services_active(),
-        "moodleAllowWrite": settings.moodle().map(|m| m.allow_write).unwrap_or(false),
-        "proxmoxAllowWrite": settings.proxmox().map(|p| p.allow_write).unwrap_or(false)
+        "moodleAllowWrite": settings.moodle().map(|m| m.allow_write).unwrap_or(false)
     }))
 }
 
@@ -303,6 +227,13 @@ where
         .moodle()
         .ok_or("Moodle is not configured: connect it in the student-mcp window.")?;
     handler(&config)
+}
+
+fn omnivox_tool(settings: &Settings, name: &str, args: &Value) -> ToolResult {
+    let config = settings
+        .omnivox()
+        .ok_or("Omnivox is not configured: connect it in the student-mcp window.")?;
+    crate::omnivox::dispatch(&crate::omnivox::OmnivoxClient::new(config), name, args)
 }
 
 fn brightspace_tool(settings: &Settings, name: &str, args: &Value) -> ToolResult {
@@ -324,34 +255,6 @@ fn brightspace_tool(settings: &Settings, name: &str, args: &Value) -> ToolResult
         "brightspace_grades" => client.grades(require_integer(args, "courseid")?),
         _ => Err("Unknown Brightspace tool.".into()),
     }
-}
-
-fn proxmox_tool<F>(settings: &Settings, handler: F) -> ToolResult
-where
-    F: FnOnce(&ProxmoxClient) -> Result<Value, String>,
-{
-    let config = settings
-        .proxmox()
-        .ok_or("Proxmox is not configured: connect it in the student-mcp window.")?;
-    handler(&ProxmoxClient::new(config))
-}
-
-fn proxmox_write_tool<F>(settings: &Settings, handler: F) -> ToolResult
-where
-    F: FnOnce(&ProxmoxClient) -> Result<Value, String>,
-{
-    if !settings
-        .proxmox
-        .as_ref()
-        .and_then(|p| p.allow_write)
-        .unwrap_or(false)
-    {
-        return Err(
-            "Proxmox changes are disabled. Reconnect Proxmox in the window and allow writing."
-                .into(),
-        );
-    }
-    proxmox_tool(settings, handler)
 }
 
 /// Handle a JSON-RPC message; None for notifications (no reply expected).
@@ -444,48 +347,6 @@ pub fn activate_moodle(
     ))
 }
 
-pub fn activate_proxmox(
-    settings: &mut Settings,
-    url: &str,
-    token_id: &str,
-    secret: &str,
-    allow_write: bool,
-) -> Result<String, String> {
-    if !token_id.contains('!') {
-        return Err("The token ID looks like \"student@pam!mcp\".".into());
-    }
-    let base_url = crate::config::normalize_proxmox_url(url)?;
-    let client = ProxmoxClient::new(crate::config::ProxmoxConfig {
-        base_url: base_url.clone(),
-        token_id: token_id.trim().to_string(),
-        secret: secret.trim().to_string(),
-        allow_write,
-    });
-    let version = client.version()?;
-    let nodes = client.nodes().unwrap_or_else(|_| json!([]));
-    let names: Vec<String> = nodes
-        .as_array()
-        .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|node| node.get("node").and_then(Value::as_str).map(str::to_string))
-        .collect();
-    let summary = if names.is_empty() {
-        "Token connected, but no node is visible (limited permissions?)".to_string()
-    } else {
-        format!("Accessible nodes: {}", names.join(", "))
-    };
-    let release = version.get("release").and_then(Value::as_str).unwrap_or("");
-    settings.proxmox = Some(crate::config::ProxmoxSettings {
-        url: Some(base_url),
-        token_id: Some(token_id.trim().to_string()),
-        secret: Some(secret.trim().to_string()),
-        allow_write: Some(allow_write),
-    });
-    settings.save().ok();
-    Ok(format!("Proxmox VE {release} connected. {summary}"))
-}
-
 pub fn disable_service(settings: &mut Settings, id: &str) {
     settings.disable(id);
     settings.save().ok();
@@ -494,36 +355,19 @@ pub fn disable_service(settings: &mut Settings, id: &str) {
 /// Live connectivity check for one configured service, for the "manage" screen.
 pub fn test_service(settings: &Settings, id: &str) -> Result<String, String> {
     match id {
+        "omnivox" => {
+            let config = settings
+                .omnivox()
+                .ok_or("Omnivox is not connected anymore.")?;
+            crate::omnivox::OmnivoxClient::new(config).status()?;
+            Ok("Omnivox connected (read only, through the MCP gateway).".into())
+        }
         "brightspace" => {
             let config = settings
                 .brightspace()
                 .ok_or("Brightspace is not connected anymore.")?;
             crate::brightspace::BrightspaceClient::new(config).whoami()?;
             Ok("Brightspace connected (read only).".into())
-        }
-        "proxmox" => {
-            let config = settings
-                .proxmox()
-                .ok_or("Proxmox is not connected anymore.")?;
-            let client = ProxmoxClient::new(config);
-            let version = client.version()?;
-            let release = version
-                .get("release")
-                .and_then(Value::as_str)
-                .unwrap_or("?");
-            let names: Vec<String> = client
-                .nodes()
-                .ok()
-                .and_then(|nodes| nodes.as_array().cloned())
-                .unwrap_or_default()
-                .into_iter()
-                .filter_map(|node| node.get("node").and_then(Value::as_str).map(str::to_string))
-                .collect();
-            Ok(if names.is_empty() {
-                format!("Proxmox VE {release} · no node visible with this token")
-            } else {
-                format!("Proxmox VE {release} · {}", names.join(", "))
-            })
         }
         "moodle" => {
             let config = settings
@@ -547,7 +391,7 @@ pub fn test_service(settings: &Settings, id: &str) -> Result<String, String> {
 #[cfg(test)]
 mod protocol_tests {
     use super::*;
-    use crate::config::{MoodleSettings, ProxmoxSettings};
+    use crate::config::MoodleSettings;
 
     #[test]
     fn connectivity_check_rejects_unconfigured_services_without_a_network_call() {
@@ -555,10 +399,6 @@ mod protocol_tests {
         assert_eq!(
             test_service(&settings, "moodle").unwrap_err(),
             "Moodle is not connected anymore."
-        );
-        assert_eq!(
-            test_service(&settings, "proxmox").unwrap_err(),
-            "Proxmox is not connected anymore."
         );
         assert_eq!(
             test_service(&settings, "other").unwrap_err(),
@@ -574,15 +414,13 @@ mod protocol_tests {
                 url: Some("https://school.example".into()),
                 token: Some("test-token".into()),
             });
+            settings.omnivox = (enabled & 2 != 0).then(|| crate::config::OmnivoxSettings {
+                url: Some("http://127.0.0.1:3000".into()),
+                token: Some("test-token".into()),
+            });
             settings.moodle = (enabled & 1 != 0).then(|| MoodleSettings {
                 url: Some("https://moodle.example.org".into()),
                 token: Some("test-token".into()),
-                ..Default::default()
-            });
-            settings.proxmox = (enabled & 2 != 0).then(|| ProxmoxSettings {
-                url: Some("https://pve.example.org:8006".into()),
-                token_id: Some("test@pam!mcp".into()),
-                secret: Some("test-secret".into()),
                 ..Default::default()
             });
             let reply = handle_message(
@@ -596,7 +434,7 @@ mod protocol_tests {
             assert_eq!(
                 tools.len(),
                 1 + if enabled & 1 != 0 { 10 } else { 0 }
-                    + if enabled & 2 != 0 { 6 } else { 0 }
+                    + if enabled & 2 != 0 { 7 } else { 0 }
                     + if enabled & 4 != 0 { 4 } else { 0 }
             );
             for tool in tools {
@@ -641,5 +479,19 @@ mod protocol_tests {
             assert_eq!(reply["isError"], true);
         }
         assert!(test_service(&Settings::default(), "brightspace").is_err());
+    }
+
+    #[test]
+    fn omnivox_tools_are_read_only_and_require_a_connection() {
+        for tool in crate::omnivox::tools() {
+            assert_eq!(tool["annotations"]["readOnlyHint"], true);
+            let reply = dispatch_tool(
+                &Settings::default(),
+                tool["name"].as_str().unwrap(),
+                &json!({}),
+            );
+            assert_eq!(reply["isError"], true);
+        }
+        assert!(test_service(&Settings::default(), "omnivox").is_err());
     }
 }

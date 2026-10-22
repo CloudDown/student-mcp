@@ -7,7 +7,10 @@ use eframe::egui::{
     RichText, Sense, Stroke, TextEdit, TextureHandle, Ui, Vec2,
 };
 use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::Instant;
 
 // Quiet macOS-style surfaces. Blue means action; green is reserved for status.
@@ -472,7 +475,7 @@ fn configure_context(ctx: &Context) {
     });
 }
 
-/// Course platforms first; technical services on a separate centered row.
+/// Three course platforms in one row.
 struct GalleryLayout {
     tiles: [Rect; 3],
     footer: Rect,
@@ -481,9 +484,9 @@ struct GalleryLayout {
 impl GalleryLayout {
     fn new(bounds: Rect, footer_height: f32) -> Self {
         let gap = 16.0;
-        let side = ((bounds.width() - gap) / 2.0).min(136.0);
-        let width = side * 2.0 + gap;
-        let grid_height = side * 2.0 + 32.0;
+        let side = ((bounds.width() - 2.0 * gap) / 3.0).min(136.0).floor();
+        let width = side * 3.0 + gap * 2.0;
+        let grid_height = side;
         let footer_gap = 24.0;
         let height = grid_height + footer_gap + footer_height;
         let origin = pos2(
@@ -497,7 +500,7 @@ impl GalleryLayout {
                 Rect::from_min_size(origin, Vec2::splat(side)),
                 Rect::from_min_size(origin + Vec2::new(side + gap, 0.0), Vec2::splat(side)),
                 Rect::from_min_size(
-                    origin + Vec2::new((width - side) / 2.0, side + 32.0),
+                    origin + Vec2::new((side + gap) * 2.0, 0.0),
                     Vec2::splat(side),
                 ),
             ],
@@ -546,8 +549,6 @@ struct Draft {
     username: String,
     password: String,
     token: String,
-    token_id: String,
-    secret: String,
     allow_write: bool,
     other_school: bool,
     use_token: bool,
@@ -563,7 +564,7 @@ pub struct App {
     port: u16,
     logos: Option<Logos>,
     bind_error: Option<String>,
-    screen: &'static str, // "home" | "moodle" | "brightspace" | "proxmox" | "links"
+    screen: &'static str, // "home" | "moodle" | "omnivox" | "brightspace" | "links"
     draft: Draft,
     busy: bool,
     notice: Option<Notice>,
@@ -576,6 +577,13 @@ pub struct App {
     copied_flash: Option<(String, Instant)>,
     /// Interface zoom factor, persisted in the config file.
     scale: f32,
+    /// Zoom −/+ hit targets in the same point space as the last pointer move.
+    /// Kept across zoom changes so spam-clicks still land without moving the mouse
+    /// (egui-winit keeps a stale pointer pos until the next CursorMoved).
+    zoom_hit: Option<(Rect, Rect)>,
+    /// While the primary button stays down after pressing a zoom control.
+    zoom_held: Option<f32>,
+    zoom_repeat_at: Option<Instant>,
 }
 
 fn native_options() -> eframe::NativeOptions {
@@ -663,6 +671,9 @@ pub fn run(port_override: Option<u16>, first_run: bool) {
                 background: Background::enabled(),
                 copied_flash: None,
                 scale: crate::config::DEFAULT_SCALE,
+                zoom_hit: None,
+                zoom_held: None,
+                zoom_repeat_at: None,
             };
             app.scale = app.settings.scale();
             app.apply_scale(&cc.egui_ctx);
@@ -743,28 +754,111 @@ impl App {
     /// Two independent zoom buttons pinned to the bottom-right corner.
     fn scale_control(&mut self, ctx: &Context) {
         let step = crate::config::SCALE_STEP;
+        let min_hit = self.scale <= crate::config::SCALE_MIN;
+        let max_hit = self.scale >= crate::config::SCALE_MAX;
+
+        // Pointer events stay in the point space of the last CursorMoved. After a
+        // zoom change that space no longer matches the painted layout, so keep the
+        // last hit rects until the pointer moves again — spam-clicks still land.
+        let pointer_moved = ctx.input(|input| {
+            input
+                .events
+                .iter()
+                .any(|event| matches!(event, egui::Event::PointerMoved(_)))
+        });
+        let primary_down = ctx.input(|input| input.pointer.primary_down());
+        let press_pos = ctx.input(|input| {
+            input.events.iter().find_map(|event| match event {
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    ..
+                } => Some(*pos),
+                _ => None,
+            })
+        });
+        let pointer_pos = ctx.input(|input| input.pointer.latest_pos());
+
+        if !primary_down {
+            self.zoom_held = None;
+            self.zoom_repeat_at = None;
+        }
+
+        let mut paint_minus = Rect::NOTHING;
+        let mut paint_plus = Rect::NOTHING;
         egui::Area::new(egui::Id::new("scale-control"))
             .anchor(Align2::RIGHT_BOTTOM, [-10.0, -10.0])
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
-                let mut changed = None;
                 ui.horizontal(|row| {
                     row.spacing_mut().item_spacing.x = 9.0;
-                    if Self::zoom_button(row, "−", self.scale <= crate::config::SCALE_MIN) {
-                        changed = Some(-step);
-                    }
-                    if Self::zoom_button(row, "+", self.scale >= crate::config::SCALE_MAX) {
-                        changed = Some(step);
-                    }
+                    paint_minus = row.allocate_exact_size(Vec2::splat(28.0), Sense::hover()).0;
+                    paint_plus = row.allocate_exact_size(Vec2::splat(28.0), Sense::hover()).0;
                 });
-                if let Some(delta) = changed {
-                    self.change_scale(delta);
+
+                // Fresh moves share paint space; after zoom without a move, keep the
+                // previous event-space targets so the stale pointer still hits.
+                if pointer_moved || self.zoom_hit.is_none() {
+                    self.zoom_hit = Some((paint_minus, paint_plus));
                 }
+                let (hit_minus, hit_plus) = self.zoom_hit.unwrap_or((paint_minus, paint_plus));
+                let hover_minus =
+                    !min_hit && pointer_pos.is_some_and(|pos| hit_minus.contains(pos));
+                let hover_plus =
+                    !max_hit && pointer_pos.is_some_and(|pos| hit_plus.contains(pos));
+                let press_minus = self.zoom_held == Some(-step)
+                    || (primary_down && pointer_pos.is_some_and(|pos| hit_minus.contains(pos)));
+                let press_plus = self.zoom_held == Some(step)
+                    || (primary_down && pointer_pos.is_some_and(|pos| hit_plus.contains(pos)));
+
+                Self::zoom_button_draw(ui, paint_minus, "−", min_hit, hover_minus, press_minus);
+                Self::zoom_button_draw(ui, paint_plus, "+", max_hit, hover_plus, press_plus);
             });
+
+        let (hit_minus, hit_plus) = self.zoom_hit.unwrap_or((paint_minus, paint_plus));
+        let mut delta = None;
+        if let Some(pos) = press_pos {
+            if !min_hit && hit_minus.contains(pos) {
+                delta = Some(-step);
+                self.zoom_held = Some(-step);
+                self.zoom_repeat_at =
+                    Some(Instant::now() + std::time::Duration::from_millis(400));
+            } else if !max_hit && hit_plus.contains(pos) {
+                delta = Some(step);
+                self.zoom_held = Some(step);
+                self.zoom_repeat_at =
+                    Some(Instant::now() + std::time::Duration::from_millis(400));
+            }
+        } else if let Some(held) = self.zoom_held {
+            let due = self.zoom_repeat_at.is_some_and(|at| Instant::now() >= at);
+            let blocked = (held < 0.0 && min_hit) || (held > 0.0 && max_hit);
+            if due && !blocked {
+                delta = Some(held);
+                self.zoom_repeat_at =
+                    Some(Instant::now() + std::time::Duration::from_millis(70));
+                ctx.request_repaint_after(std::time::Duration::from_millis(70));
+            } else if let Some(at) = self.zoom_repeat_at {
+                if !due {
+                    ctx.request_repaint_after(at.saturating_duration_since(Instant::now()));
+                }
+            }
+        }
+
+        if let Some(delta) = delta {
+            self.change_scale(delta);
+        }
     }
 
-    fn zoom_button(ui: &mut Ui, label: &str, disabled: bool) -> bool {
-        let (rect, response) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::click());
+    fn zoom_button_draw(
+        ui: &mut Ui,
+        rect: Rect,
+        label: &str,
+        disabled: bool,
+        hovered: bool,
+        pressed: bool,
+    ) {
+        let response = ui.interact(rect, ui.id().with(label), Sense::hover());
         let response = response.on_hover_text(if disabled {
             "Size limit"
         } else if label == "+" {
@@ -772,10 +866,8 @@ impl App {
         } else {
             "Smaller"
         });
-        response.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, !disabled, label)
-        });
-        let hovered = !disabled && response.hovered();
+        response
+            .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, !disabled, label));
         ui.painter().add(
             egui::epaint::Shadow {
                 offset: [0, if hovered { 5 } else { 3 }],
@@ -788,7 +880,7 @@ impl App {
         ui.painter().rect_filled(
             rect,
             14.0,
-            if response.is_pointer_button_down_on() && !disabled {
+            if pressed && !disabled {
                 PRESSED
             } else {
                 Color32::WHITE
@@ -805,30 +897,29 @@ impl App {
             Align2::CENTER_CENTER,
             label,
             FontId::proportional(14.0),
-            if disabled { MUTED } else if hovered { INK } else { SUBTLE },
+            if disabled {
+                MUTED
+            } else if hovered {
+                INK
+            } else {
+                SUBTLE
+            },
         );
-        if !disabled && response.has_focus() {
-            focus_ring(ui, rect, 14);
-        }
-        !disabled && response.clicked()
     }
     /// True when the current screen should show the connected summary instead
     /// of the credential form.
     fn viewing_connected(&self) -> bool {
         match self.screen {
+            "omnivox" => self.settings.omnivox().is_some() && !self.draft.editing,
             "brightspace" => self.settings.brightspace().is_some() && !self.draft.editing,
             "moodle" => self.settings.moodle().is_some() && !self.draft.editing,
-            "proxmox" => self.settings.proxmox().is_some() && !self.draft.editing,
             _ => false,
         }
     }
 
     /// A configured service: check it, change access or credentials, or disconnect.
     fn connected_view(&mut self, ui: &mut Ui, ctx: &egui::Context, service: &str) {
-        let allow_write = match service {
-            "proxmox" => self.settings.proxmox().is_some_and(|c| c.allow_write),
-            _ => self.settings.moodle().is_some_and(|c| c.allow_write),
-        };
+        let allow_write = self.settings.moodle().is_some_and(|c| c.allow_write);
         let mut retry = false;
         card(ui, |ui| {
             ui.horizontal(|ui| {
@@ -856,7 +947,7 @@ impl App {
             if let Some(Notice::Err(message)) = self.check_status.as_ref() {
                 ui.add(egui::Label::new(RichText::new(message).size(10.5).color(RED)).wrap());
             }
-            if service != "brightspace" {
+            if !matches!(service, "omnivox" | "brightspace") {
                 hairline(ui);
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("Allow changes").size(12.0).color(INK));
@@ -895,16 +986,9 @@ impl App {
 
     fn set_allow_write(&mut self, service: &str, allow: bool) {
         let mut fresh = Settings::load();
-        match service {
-            "proxmox" => {
-                if let Some(config) = fresh.proxmox.as_mut() {
-                    config.allow_write = Some(allow);
-                }
-            }
-            _ => {
-                if let Some(config) = fresh.moodle.as_mut() {
-                    config.allow_write = Some(allow);
-                }
+        if service == "moodle" {
+            if let Some(config) = fresh.moodle.as_mut() {
+                config.allow_write = Some(allow);
             }
         }
         let _ = fresh.save();
@@ -947,8 +1031,8 @@ impl App {
     fn body(&mut self, ui: &mut Ui, ctx: &egui::Context) {
         match self.screen {
             "moodle" => self.moodle_screen(ui, ctx),
+            "omnivox" => self.omnivox_screen(ui, ctx),
             "brightspace" => self.brightspace_screen(ui, ctx),
-            "proxmox" => self.proxmox_screen(ui, ctx),
             "links" => self.links_screen(ui, ctx),
             _ => self.home_screen(ui),
         }
@@ -968,27 +1052,27 @@ impl App {
             layout.tiles[0],
             self.settings.moodle().is_some(),
         );
+        let omnivox_clicked = Self::tile(
+            ui,
+            &logos.omnivox,
+            "Omnivox",
+            layout.tiles[1],
+            self.settings.omnivox().is_some(),
+        );
         let brightspace_clicked = Self::tile(
             ui,
             &logos.brightspace,
             "Brightspace / myCourses",
-            layout.tiles[1],
+            layout.tiles[2],
             self.settings.brightspace().is_some(),
         );
-        let proxmox_clicked = Self::tile(
-            ui,
-            &logos.proxmox,
-            "Proxmox",
-            layout.tiles[2],
-            self.settings.proxmox().is_some(),
-        );
-        if moodle_clicked || brightspace_clicked || proxmox_clicked {
+        if moodle_clicked || omnivox_clicked || brightspace_clicked {
             let service = if moodle_clicked {
                 "moodle"
-            } else if brightspace_clicked {
-                "brightspace"
+            } else if omnivox_clicked {
+                "omnivox"
             } else {
-                "proxmox"
+                "brightspace"
             };
             self.open_service(service, ui.ctx());
             self.notice = None;
@@ -1027,11 +1111,9 @@ impl App {
             Stroke::new(0.5_f32, BORDER),
             egui::StrokeKind::Inside,
         );
-        let title = ui.painter().layout_no_wrap(
-            "AI connection".into(),
-            FontId::proportional(11.5),
-            INK,
-        );
+        let title =
+            ui.painter()
+                .layout_no_wrap("AI connection".into(), FontId::proportional(11.5), INK);
         let (text, font, color) = self.home_link_text(&url);
         let subtitle = ui
             .painter()
@@ -1199,6 +1281,11 @@ impl App {
         self.draft.editing = false;
         self.screen = service;
         match service {
+            "omnivox" => {
+                if let Some(config) = self.settings.omnivox() {
+                    self.draft.url = config.base_url;
+                }
+            }
             "brightspace" => {
                 if let Some(config) = self.settings.brightspace() {
                     self.draft.url = config.base_url;
@@ -1209,13 +1296,6 @@ impl App {
                     self.draft.allow_write = config.allow_write;
                     self.draft.other_school = config.base_url != MOODLE_DEFAULT_URL;
                     self.draft.url = config.base_url;
-                }
-            }
-            "proxmox" => {
-                if let Some(config) = self.settings.proxmox() {
-                    self.draft.url = config.base_url;
-                    self.draft.token_id = config.token_id;
-                    self.draft.allow_write = config.allow_write;
                 }
             }
             _ => {}
@@ -1231,12 +1311,7 @@ impl App {
     // ---------- the link screen: local and public ----------
 
     fn links_screen(&mut self, ui: &mut Ui, ctx: &egui::Context) {
-        if self.top_bar(
-            ui,
-            "",
-            "",
-            false,
-        ) {
+        if self.top_bar(ui, "", "", false) {
             return;
         }
         // ---- local: this machine ----
@@ -1246,7 +1321,10 @@ impl App {
         );
         let mut local_on = self.local_enabled.load(Ordering::SeqCst);
         section_row(ui, "LOCAL LINK", |row| {
-            if row.add_enabled_ui(self.bind_error.is_none(), |ui| switch(ui, &mut local_on)).inner {
+            if row
+                .add_enabled_ui(self.bind_error.is_none(), |ui| switch(ui, &mut local_on))
+                .inner
+            {
                 self.local_enabled.store(local_on, Ordering::SeqCst);
                 if !local_on {
                     self.tunnel.stop();
@@ -1296,7 +1374,10 @@ impl App {
             TunnelState::Starting | TunnelState::Ready(_)
         );
         let can_toggle = !self.busy
-            && (enabled || (self.local_enabled.load(Ordering::SeqCst) && self.bind_error.is_none() && self.has_services()));
+            && (enabled
+                || (self.local_enabled.load(Ordering::SeqCst)
+                    && self.bind_error.is_none()
+                    && self.has_services()));
         section_row(ui, "PUBLIC LINK", |row| {
             let changed = row
                 .add_enabled_ui(can_toggle, |ui| switch(ui, &mut enabled))
@@ -1368,29 +1449,39 @@ impl App {
 
     fn copy_link_button(&mut self, ui: &mut Ui, url: &str, enabled: bool) {
         let copied = self.is_copied(url);
-        if icon_button(ui, 24.0, if copied { "Copied" } else { "Copy link" }, enabled, |painter, rect, hovered| {
-            if copied {
-                check_icon(painter, rect, GREEN);
-            } else {
-                copy_icon(painter, rect, if hovered { INK } else { SUBTLE });
-            }
-        }) {
+        if icon_button(
+            ui,
+            24.0,
+            if copied { "Copied" } else { "Copy link" },
+            enabled,
+            |painter, rect, hovered| {
+                if copied {
+                    check_icon(painter, rect, GREEN);
+                } else {
+                    copy_icon(painter, rect, if hovered { INK } else { SUBTLE });
+                }
+            },
+        ) {
             ui.ctx().copy_text(url.to_owned());
-            ui.ctx().request_repaint_after(std::time::Duration::from_secs(2));
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_secs(2));
             self.copied_flash = Some((url.to_owned(), Instant::now()));
         }
     }
 
     fn has_services(&self) -> bool {
         self.settings.moodle().is_some()
+            || self.settings.omnivox().is_some()
             || self.settings.brightspace().is_some()
-            || self.settings.proxmox().is_some()
     }
 
     fn update_tunnel(&mut self, ctx: &Context) {
         self.tunnel.poll();
         if !self.local_enabled.load(Ordering::SeqCst) {
-            if matches!(self.tunnel.state, TunnelState::Starting | TunnelState::Ready(_) | TunnelState::Idle) {
+            if matches!(
+                self.tunnel.state,
+                TunnelState::Starting | TunnelState::Ready(_) | TunnelState::Idle
+            ) {
                 self.tunnel.stop();
             }
             return;
@@ -1480,8 +1571,8 @@ impl App {
             if let Some(logos) = &self.logos {
                 let texture = match title {
                     "Moodle" => Some(&logos.moodle),
+                    "Omnivox" => Some(&logos.omnivox),
                     "Brightspace" => Some(&logos.brightspace),
-                    "Proxmox" => Some(&logos.proxmox),
                     _ => None,
                 };
                 if let Some(texture) = texture {
@@ -1845,6 +1936,52 @@ impl App {
         }
     }
 
+    fn omnivox_screen(&mut self, ui: &mut Ui, ctx: &egui::Context) {
+        let connected = self.viewing_connected();
+        if self.top_bar(ui, "Omnivox", "Léa / Mio · Read only", connected) {
+            return;
+        }
+        if connected {
+            self.connected_view(ui, ctx, "omnivox");
+            return;
+        }
+        Self::field(
+            ui,
+            "Omnivox MCP address",
+            &mut self.draft.url,
+            "http://127.0.0.1:3000",
+            false,
+        );
+        Self::secret_field(
+            ui,
+            "Access key",
+            &mut self.draft.token,
+            "accessKey.txt",
+            &mut self.draft.password_visible,
+        );
+        ui.add(
+            egui::Label::new(
+                RichText::new("Run Beat-YT/omnivox-mcp, log in there, then paste its address and access key. Not your Omnivox password.")
+                    .size(10.5)
+                    .color(SUBTLE),
+            )
+            .wrap(),
+        );
+        ui.add_space(10.0);
+        if Self::action(ui, "Connect", !self.busy) {
+            let draft = self.draft.clone();
+            self.spawn(ctx.clone(), move || {
+                let mut settings = Settings::load();
+                match crate::omnivox::activate(&mut settings, &draft.url, &draft.token) {
+                    Ok(message) => Message::Done(Notice::Ok(message), NextScreen::Home),
+                    Err(message) => Message::Done(Notice::Err(message), NextScreen::Stay),
+                }
+            });
+        }
+        self.busy_text(ui);
+        self.notice_line(ui);
+    }
+
     fn brightspace_screen(&mut self, ui: &mut Ui, ctx: &egui::Context) {
         let connected = self.viewing_connected();
         if self.top_bar(ui, "Brightspace", "myCourses · Read only", connected) {
@@ -1889,84 +2026,6 @@ impl App {
         }
         self.busy_text(ui);
         self.notice_line(ui);
-    }
-
-    fn proxmox_screen(&mut self, ui: &mut Ui, ctx: &egui::Context) {
-        let connected = self.viewing_connected();
-        if self.top_bar(
-            ui,
-            "Proxmox",
-            "",
-            connected && matches!(self.check_status, Some(Notice::Ok(_))),
-        ) {
-            return;
-        }
-        if connected {
-            self.connected_view(ui, ctx, "proxmox");
-            return;
-        }
-        let configured = self.settings.proxmox().is_some();
-
-        Self::field(
-            ui,
-            "Server address",
-            &mut self.draft.url,
-            "https://my-pve:8006",
-            false,
-        );
-        Self::field(
-            ui,
-            "API token ID",
-            &mut self.draft.token_id,
-            "firstname.lastname@pam!student-mcp",
-            false,
-        );
-        Self::secret_field(
-            ui,
-            "Token secret",
-            &mut self.draft.secret,
-            "API token secret",
-            &mut self.draft.password_visible,
-        );
-        Self::advanced_row(ui, &mut self.draft.advanced);
-        if self.draft.advanced {
-            Self::permission_row(ui, "Allow changes", &mut self.draft.allow_write);
-        }
-        ui.add_space(14.0);
-        self.notice_line(ui);
-        self.busy_text(ui);
-
-        let draft = self.draft.clone();
-        let ready = !self.busy
-            && !draft.url.trim().is_empty()
-            && !draft.token_id.trim().is_empty()
-            && !draft.secret.trim().is_empty();
-        if Self::action(
-            ui,
-            if self.busy {
-                "Connecting…"
-            } else if configured {
-                "Save changes"
-            } else {
-                "Connect to Proxmox"
-            },
-            ready,
-        ) || ready && ui.input(|input| input.key_pressed(egui::Key::Enter))
-        {
-            self.spawn(ctx.clone(), move || {
-                let mut fresh = Settings::load();
-                match crate::mcp::activate_proxmox(
-                    &mut fresh,
-                    &draft.url,
-                    &draft.token_id,
-                    &draft.secret,
-                    draft.allow_write,
-                ) {
-                    Ok(message) => Message::Done(Notice::Ok(message), NextScreen::Home),
-                    Err(message) => Message::Done(Notice::Err(message), NextScreen::Stay),
-                }
-            });
-        }
     }
 
     fn spawn(&mut self, ctx: Context, job: impl FnOnce() -> Message + Send + 'static) {
@@ -2105,6 +2164,9 @@ mod gallery_tests {
             background: Background::default(),
             copied_flash: None,
             scale: 1.0,
+            zoom_hit: None,
+            zoom_held: None,
+            zoom_repeat_at: None,
         };
         app.update_tunnel(&ctx);
         assert_eq!(app.tunnel.state, TunnelState::Idle);
@@ -2160,6 +2222,9 @@ mod gallery_tests {
             background: Background::default(),
             copied_flash: None,
             scale: 1.0,
+            zoom_hit: None,
+            zoom_held: None,
+            zoom_repeat_at: None,
         };
         assert!(app.viewing_connected());
         sender.send(Err("Moodle did not respond".into())).unwrap();
@@ -2196,21 +2261,104 @@ mod gallery_tests {
                 .union(layout.tiles[1])
                 .union(layout.tiles[2]);
             let content = grid.union(layout.footer);
-            assert_eq!(grid.center().x, bounds.center().x);
-            assert_eq!(content.center().x, bounds.center().x);
+            let side = ((bounds.width() - 32.0) / 3.0).min(136.0).floor();
+            assert!((grid.center().x - bounds.center().x).abs() < 0.02);
+            assert!((content.center().x - bounds.center().x).abs() < 0.02);
             assert!(bounds.contains_rect(content) || bounds.height() < content.height());
-            assert_eq!(layout.footer.center().x, bounds.center().x);
-            assert!((layout.footer.top() - layout.tiles[2].bottom()
-                - (bounds.bottom() - layout.footer.bottom())).abs() < 0.01);
+            assert!((layout.footer.center().x - bounds.center().x).abs() < 0.02);
+            assert!(
+                (layout.footer.top()
+                    - layout.tiles[0].bottom()
+                    - (bounds.bottom() - layout.footer.bottom()))
+                .abs()
+                    < 0.01
+            );
             assert!(layout.footer.width() > grid.width());
             assert_eq!(layout.footer.height(), 110.0);
             for tile in layout.tiles {
-                assert_eq!(tile.size(), Vec2::splat(136.0));
+                assert_eq!(tile.size(), Vec2::splat(side));
             }
             assert_eq!(layout.tiles[1].left() - layout.tiles[0].right(), 16.0);
-            assert_eq!(layout.tiles[2].top() - layout.tiles[0].bottom(), 32.0);
-            assert_eq!(layout.tiles[2].center().x, bounds.center().x);
+            assert_eq!(layout.tiles[2].left() - layout.tiles[1].right(), 16.0);
+            assert_eq!(layout.tiles[0].top(), layout.tiles[2].top());
         }
+    }
+
+    #[test]
+    fn zoom_buttons_accept_repeated_clicks_without_pointer_move() {
+        let ctx = Context::default();
+        configure_context(&ctx);
+        let mut app = App {
+            settings: Settings::default(),
+            gateway: Gateway {
+                port: 8420,
+                token: "demo".into(),
+            },
+            port: 8420,
+            logos: None,
+            bind_error: None,
+            screen: "home",
+            draft: Draft::default(),
+            busy: false,
+            notice: None,
+            rx: None,
+            check_rx: None,
+            check_status: None,
+            tunnel: Tunnel::default(),
+            local_enabled: Arc::new(AtomicBool::new(true)),
+            background: Background::default(),
+            copied_flash: None,
+            scale: 1.0,
+            zoom_hit: None,
+            zoom_held: None,
+            zoom_repeat_at: None,
+        };
+        let screen = Rect::from_min_size(pos2(0.0, 0.0), Vec2::new(400.0, 560.0));
+        // Warm layout and capture the plus-button hit target.
+        for _ in 0..2 {
+            let _ = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    ..Default::default()
+                },
+                |ctx| app.scale_control(ctx),
+            );
+        }
+        let plus = app.zoom_hit.expect("zoom hit rects").1;
+        let start = app.scale;
+        // Spam-click the same point with no PointerMoved between clicks, while the
+        // zoom factor changes under the cursor (the original failure mode).
+        for _ in 0..5 {
+            let _ = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    events: vec![
+                        egui::Event::PointerButton {
+                            pos: plus.center(),
+                            button: egui::PointerButton::Primary,
+                            pressed: true,
+                            modifiers: egui::Modifiers::default(),
+                        },
+                        egui::Event::PointerButton {
+                            pos: plus.center(),
+                            button: egui::PointerButton::Primary,
+                            pressed: false,
+                            modifiers: egui::Modifiers::default(),
+                        },
+                    ],
+                    ..Default::default()
+                },
+                |ctx| {
+                    app.apply_scale(ctx);
+                    app.scale_control(ctx);
+                },
+            );
+        }
+        assert!(
+            app.scale > start + 0.35,
+            "expected repeated zoom-in without moving the pointer, got {start} → {}",
+            app.scale
+        );
     }
 
     #[test]
@@ -2219,14 +2367,14 @@ mod gallery_tests {
         let output = ctx.run(egui::RawInput::default(), |ctx| {
             let logos = Logos::load(ctx);
             CentralPanel::default().show(ctx, |ui| {
-                let layout = GalleryLayout::new(Rect::from_min_size(
-                    pos2(24.0, 24.0),
-                    Vec2::new(382.0, 492.0),
-                ), 110.0);
+                let layout = GalleryLayout::new(
+                    Rect::from_min_size(pos2(24.0, 24.0), Vec2::new(382.0, 492.0)),
+                    110.0,
+                );
                 for (index, (texture, name)) in [
                     (&logos.moodle, "Moodle"),
+                    (&logos.omnivox, "Omnivox"),
                     (&logos.brightspace, "Brightspace"),
-                    (&logos.proxmox, "Proxmox"),
                 ]
                 .into_iter()
                 .enumerate()

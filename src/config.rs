@@ -25,17 +25,21 @@ pub struct MoodleSettings {
     pub allow_write: Option<bool>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
-pub struct ProxmoxSettings {
-    #[serde(skip_serializing_if = "Option::is_none")]
+pub struct OmnivoxSettings {
     pub url: Option<String>,
-    #[serde(rename = "tokenId", skip_serializing_if = "Option::is_none")]
-    pub token_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub secret: Option<String>,
-    #[serde(rename = "allowWrite", skip_serializing_if = "Option::is_none")]
-    pub allow_write: Option<bool>,
+    pub token: Option<String>,
+}
+
+// Never include access keys when debugging settings.
+impl std::fmt::Debug for OmnivoxSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OmnivoxSettings")
+            .field("url", &self.url)
+            .field("token", &"[redacted]")
+            .finish()
+    }
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
@@ -60,7 +64,8 @@ impl std::fmt::Debug for BrightspaceSettings {
 pub struct Settings {
     pub gateway: GatewaySettings,
     pub moodle: Option<MoodleSettings>,
-    pub proxmox: Option<ProxmoxSettings>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub omnivox: Option<OmnivoxSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub brightspace: Option<BrightspaceSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -94,12 +99,10 @@ pub struct MoodleConfig {
     pub allow_write: bool,
 }
 
-#[derive(Debug, Clone)]
-pub struct ProxmoxConfig {
+#[derive(Clone)]
+pub struct OmnivoxConfig {
     pub base_url: String,
-    pub token_id: String,
-    pub secret: String,
-    pub allow_write: bool,
+    pub token: String,
 }
 
 #[derive(Clone)]
@@ -152,42 +155,38 @@ impl Settings {
         })
     }
 
-    pub fn proxmox(&self) -> Option<ProxmoxConfig> {
-        let proxmox = self.proxmox.as_ref()?;
-        let base_url = proxmox.url.clone()?.trim().to_string();
-        let token_id = proxmox.token_id.clone()?.trim().to_string();
-        let secret = proxmox.secret.clone()?.trim().to_string();
-        if base_url.is_empty() || token_id.is_empty() || secret.is_empty() {
-            return None;
-        }
-        Some(ProxmoxConfig {
-            base_url: normalize_proxmox_url(&base_url).ok()?,
-            token_id,
-            secret,
-            allow_write: proxmox.allow_write.unwrap_or(false),
-        })
-    }
-
     pub fn disable(&mut self, service: &str) {
         match service {
             "moodle" => self.moodle = None,
-            "proxmox" => self.proxmox = None,
+            "omnivox" => self.omnivox = None,
             "brightspace" => self.brightspace = None,
             _ => {}
         }
     }
 
     pub fn services_active(&self) -> Vec<String> {
-        ["moodle", "brightspace", "proxmox"]
+        ["moodle", "omnivox", "brightspace"]
             .into_iter()
             .filter(|id| match *id {
                 "moodle" => self.moodle().is_some(),
-                "proxmox" => self.proxmox().is_some(),
+                "omnivox" => self.omnivox().is_some(),
                 "brightspace" => self.brightspace().is_some(),
                 _ => false,
             })
             .map(str::to_string)
             .collect()
+    }
+
+    pub fn omnivox(&self) -> Option<OmnivoxConfig> {
+        let saved = self.omnivox.as_ref()?;
+        let token = saved.token.as_deref()?.trim();
+        if token.is_empty() || token.chars().any(char::is_whitespace) {
+            return None;
+        }
+        Some(OmnivoxConfig {
+            base_url: normalize_omnivox_url(saved.url.as_deref()?).ok()?,
+            token: token.to_string(),
+        })
     }
 
     pub fn brightspace(&self) -> Option<BrightspaceConfig> {
@@ -285,19 +284,18 @@ pub fn normalize_moodle_url(input: &str) -> Result<String, String> {
     Ok(form)
 }
 
-pub fn normalize_proxmox_url(input: &str) -> Result<String, String> {
-    let mut url = parse_site_url(input)?;
-    let original = url.as_str();
-    if original.to_lowercase().ends_with("/api2/json") {
-        url = Url::parse(&original[..original.len() - "/api2/json".len()])
-            .map_err(|_| "The site address is not a valid URL.".to_string())?;
-    }
-    let path = url.path().trim_end_matches('/');
-    if !path.is_empty() {
+pub fn normalize_omnivox_url(input: &str) -> Result<String, String> {
+    let url = parse_site_url(input)?;
+    let host = url.host_str().unwrap_or("").to_ascii_lowercase();
+    if host == "omnivox.ca" || host.ends_with(".omnivox.ca") {
         return Err(
-            "The Proxmox address must point to the host root (e.g. https://my-pve:8006)."
-                .to_string(),
+            "Use the address of your Omnivox MCP gateway (for example http://127.0.0.1:3000), not the college Omnivox site."
+                .into(),
         );
+    }
+    match url.path().trim_end_matches('/') {
+        "" | "/mcp" | "/tools" => {}
+        _ => return Err("Use the Omnivox MCP root address, e.g. http://127.0.0.1:3000.".into()),
     }
     Ok(url.origin().ascii_serialization())
 }
@@ -400,7 +398,6 @@ pub(crate) mod tests {
             settings.save().unwrap();
             let loaded = Settings::load();
             assert!(loaded.moodle().is_some());
-            assert!(loaded.proxmox().is_none());
             let mut settings = loaded;
             settings.disable("moodle");
             settings.save().unwrap();
@@ -419,14 +416,6 @@ pub(crate) mod tests {
     #[test]
     fn urls_normalize() {
         assert_eq!(
-            normalize_proxmox_url(" https://pve:8006/api2/json/ ").unwrap(),
-            "https://pve:8006"
-        );
-        assert_eq!(
-            normalize_proxmox_url("pve.example.ca").unwrap(),
-            "https://pve.example.ca"
-        );
-        assert_eq!(
             normalize_moodle_url("moodle.polymtl.ca/").unwrap(),
             "https://moodle.polymtl.ca"
         );
@@ -434,8 +423,6 @@ pub(crate) mod tests {
             normalize_moodle_url("https://moodle.polymtl.ca").unwrap(),
             "https://moodle.polymtl.ca"
         );
-        assert!(normalize_proxmox_url("https://user:pass@pve:8006").is_err());
-        assert!(normalize_proxmox_url("https://pve:8006/folder").is_err());
         assert!(normalize_moodle_url("ftp://moodle.polymtl.ca").is_err());
     }
 
@@ -474,6 +461,44 @@ pub(crate) mod tests {
             loaded.disable("brightspace");
             loaded.save().unwrap();
             assert!(Settings::load().brightspace().is_none());
+        });
+    }
+
+    #[test]
+    fn omnivox_settings_validate_roundtrip_and_disconnect() {
+        for (input, origin) in [
+            ("http://127.0.0.1:3000", "http://127.0.0.1:3000"),
+            ("http://127.0.0.1:3000/tools/", "http://127.0.0.1:3000"),
+            ("http://localhost:3000/mcp", "http://localhost:3000"),
+            ("https://omnivox.example.com", "https://omnivox.example.com"),
+        ] {
+            assert_eq!(normalize_omnivox_url(input).unwrap(), origin);
+        }
+        for input in [
+            "https://cegepmontpetit.omnivox.ca",
+            "http://school.example",
+            "https://127.0.0.1:3000/unexpected",
+            "https://user:password@127.0.0.1:3000",
+            "http://127.0.0.1:3000/?key=secret",
+        ] {
+            assert!(normalize_omnivox_url(input).is_err());
+        }
+        with_temp_config(|| {
+            let settings = Settings {
+                omnivox: Some(OmnivoxSettings {
+                    url: Some("http://127.0.0.1:3000".into()),
+                    token: Some("private-token".into()),
+                }),
+                ..Default::default()
+            };
+            settings.save().unwrap();
+            let mut loaded = Settings::load();
+            assert_eq!(loaded.omnivox().unwrap().token, "private-token");
+            assert_eq!(loaded.services_active(), vec!["omnivox"]);
+            assert!(!format!("{:?}", loaded.omnivox).contains("private-token"));
+            loaded.disable("omnivox");
+            loaded.save().unwrap();
+            assert!(Settings::load().omnivox().is_none());
         });
     }
 }

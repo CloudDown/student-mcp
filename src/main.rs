@@ -9,7 +9,7 @@ mod http;
 mod logos;
 mod mcp;
 mod moodle;
-mod proxmox;
+mod omnivox;
 mod stdio;
 mod tunnel;
 
@@ -41,7 +41,7 @@ fn port_from(args: &[String]) -> Option<u16> {
 
 fn usage() {
     eprintln!(
-        "student-mcp: your local MCP for Moodle, Brightspace and Proxmox.
+        "student-mcp: your local MCP for Moodle, Omnivox and Brightspace.
 
 Commands:
   student-mcp (no command)        stdio MCP server for local AI clients

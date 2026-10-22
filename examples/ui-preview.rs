@@ -19,8 +19,8 @@ mod logos;
 mod mcp;
 #[path = "../src/moodle.rs"]
 mod moodle;
-#[path = "../src/proxmox.rs"]
-mod proxmox;
+#[path = "../src/omnivox.rs"]
+mod omnivox;
 #[path = "../src/tunnel.rs"]
 mod tunnel;
 
@@ -38,8 +38,8 @@ mod gui {
         "moodle-filled",
         "moodle-token",
         "moodle-advanced",
-        "proxmox",
-        "proxmox-connected",
+        "omnivox",
+        "omnivox-connected",
         "brightspace",
         "brightspace-connected",
         "links",
@@ -50,6 +50,12 @@ mod gui {
 
     fn fixture(ctx: &Context, scene: &str) -> App {
         let mut settings = Settings::default();
+        if matches!(scene, "omnivox-connected" | "gallery-connected") {
+            settings.omnivox = Some(crate::config::OmnivoxSettings {
+                url: Some("http://127.0.0.1:3000".into()),
+                token: Some("demo-omnivox-token".into()),
+            });
+        }
         if matches!(scene, "brightspace-connected" | "gallery-connected") {
             settings.brightspace = Some(crate::config::BrightspaceSettings {
                 url: Some("https://mycourses.mcgill.ca".into()),
@@ -72,14 +78,6 @@ mod gui {
                 allow_write: Some(false),
             });
         }
-        if scene == "proxmox-connected" {
-            settings.proxmox = Some(crate::config::ProxmoxSettings {
-                url: Some("https://pve.example:8006".into()),
-                token_id: Some("student@pam!student-mcp".into()),
-                secret: Some("demo-secret".into()),
-                allow_write: Some(true),
-            });
-        }
         let mut app = App {
             settings,
             gateway: Gateway {
@@ -91,7 +89,7 @@ mod gui {
             bind_error: None,
             screen: match scene {
                 "gallery" | "gallery-connected" | "gallery-public" => "home",
-                "proxmox" | "proxmox-connected" => "proxmox",
+                "omnivox" | "omnivox-connected" => "omnivox",
                 "brightspace" | "brightspace-connected" => "brightspace",
                 "links" | "links-public" => "links",
                 _ => "moodle",
@@ -112,6 +110,9 @@ mod gui {
             background: Background::default(),
             local_enabled: Arc::new(AtomicBool::new(true)),
             scale: crate::config::DEFAULT_SCALE,
+            zoom_hit: None,
+            zoom_held: None,
+            zoom_repeat_at: None,
         };
         if scene == "moodle-editing" {
             app.draft.editing = true;
@@ -126,8 +127,10 @@ mod gui {
                 "Cannot reach Moodle. Check the site address and your Internet connection.".into(),
             ));
         }
-        if scene == "proxmox-connected" {
-            app.check_status = Some(Notice::Ok("Proxmox VE 8.3 · pve-node".into()));
+        if scene == "omnivox-connected" {
+            app.check_status = Some(Notice::Ok(
+                "Omnivox connected (read only, through the MCP gateway).".into(),
+            ));
         }
         if scene == "brightspace-connected" {
             app.check_status = Some(Notice::Ok("Brightspace connected (read only).".into()));
@@ -268,13 +271,19 @@ mod gui {
             let mut app = fixture(&ctx, "gallery");
             let mut output = None;
             for _ in 0..2 {
-                output = Some(ctx.run(egui::RawInput {
-                    screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), Vec2::new(400.0, 560.0))),
-                    ..Default::default()
-                }, |ctx| {
-                    CentralPanel::default().show(ctx, |_ui| {});
-                    app.scale_control(ctx);
-                }));
+                output = Some(ctx.run(
+                    egui::RawInput {
+                        screen_rect: Some(Rect::from_min_size(
+                            pos2(0.0, 0.0),
+                            Vec2::new(400.0, 560.0),
+                        )),
+                        ..Default::default()
+                    },
+                    |ctx| {
+                        CentralPanel::default().show(ctx, |_ui| {});
+                        app.scale_control(ctx);
+                    },
+                ));
             }
             let output = output.unwrap();
             let mut buttons = Vec::new();
@@ -282,26 +291,39 @@ mod gui {
                 button_surfaces(&shape.shape, &mut buttons);
             }
             buttons.sort_by(|left, right| left.left().total_cmp(&right.left()));
-            assert_eq!(buttons.len(), 2, "Expected distinct minus and plus backgrounds");
+            assert_eq!(
+                buttons.len(),
+                2,
+                "Expected distinct minus and plus backgrounds"
+            );
             assert!(buttons[1].left() - buttons[0].right() >= 9.0);
-            let hovered = ctx.run(egui::RawInput {
-                screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), Vec2::new(400.0, 560.0))),
-                events: vec![egui::Event::PointerMoved(buttons[0].center())],
-                ..Default::default()
-            }, |ctx| {
-                CentralPanel::default().show(ctx, |_ui| {});
-                app.scale_control(ctx);
-            });
-            let mut shadows: Vec<_> = hovered.shapes.iter().filter_map(|shape| {
-                match &shape.shape {
-                    egui::Shape::Rect(rect) if rect.blur_width > 0.0 =>
-                        Some((rect.rect.center().x, rect.fill.a())),
+            let hovered = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), Vec2::new(400.0, 560.0))),
+                    events: vec![egui::Event::PointerMoved(buttons[0].center())],
+                    ..Default::default()
+                },
+                |ctx| {
+                    CentralPanel::default().show(ctx, |_ui| {});
+                    app.scale_control(ctx);
+                },
+            );
+            let mut shadows: Vec<_> = hovered
+                .shapes
+                .iter()
+                .filter_map(|shape| match &shape.shape {
+                    egui::Shape::Rect(rect) if rect.blur_width > 0.0 => {
+                        Some((rect.rect.center().x, rect.fill.a()))
+                    }
                     _ => None,
-                }
-            }).collect();
+                })
+                .collect();
             shadows.sort_by(|left, right| left.0.total_cmp(&right.0));
             assert_eq!(shadows.len(), 2);
-            assert!(shadows[0].1 > shadows[1].1, "Hover should strengthen only its own shadow");
+            assert!(
+                shadows[0].1 > shadows[1].1,
+                "Hover should strengthen only its own shadow"
+            );
         }
 
         #[test]
@@ -332,18 +354,22 @@ mod gui {
                                 });
                         },
                     );
-                    let text: Vec<_> = output.shapes.iter().filter_map(|shape| {
-                        match &shape.shape {
+                    let text: Vec<_> = output
+                        .shapes
+                        .iter()
+                        .filter_map(|shape| match &shape.shape {
                             egui::Shape::Text(text) if footer.contains(text.pos) => {
                                 Some(Rect::from_min_size(text.pos, text.galley.size()))
                             }
                             _ => None,
-                        }
-                    }).collect();
+                        })
+                        .collect();
                     assert_eq!(text.len(), 2, "{size:?}");
                     for bounds in text {
-                        assert!(footer.shrink(8.0).contains_rect(bounds),
-                            "Link overflows at {size:?}: {bounds:?} outside {footer:?}");
+                        assert!(
+                            footer.shrink(8.0).contains_rect(bounds),
+                            "Link overflows at {size:?}: {bounds:?} outside {footer:?}"
+                        );
                     }
                 }
             }
@@ -383,12 +409,18 @@ mod gui {
                                     });
                             },
                         );
-                        if pass == 0 { continue; }
-                        let local_card = output.shapes.iter()
+                        if pass == 0 {
+                            continue;
+                        }
+                        let local_card = output
+                            .shapes
+                            .iter()
                             .find_map(|shape| find_card(&shape.shape))
                             .expect("Local link card should be visible");
-                        assert!(local_card.height() < 160.0,
-                            "Local card stretched at {size:?}: {local_card:?}");
+                        assert!(
+                            local_card.height() < 160.0,
+                            "Local card stretched at {size:?}: {local_card:?}"
+                        );
                     }
                 }
             }
@@ -414,9 +446,15 @@ mod gui {
                 }
                 let mut switch_center = None;
                 for events in [vec![], vec![]] {
-                    let output = ctx.run(egui::RawInput { events, ..Default::default() }, |ctx| {
-                        CentralPanel::default().show(ctx, |ui| app.public_section(ui, ctx));
-                    });
+                    let output = ctx.run(
+                        egui::RawInput {
+                            events,
+                            ..Default::default()
+                        },
+                        |ctx| {
+                            CentralPanel::default().show(ctx, |ui| app.public_section(ui, ctx));
+                        },
+                    );
                     switch_center = output.shapes.iter().find_map(|shape| match &shape.shape {
                         egui::Shape::Rect(shape) if shape.rect.size() == Vec2::new(36.0, 20.0) => {
                             Some(shape.rect.center())
@@ -426,25 +464,32 @@ mod gui {
                 }
                 let pos = switch_center.expect("Public link switch must always be visible");
                 for pressed in [true, false] {
-                    let _ = ctx.run(egui::RawInput {
-                        events: vec![
-                            egui::Event::PointerMoved(pos),
-                            egui::Event::PointerButton {
-                                pos,
-                                button: egui::PointerButton::Primary,
-                                pressed,
-                                modifiers: egui::Modifiers::default(),
-                            },
-                        ],
-                        ..Default::default()
-                    }, |ctx| {
-                        CentralPanel::default().show(ctx, |ui| app.public_section(ui, ctx));
-                    });
+                    let _ = ctx.run(
+                        egui::RawInput {
+                            events: vec![
+                                egui::Event::PointerMoved(pos),
+                                egui::Event::PointerButton {
+                                    pos,
+                                    button: egui::PointerButton::Primary,
+                                    pressed,
+                                    modifiers: egui::Modifiers::default(),
+                                },
+                            ],
+                            ..Default::default()
+                        },
+                        |ctx| {
+                            CentralPanel::default().show(ctx, |ui| app.public_section(ui, ctx));
+                        },
+                    );
                 }
                 assert_eq!(app.tunnel.state, TunnelState::Stopped, "{scenario}");
                 assert!(app.tunnel.origin().is_none());
                 app.update_tunnel(&ctx);
-                assert_eq!(app.tunnel.state, TunnelState::Stopped, "must not restart: {scenario}");
+                assert_eq!(
+                    app.tunnel.state,
+                    TunnelState::Stopped,
+                    "must not restart: {scenario}"
+                );
             }
         }
 

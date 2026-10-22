@@ -5,9 +5,7 @@ A small window plus a local MCP server, with a bundled Cloudflare tunnel compone
 ## 1. What you see when it opens
 
 ```
-              [ Moodle logo ]  [ Brightspace logo ]
-              -----------------------------------
-                       [ Proxmox logo ]
+         [ Moodle ]  [ Omnivox ]  [ Brightspace ]
 
               <complete link>          [copy]
 ```
@@ -15,7 +13,7 @@ A small window plus a local MCP server, with a bundled Cloudflare tunnel compone
 Only logos appear on the home screen (names and states are in tooltips). Click
 an unconnected service to enter credentials; after a successful connection you
 return home and its logo has a green outline. No unavailable-service tiles are
-shown. Course platforms come first, technical services below the divider.
+shown.
 After you connect a service, the app automatically creates a public HTTPS link.
 Click it for link settings, or use the adjacent button to copy the complete URL.
 While the tunnel is starting or unavailable, copying is disabled so a local URL
@@ -49,12 +47,13 @@ mode is disabled and closing the window quits normally.
 2. *Mobile token*: paste an existing mobile token. This is the reliable option
    when SSO blocks the password flow.
 
-**Proxmox.** Datacenter → Permissions → API Tokens → create a token (for
-example `student@pam!mcp`), copy its *secret*, then enter
-`https://your-pve:8006`, the token ID and the secret.
-
-If the server uses a self-signed certificate the app refuses the connection
-(strict HTTPS): use a real certificate or have the PVE certificate signed.
+**Omnivox (Léa / Mio).** Skytech has no public student API. Run
+[omnivox-mcp](https://github.com/Beat-YT/omnivox-mcp) locally, complete its
+Electron login (MFA included), then enter that gateway's address (for example
+`http://127.0.0.1:3000`) and the access key from `accessKey.txt`. The app
+verifies the gateway catalog before saving. This connector only reads courses,
+documents, assignments, grades, schedule and calendar. College Omnivox site
+addresses are rejected: the password login stays in omnivox-mcp.
 
 **Brightspace / myCourses.** Enter your institution's Brightspace site address
 and an institution-authorized OAuth access token (without `Bearer`). The app
@@ -73,20 +72,20 @@ Once configured, clicking its logo opens a **manage** screen. A live check
 runs automatically and can be retried with **Retry**. The saved connection
 remains manageable even if the remote service is offline: you can still change
 credentials or disconnect. The screen also shows an **Allow changes** switch —
-no need to re-enter credentials to change permissions. Brightspace is always
-read-only and has no write switch.
+no need to re-enter credentials to change permissions. Omnivox and Brightspace
+are always read-only and have no write switch.
 
 ### Quebec integration targets
 
-Target order: Moodle → Omnivox → Brightspace → monPortail/Brio; Proxmox stays
-separate. Only implemented connectors are displayed, without empty slots.
+Target order: Moodle → Omnivox → Brightspace → monPortail/Brio.
+Only implemented connectors are displayed, without empty slots.
 
 - **Moodle** also covers installations such as StudiUM; it is not a separate
   platform. Each institution must enable the required mobile/Web Service access.
-- **Omnivox (including Léa/Mio)** is not integrated yet. Community implementations
-  use authenticated browser sessions and site-specific extraction, not a public
-  Skytech student API. An authorized test account and institution are needed to
-  implement and validate this flow, including MFA.
+- **Omnivox (including Léa/Mio)** is a read-only client of a local
+  [omnivox-mcp](https://github.com/Beat-YT/omnivox-mcp) gateway. There is still
+  no public Skytech student API; login, cookies and MFA stay in that project.
+  The connector is tested with local HTTP fixtures, not a live college account.
 - **Brightspace** has a read-only API connector tested with local HTTP fixtures;
   it has not been validated against a real institutional account.
 - **monPortail/Brio** is not integrated yet. Laval requires institutional SSO/MFA;
@@ -169,5 +168,3 @@ student-mcp version
   the same link. If the tunnel stopped, retry it in link settings, then replace
   the connector URL with the new one. Firewalls or Cloudflare outages can also
   block it.
-- **Invalid PVE certificate**: the app refuses under strict HTTPS; fix the
-  server certificate.

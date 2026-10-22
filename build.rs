@@ -2,13 +2,16 @@ use std::{env, fs, io::BufReader, path::PathBuf};
 
 fn main() {
     let out = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo output directory"));
-    for name in ["moodle", "proxmox", "brightspace"] {
+    for name in ["moodle", "omnivox", "brightspace"] {
         let path = format!("assets/{name}-icon.png");
         println!("cargo:rerun-if-changed={path}");
-        let decoder = png::Decoder::new(BufReader::new(fs::File::open(&path).expect("bundled logo")));
+        let decoder =
+            png::Decoder::new(BufReader::new(fs::File::open(&path).expect("bundled logo")));
         let mut reader = decoder.read_info().expect("bundled PNG header");
         let mut pixels = vec![0; reader.output_buffer_size().expect("logo fits in memory")];
-        let info = reader.next_frame(&mut pixels).expect("bundled logo decodes");
+        let info = reader
+            .next_frame(&mut pixels)
+            .expect("bundled logo decodes");
         // The bundled assets are RGBA8; fail at build time if that contract changes.
         assert_eq!(info.color_type, png::ColorType::Rgba, "{path}");
         assert_eq!(info.bit_depth, png::BitDepth::Eight, "{path}");
