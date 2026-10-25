@@ -95,6 +95,7 @@ mod gui {
                 _ => "moodle",
             },
             draft: Draft::default(),
+            account_choices: Vec::new(),
             busy: scene == "busy",
             notice: None,
             rx: None,
@@ -428,69 +429,86 @@ mod gui {
 
         #[test]
         fn public_switch_stops_active_or_starting_links_and_blocks_unavailable_start() {
-            for scenario in ["ready", "starting", "no-service", "offline"] {
-                let ctx = Context::default();
-                configure_context(&ctx);
-                let mut app = fixture(&ctx, "links-public");
-                match scenario {
-                    "starting" => app.tunnel.state = TunnelState::Starting,
-                    "no-service" => {
-                        app.settings = Settings::default();
-                        app.tunnel.state = TunnelState::Stopped;
-                    }
-                    "offline" => {
-                        app.bind_error = Some("port busy".into());
-                        app.tunnel.state = TunnelState::Stopped;
-                    }
-                    _ => {}
-                }
-                let mut switch_center = None;
-                for events in [vec![], vec![]] {
-                    let output = ctx.run(
-                        egui::RawInput {
-                            events,
-                            ..Default::default()
-                        },
-                        |ctx| {
-                            CentralPanel::default().show(ctx, |ui| app.public_section(ui, ctx));
-                        },
-                    );
-                    switch_center = output.shapes.iter().find_map(|shape| match &shape.shape {
-                        egui::Shape::Rect(shape) if shape.rect.size() == Vec2::new(36.0, 20.0) => {
-                            Some(shape.rect.center())
+            crate::config::tests::with_temp_config(|| {
+                for scenario in ["ready", "starting", "no-service", "offline"] {
+                    let ctx = Context::default();
+                    configure_context(&ctx);
+                    let mut app = fixture(&ctx, "links-public");
+                    match scenario {
+                        "starting" => app.tunnel.state = TunnelState::Starting,
+                        "no-service" => {
+                            app.settings = Settings::default();
+                            app.tunnel.state = TunnelState::Stopped;
                         }
-                        _ => None,
-                    });
+                        "offline" => {
+                            app.bind_error = Some("port busy".into());
+                            app.tunnel.state = TunnelState::Stopped;
+                        }
+                        _ => {}
+                    }
+                    let mut switch_center = None;
+                    for events in [vec![], vec![]] {
+                        let output = ctx.run(
+                            egui::RawInput {
+                                events,
+                                ..Default::default()
+                            },
+                            |ctx| {
+                                CentralPanel::default()
+                                    .show(ctx, |ui| app.public_section(ui, ctx));
+                            },
+                        );
+                        switch_center = output.shapes.iter().find_map(|shape| match &shape.shape {
+                            egui::Shape::Rect(shape)
+                                if shape.rect.size() == Vec2::new(36.0, 20.0) =>
+                            {
+                                Some(shape.rect.center())
+                            }
+                            _ => None,
+                        });
+                    }
+                    let pos = switch_center.expect("Public link switch must always be visible");
+                    for pressed in [true, false] {
+                        let _ = ctx.run(
+                            egui::RawInput {
+                                events: vec![
+                                    egui::Event::PointerMoved(pos),
+                                    egui::Event::PointerButton {
+                                        pos,
+                                        button: egui::PointerButton::Primary,
+                                        pressed,
+                                        modifiers: egui::Modifiers::default(),
+                                    },
+                                ],
+                                ..Default::default()
+                            },
+                            |ctx| {
+                                CentralPanel::default().show(ctx, |ui| app.public_section(ui, ctx));
+                            },
+                        );
+                    }
+                    if scenario == "no-service" {
+                        assert!(
+                            matches!(
+                                app.tunnel.state,
+                                TunnelState::Starting | TunnelState::Failed(_)
+                            ),
+                            "a click with no service must start the link: {scenario} {:?}",
+                            app.tunnel.state
+                        );
+                        app.tunnel.stop();
+                    } else {
+                        assert_eq!(app.tunnel.state, TunnelState::Stopped, "{scenario}");
+                        assert!(app.tunnel.origin().is_none());
+                        app.update_tunnel(&ctx);
+                        assert_eq!(
+                            app.tunnel.state,
+                            TunnelState::Stopped,
+                            "must not restart: {scenario}"
+                        );
+                    }
                 }
-                let pos = switch_center.expect("Public link switch must always be visible");
-                for pressed in [true, false] {
-                    let _ = ctx.run(
-                        egui::RawInput {
-                            events: vec![
-                                egui::Event::PointerMoved(pos),
-                                egui::Event::PointerButton {
-                                    pos,
-                                    button: egui::PointerButton::Primary,
-                                    pressed,
-                                    modifiers: egui::Modifiers::default(),
-                                },
-                            ],
-                            ..Default::default()
-                        },
-                        |ctx| {
-                            CentralPanel::default().show(ctx, |ui| app.public_section(ui, ctx));
-                        },
-                    );
-                }
-                assert_eq!(app.tunnel.state, TunnelState::Stopped, "{scenario}");
-                assert!(app.tunnel.origin().is_none());
-                app.update_tunnel(&ctx);
-                assert_eq!(
-                    app.tunnel.state,
-                    TunnelState::Stopped,
-                    "must not restart: {scenario}"
-                );
-            }
+            });
         }
 
         #[test]

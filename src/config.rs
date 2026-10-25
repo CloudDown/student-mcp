@@ -12,9 +12,23 @@ pub struct GatewaySettings {
     pub port: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub public_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub local_enabled: Option<bool>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+impl GatewaySettings {
+    pub fn public_enabled(&self) -> bool {
+        self.public_enabled.unwrap_or(true)
+    }
+
+    pub fn local_enabled(&self) -> bool {
+        self.local_enabled.unwrap_or(true)
+    }
+}
+
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MoodleSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -23,6 +37,17 @@ pub struct MoodleSettings {
     pub token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allow_write: Option<bool>,
+}
+
+// Never include the web-service token when debugging settings.
+impl std::fmt::Debug for MoodleSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MoodleSettings")
+            .field("url", &self.url)
+            .field("token", &self.token.as_ref().map(|_| "[redacted]"))
+            .field("allow_write", &self.allow_write)
+            .finish()
+    }
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
@@ -70,6 +95,23 @@ pub struct Settings {
     pub brightspace: Option<BrightspaceSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scale: Option<f32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub accounts: Vec<Account>,
+    #[serde(skip)]
+    pub account_scope: Option<(String, String)>,
+    /// Set when the file on disk could not be read or parsed. Saves refuse to
+    /// replace that file, so a bad edit cannot wipe stored credentials.
+    #[serde(skip)]
+    pub config_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Account {
+    pub id: String,
+    pub service: String,
+    pub moodle: Option<MoodleSettings>,
+    pub omnivox: Option<OmnivoxSettings>,
+    pub brightspace: Option<BrightspaceSettings>,
 }
 
 /// Interface zoom persisted in the config; 1.0 keeps the platform default.
@@ -112,32 +154,196 @@ pub struct BrightspaceConfig {
 }
 
 impl Settings {
+    pub fn account_list(&self, service: &str) -> Vec<(String, String)> {
+        let mut list = Vec::new();
+        let url = match service {
+            "moodle" => self.moodle().map(|c| c.base_url),
+            "omnivox" => self.omnivox().map(|c| c.base_url),
+            "brightspace" => self.brightspace().map(|c| c.base_url),
+            _ => None,
+        };
+        if let Some(url) = url {
+            list.push((service.to_string(), url));
+        }
+        for account in &self.accounts {
+            if account.service == service {
+                let url = match service {
+                    "moodle" => account.moodle.as_ref().and_then(|c| c.url.clone()),
+                    "omnivox" => account.omnivox.as_ref().and_then(|c| c.url.clone()),
+                    "brightspace" => account.brightspace.as_ref().and_then(|c| c.url.clone()),
+                    _ => None,
+                };
+                if let Some(url) = url {
+                    list.push((account.id.clone(), url));
+                }
+            }
+        }
+        list
+    }
+
+    pub fn for_account(&self, service: &str, id: &str) -> Self {
+        let mut scoped = self.clone();
+        if id != service {
+            let account = self
+                .accounts
+                .iter()
+                .find(|a| a.id == id && a.service == service);
+            match service {
+                "moodle" => scoped.moodle = account.and_then(|a| a.moodle.clone()),
+                "omnivox" => scoped.omnivox = account.and_then(|a| a.omnivox.clone()),
+                "brightspace" => scoped.brightspace = account.and_then(|a| a.brightspace.clone()),
+                _ => {}
+            }
+        }
+        scoped.account_scope = Some((service.into(), id.into()));
+        scoped
+    }
+
+    pub fn reload(&self) -> Self {
+        let fresh = Self::load();
+        match &self.account_scope {
+            Some((service, id)) => fresh.for_account(service, id),
+            None => fresh,
+        }
+    }
+
     pub fn load() -> Self {
-        let text = std::fs::read_to_string(config_path()).unwrap_or_default();
-        serde_json::from_str(&text).unwrap_or_default()
+        let path = config_path();
+        let text = match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Self::default(),
+            Err(error) => {
+                return Self {
+                    config_error: Some(format!(
+                        "Cannot read {}. It was left unchanged. {error}",
+                        path.display()
+                    )),
+                    ..Self::default()
+                };
+            }
+        };
+        if text.trim().is_empty() {
+            return Self::default();
+        }
+        match serde_json::from_str(&text) {
+            Ok(settings) => settings,
+            Err(error) => Self {
+                config_error: Some(format!(
+                    "Configuration file is not valid JSON and was left unchanged ({}): {error}",
+                    path.display()
+                )),
+                ..Self::default()
+            },
+        }
     }
 
     pub fn save(&self) -> std::io::Result<()> {
+        if let Some(message) = &self.config_error {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                message.clone(),
+            ));
+        }
+        if let Some((service, id)) = &self.account_scope {
+            let mut root = Self::load();
+            if let Some(message) = root.config_error {
+                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, message));
+            }
+            root.scale = self.scale;
+            if id == service {
+                match service.as_str() {
+                    "moodle" => root.moodle = self.moodle.clone(),
+                    "omnivox" => root.omnivox = self.omnivox.clone(),
+                    "brightspace" => root.brightspace = self.brightspace.clone(),
+                    _ => {}
+                }
+            } else {
+                root.accounts
+                    .retain(|account| !(account.id == *id && account.service == *service));
+                let account = Account {
+                    id: id.clone(),
+                    service: service.clone(),
+                    moodle: (service == "moodle").then(|| self.moodle.clone()).flatten(),
+                    omnivox: (service == "omnivox")
+                        .then(|| self.omnivox.clone())
+                        .flatten(),
+                    brightspace: (service == "brightspace")
+                        .then(|| self.brightspace.clone())
+                        .flatten(),
+                };
+                if account.moodle.is_some()
+                    || account.omnivox.is_some()
+                    || account.brightspace.is_some()
+                {
+                    root.accounts.push(account);
+                }
+            }
+            return root.save();
+        }
         let path = config_path();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let text = serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".to_string()) + "\n";
+        let text = serde_json::to_string_pretty(self).map_err(|error| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
+        })? + "\n";
         write_private(&path, text.as_bytes())
     }
 
-    /// Gateway settings; generates and persists the public token on first run.
+    /// Gateway settings. The public token is generated once and stored on the
+    /// root config, including when this view is scoped to one account.
+    /// A config that failed to load is never replaced.
     pub fn gateway(&self) -> Gateway {
-        let token = self.gateway.token.clone().unwrap_or_else(|| {
-            let generated = random_hex(24);
-            let mut saved = self.clone();
-            saved.gateway.token = Some(generated.clone());
-            let _ = saved.save();
-            generated
-        });
+        let port = self.gateway.port.unwrap_or(DEFAULT_PORT);
+        if self.config_error.is_some() {
+            return Gateway {
+                port,
+                token: String::new(),
+            };
+        }
+        if let Some(token) = self
+            .gateway
+            .token
+            .clone()
+            .filter(|token| !token.is_empty())
+        {
+            return Gateway { port, token };
+        }
+        let mut root = Self::load();
+        root.account_scope = None;
+        let port = root.gateway.port.unwrap_or(port);
+        if root.config_error.is_some() {
+            return Gateway {
+                port,
+                token: String::new(),
+            };
+        }
+        if let Some(token) = root
+            .gateway
+            .token
+            .clone()
+            .filter(|token| !token.is_empty())
+        {
+            return Gateway { port, token };
+        }
+        let generated = random_hex(24);
+        root.gateway.token = Some(generated.clone());
+        if root.save().is_ok() {
+            return Gateway {
+                port,
+                token: generated,
+            };
+        }
+        if let Some(token) = Self::load()
+            .gateway
+            .token
+            .filter(|token| !token.is_empty())
+        {
+            return Gateway { port, token };
+        }
         Gateway {
-            port: self.gateway.port.unwrap_or(DEFAULT_PORT),
-            token,
+            port,
+            token: generated,
         }
     }
 
@@ -167,12 +373,7 @@ impl Settings {
     pub fn services_active(&self) -> Vec<String> {
         ["moodle", "omnivox", "brightspace"]
             .into_iter()
-            .filter(|id| match *id {
-                "moodle" => self.moodle().is_some(),
-                "omnivox" => self.omnivox().is_some(),
-                "brightspace" => self.brightspace().is_some(),
-                _ => false,
-            })
+            .filter(|id| !self.account_list(id).is_empty())
             .map(str::to_string)
             .collect()
     }
@@ -203,6 +404,12 @@ impl Settings {
 }
 
 pub fn config_path() -> PathBuf {
+    // Test override is process-global and mutex-guarded (see with_temp_config).
+    // Checked before env vars so parallel tests never race on set_var/remove_var.
+    #[cfg(test)]
+    if let Some(path) = tests::override_config_path() {
+        return path;
+    }
     for variable in ["STUDENT_MCP_CONFIG_FILE", "MOODLE_CONFIG_FILE"] {
         if let Ok(path) = std::env::var(variable) {
             if !path.trim().is_empty() {
@@ -218,7 +425,11 @@ pub fn config_path() -> PathBuf {
 
 pub fn random_hex(bytes: usize) -> String {
     let mut buffer = vec![0u8; bytes];
-    getrandom(&mut buffer).ok();
+    // A failed read used to leave the buffer full of zeros and publish that
+    // value as the connector secret. Refuse to run rather than mint a guessable token.
+    if let Err(error) = getrandom(&mut buffer) {
+        panic!("OS random number generator unavailable: {error}");
+    }
     buffer.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
@@ -227,21 +438,36 @@ pub fn mcp_endpoint(origin: &str, token: &str) -> String {
     format!("{}/mcp/{}", origin.trim_end_matches('/'), token)
 }
 
-/// Constant-time comparison so request timing leaks nothing.
+/// Compare the whole token. A mismatch does not return at the first different byte.
 pub fn token_matches(expected: &str, provided: Option<&str>) -> bool {
     let Some(provided) = provided else {
         return false;
     };
-    if provided.is_empty() || expected.is_empty() {
-        return false;
-    }
     let a = expected.as_bytes();
     let b = provided.as_bytes();
-    a.len() == b.len()
-        && a.iter()
-            .zip(b.iter())
-            .fold(0u8, |acc, (x, y)| acc | (x ^ y))
-            == 0
+    if a.is_empty() || b.is_empty() {
+        return false;
+    }
+    // Bound the scan. Connector tokens are short; a multi-megabyte guess must
+    // not pin the accept thread. Length still participates, so a longer equal
+    // prefix cannot match.
+    let mut diff = a.len() ^ b.len();
+    let compared = a.len().max(b.len()).min(4096);
+    for index in 0..compared {
+        let left = a.get(index).copied().unwrap_or(0);
+        let right = b.get(index).copied().unwrap_or(0);
+        diff |= usize::from(left ^ right);
+    }
+    if a.len().max(b.len()) > 4096 {
+        diff |= 1;
+    }
+    diff == 0
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    // `Url::host_str` returns IPv6 without brackets (`::1`, not `[::1]`).
+    let host = host.trim_matches(['[', ']']);
+    host.eq_ignore_ascii_case("localhost") || host == "127.0.0.1" || host == "::1"
 }
 
 fn parse_site_url(input: &str) -> Result<Url, String> {
@@ -256,10 +482,9 @@ fn parse_site_url(input: &str) -> Result<Url, String> {
     {
         return Err("The address must not contain credentials, a query or a fragment.".to_string());
     }
-    let localhost = matches!(
-        parsed.host_str(),
-        Some("localhost") | Some("127.0.0.1") | Some("[::1]")
-    );
+    let localhost = parsed
+        .host_str()
+        .is_some_and(is_loopback_host);
     if parsed.scheme() != "https" && !(parsed.scheme() == "http" && localhost) {
         return Err("The address must use HTTPS (HTTP is only allowed for localhost).".to_string());
     }
@@ -278,9 +503,7 @@ pub fn normalize_moodle_url(input: &str) -> Result<String, String> {
     }
     let mut form = url.origin().ascii_serialization();
     let path = url.path().trim_end_matches('/').to_string();
-    if path.is_empty() {
-        form.push_str(&path);
-    }
+    form.push_str(&path);
     Ok(form)
 }
 
@@ -337,23 +560,41 @@ fn set_private(path: &Path) {
 pub(crate) mod tests {
     use super::*;
 
+    // Process-global so worker threads spawned during a test still hit the
+    // same temp file as the test body (save/load from jobs, checks, …).
+    static CONFIG_OVERRIDE: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+    static CONFIG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    pub(crate) fn override_config_path() -> Option<PathBuf> {
+        CONFIG_OVERRIDE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
     pub(crate) fn with_temp_config<T>(test: impl FnOnce() -> T) -> T {
-        // The config path is process-global: serialize env-touching tests.
-        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let _guard = ENV_LOCK
+        let _guard = CONFIG_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let dir = std::env::temp_dir().join(format!(
             "student-mcp-{}-{}",
             std::process::id(),
-            random_hex(4)
+            random_hex(8)
         ));
         std::fs::create_dir_all(&dir).expect("temp dir");
-        std::env::set_var("STUDENT_MCP_CONFIG_FILE", dir.join("settings.json"));
-        let result = test();
-        std::env::remove_var("STUDENT_MCP_CONFIG_FILE");
+        let path = dir.join("settings.json");
+        *CONFIG_OVERRIDE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(path);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(test));
+        *CONFIG_OVERRIDE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
         std::fs::remove_dir_all(dir).ok();
-        result
+        match result {
+            Ok(value) => value,
+            Err(panic) => std::panic::resume_unwind(panic),
+        }
     }
 
     #[test]
@@ -424,6 +665,55 @@ pub(crate) mod tests {
             "https://moodle.polymtl.ca"
         );
         assert!(normalize_moodle_url("ftp://moodle.polymtl.ca").is_err());
+    }
+
+    #[test]
+    fn moodle_urls_preserve_installation_paths() {
+        for input in [
+            "https://school.example/moodle/",
+            "school.example/moodle",
+            "https://school.example/moodle/webservice/rest/server.php",
+            "https://school.example/moodle/WEBSERVICE/REST/SERVER.PHP",
+        ] {
+            assert_eq!(
+                normalize_moodle_url(input).unwrap(),
+                "https://school.example/moodle"
+            );
+        }
+    }
+
+    #[test]
+    fn multiple_accounts_keep_credentials_permissions_and_gateway_separate() {
+        with_temp_config(|| {
+            let mut original = Settings::default();
+            original.gateway.token = Some("shared-link-token".into());
+            original.moodle = Some(MoodleSettings {
+                url: Some("https://first.example".into()),
+                token: Some("first-token".into()),
+                allow_write: Some(false),
+            });
+            original.save().unwrap();
+            let mut second = original.for_account("moodle", "second-account");
+            second.moodle = Some(MoodleSettings {
+                url: Some("https://second.example".into()),
+                token: Some("second-token".into()),
+                allow_write: Some(true),
+            });
+            second.save().unwrap();
+            let loaded = Settings::load();
+            assert_eq!(loaded.account_list("moodle").len(), 2);
+            assert_eq!(loaded.moodle().unwrap().token, "first-token");
+            assert!(!loaded.moodle().unwrap().allow_write);
+            let mut selected = loaded.for_account("moodle", "second-account");
+            assert_eq!(selected.moodle().unwrap().token, "second-token");
+            assert!(selected.moodle().unwrap().allow_write);
+            selected.disable("moodle");
+            selected.save().unwrap();
+            let loaded = Settings::load();
+            assert_eq!(loaded.account_list("moodle").len(), 1);
+            assert_eq!(loaded.gateway.token.as_deref(), Some("shared-link-token"));
+            assert_eq!(loaded.moodle().unwrap().token, "first-token");
+        });
     }
 
     #[test]
@@ -500,5 +790,113 @@ pub(crate) mod tests {
             loaded.save().unwrap();
             assert!(Settings::load().omnivox().is_none());
         });
+    }
+
+    #[test]
+    fn moodle_debug_redacts_the_token() {
+        let settings = MoodleSettings {
+            url: Some("https://moodle.example".into()),
+            token: Some("private-token".into()),
+            allow_write: Some(false),
+        };
+        let rendered = format!("{settings:?}");
+        assert!(rendered.contains("https://moodle.example"));
+        assert!(rendered.contains("[redacted]"));
+        assert!(!rendered.contains("private-token"));
+    }
+
+    #[test]
+    fn corrupt_config_is_left_unchanged() {
+        with_temp_config(|| {
+            let path = config_path();
+            let original = b"{not json, \"token\":\"keep-me\"}";
+            std::fs::write(&path, original).unwrap();
+            let loaded = Settings::load();
+            assert!(loaded.config_error.is_some());
+            assert!(loaded.moodle().is_none());
+            assert!(loaded.save().is_err());
+            let _ = loaded.gateway();
+            assert_eq!(std::fs::read(&path).unwrap(), original);
+        });
+    }
+
+    #[test]
+    fn empty_config_file_is_a_fresh_install() {
+        with_temp_config(|| {
+            std::fs::write(config_path(), " \n").unwrap();
+            let loaded = Settings::load();
+            assert!(loaded.config_error.is_none());
+            assert!(loaded.gateway().token.len() == 48);
+        });
+    }
+
+    #[test]
+    fn gateway_token_from_a_scoped_view_is_stored_on_the_root() {
+        with_temp_config(|| {
+            let scoped = Settings::default().for_account("moodle", "extra");
+            let gateway = scoped.gateway();
+            assert_eq!(gateway.token.len(), 48);
+            assert_eq!(
+                Settings::load().gateway.token.as_deref(),
+                Some(gateway.token.as_str())
+            );
+        });
+    }
+
+    #[test]
+    fn saving_one_service_keeps_another_account_with_the_same_id() {
+        with_temp_config(|| {
+            let mut settings = Settings::default();
+            settings.accounts.push(Account {
+                id: "shared".into(),
+                service: "omnivox".into(),
+                moodle: None,
+                omnivox: Some(OmnivoxSettings {
+                    url: Some("http://127.0.0.1:3000".into()),
+                    token: Some("ox-token".into()),
+                }),
+                brightspace: None,
+            });
+            settings.save().unwrap();
+            let mut moodle = Settings::load().for_account("moodle", "shared");
+            moodle.moodle = Some(MoodleSettings {
+                url: Some("https://moodle.example".into()),
+                token: Some("md-token".into()),
+                allow_write: Some(false),
+            });
+            moodle.save().unwrap();
+            let loaded = Settings::load();
+            assert_eq!(
+                loaded.for_account("omnivox", "shared").omnivox().unwrap().token,
+                "ox-token"
+            );
+            assert_eq!(
+                loaded.for_account("moodle", "shared").moodle().unwrap().token,
+                "md-token"
+            );
+            assert_eq!(loaded.account_list("omnivox").len(), 1);
+            assert_eq!(loaded.account_list("moodle").len(), 1);
+        });
+    }
+
+    #[test]
+    fn ipv6_loopback_is_a_local_http_address() {
+        assert_eq!(
+            normalize_omnivox_url("http://[::1]:3000").unwrap(),
+            "http://[::1]:3000"
+        );
+        assert_eq!(
+            normalize_omnivox_url("http://[::1]:3000/mcp").unwrap(),
+            "http://[::1]:3000"
+        );
+        assert!(normalize_moodle_url("http://[::1]/moodle").is_ok());
+        assert!(normalize_moodle_url("http://10.0.0.8").is_err());
+    }
+
+    #[test]
+    fn token_compare_rejects_a_different_length_and_a_long_guess() {
+        assert!(!token_matches("abcd", Some("abc")));
+        assert!(!token_matches("abcd", Some(&"a".repeat(5000))));
+        assert!(token_matches("abcd", Some("abcd")));
     }
 }

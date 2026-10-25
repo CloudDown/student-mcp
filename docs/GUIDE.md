@@ -155,6 +155,12 @@ student-mcp version
   `--port=`.
 - **Moodle rejects the school login**: SSO or 2FA blocks `/login/token.php` →
   switch to the **Mobile token** mode.
+- **The assistant cannot open a Moodle PDF**: Moodle file URLs need the web
+  service token, which is never given to the model. Use `moodle_file` with the
+  `fileurl` from `moodle_course_content`; do not fetch that URL with a generic
+  HTTP tool. The original PDF is attached as an MCP resource; scanned pages are
+  also rasterized with `pdftoppm` (up to 16 images). Install Poppler on this
+  computer. The AI client must accept MCP file/image content.
 - **Claude cannot register with the sign-in service** (`ofid_…` reference):
   Claude started an OAuth flow, but this server deliberately has no OAuth. All
   `/.well-known/oauth-*` paths return 404. Delete the connector, re-add it with

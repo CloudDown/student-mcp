@@ -331,7 +331,7 @@ fn switch(ui: &mut Ui, value: &mut bool) -> bool {
         Color32::from_black_alpha(18),
     );
     ui.painter().circle_filled(knob, 8.0, Color32::WHITE);
-    if response.clicked() {
+    if ui.is_enabled() && response.clicked() {
         *value = !on;
         true
     } else {
@@ -340,66 +340,6 @@ fn switch(ui: &mut Ui, value: &mut bool) -> bool {
 }
 
 /// Two-option segmented control; returns true when the selection changed.
-fn segmented(ui: &mut Ui, options: [&str; 2], selected: &mut bool) -> bool {
-    let width = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 32.0), Sense::hover());
-    ui.painter().rect_filled(rect, 9.0, PRESSED);
-    let half = width / 2.0;
-    let mut changed = false;
-    for (index, label) in options.iter().enumerate() {
-        let slot = Rect::from_min_size(
-            pos2(rect.left() + half * index as f32 + 3.0, rect.top() + 3.0),
-            Vec2::new(half - 6.0, rect.height() - 6.0),
-        );
-        let response = ui
-            .interact(
-                slot,
-                ui.make_persistent_id(("segment", label)),
-                Sense::click(),
-            )
-            .on_hover_cursor(CursorIcon::PointingHand);
-        let active = *selected == (index == 1);
-        response.widget_info(|| {
-            egui::WidgetInfo::selected(egui::WidgetType::RadioButton, true, active, *label)
-        });
-        if active {
-            ui.painter().add(
-                egui::epaint::Shadow {
-                    offset: [0, 1],
-                    blur: 4,
-                    spread: 0,
-                    color: Color32::from_black_alpha(20),
-                }
-                .as_shape(slot, 7),
-            );
-            ui.painter().rect_filled(slot, 7.0, Color32::WHITE);
-            ui.painter().rect_stroke(
-                slot,
-                7.0,
-                Stroke::new(0.5_f32, BORDER),
-                egui::StrokeKind::Inside,
-            );
-        } else if response.hovered() {
-            ui.painter().rect_filled(slot, 6.0, HOVER);
-        }
-        if response.has_focus() {
-            focus_ring(ui, slot, 7);
-        }
-        ui.painter().text(
-            slot.center(),
-            Align2::CENTER_CENTER,
-            *label,
-            FontId::proportional(12.0),
-            if active { INK } else { SUBTLE },
-        );
-        if response.clicked() && !active {
-            *selected = index == 1;
-            changed = true;
-        }
-    }
-    changed
-}
-
 /// Prefer an installed platform sans; retain egui's bundled fonts as fallbacks.
 fn configure_font(ctx: &Context) {
     #[cfg(target_os = "macos")]
@@ -515,6 +455,21 @@ impl GalleryLayout {
     }
 }
 
+fn public_waiting_copy(state: &TunnelState, public_on: bool, has_services: bool) -> &'static str {
+    if !public_on || matches!(state, TunnelState::Stopped) {
+        return "Public link is off. Turn the switch on to create an HTTPS link through Cloudflare. No account needed.";
+    }
+    match state {
+        TunnelState::Starting => "Opening a free HTTPS link through Cloudflare.",
+        TunnelState::Failed(_) => "The public link was not created. Turn the switch on to try again.",
+        TunnelState::Ready(_) => "",
+        _ if !has_services => {
+            "No service is connected yet. Turn the switch on to create the HTTPS link anyway."
+        }
+        _ => "Turn the switch on to create a free HTTPS link through Cloudflare.",
+    }
+}
+
 fn connector_url(port: u16, token: &str, public_origin: Option<&str>) -> String {
     mcp_endpoint(
         public_origin.unwrap_or(&format!("http://127.0.0.1:{port}")),
@@ -566,6 +521,9 @@ pub struct App {
     bind_error: Option<String>,
     screen: &'static str, // "home" | "moodle" | "omnivox" | "brightspace" | "links"
     draft: Draft,
+    /// Saved accounts for the current service (id, url). Refreshed on open,
+    /// not every frame — avoids racing disk I/O while drafting a new account.
+    account_choices: Vec<(String, String)>,
     busy: bool,
     notice: Option<Notice>,
     rx: Option<Receiver<Message>>,
@@ -627,7 +585,7 @@ pub fn run(port_override: Option<u16>, first_run: bool) {
     // Bind now (before the window opens); try sibling ports if taken.
     let mut bind_error = None;
     let mut chosen = None;
-    let local_enabled = Arc::new(AtomicBool::new(true));
+    let local_enabled = Arc::new(AtomicBool::new(settings.gateway.local_enabled()));
     for attempt in 0..10 {
         let port = base_port + attempt;
         match crate::http::bind(port) {
@@ -661,6 +619,7 @@ pub fn run(port_override: Option<u16>, first_run: bool) {
                 bind_error,
                 screen: "home",
                 draft: Draft::default(),
+                account_choices: Vec::new(),
                 busy: false,
                 notice: None,
                 rx: None,
@@ -805,8 +764,7 @@ impl App {
                 let (hit_minus, hit_plus) = self.zoom_hit.unwrap_or((paint_minus, paint_plus));
                 let hover_minus =
                     !min_hit && pointer_pos.is_some_and(|pos| hit_minus.contains(pos));
-                let hover_plus =
-                    !max_hit && pointer_pos.is_some_and(|pos| hit_plus.contains(pos));
+                let hover_plus = !max_hit && pointer_pos.is_some_and(|pos| hit_plus.contains(pos));
                 let press_minus = self.zoom_held == Some(-step)
                     || (primary_down && pointer_pos.is_some_and(|pos| hit_minus.contains(pos)));
                 let press_plus = self.zoom_held == Some(step)
@@ -822,21 +780,18 @@ impl App {
             if !min_hit && hit_minus.contains(pos) {
                 delta = Some(-step);
                 self.zoom_held = Some(-step);
-                self.zoom_repeat_at =
-                    Some(Instant::now() + std::time::Duration::from_millis(400));
+                self.zoom_repeat_at = Some(Instant::now() + std::time::Duration::from_millis(400));
             } else if !max_hit && hit_plus.contains(pos) {
                 delta = Some(step);
                 self.zoom_held = Some(step);
-                self.zoom_repeat_at =
-                    Some(Instant::now() + std::time::Duration::from_millis(400));
+                self.zoom_repeat_at = Some(Instant::now() + std::time::Duration::from_millis(400));
             }
         } else if let Some(held) = self.zoom_held {
             let due = self.zoom_repeat_at.is_some_and(|at| Instant::now() >= at);
             let blocked = (held < 0.0 && min_hit) || (held > 0.0 && max_hit);
             if due && !blocked {
                 delta = Some(held);
-                self.zoom_repeat_at =
-                    Some(Instant::now() + std::time::Duration::from_millis(70));
+                self.zoom_repeat_at = Some(Instant::now() + std::time::Duration::from_millis(70));
                 ctx.request_repaint_after(std::time::Duration::from_millis(70));
             } else if let Some(at) = self.zoom_repeat_at {
                 if !due {
@@ -947,6 +902,9 @@ impl App {
             if let Some(Notice::Err(message)) = self.check_status.as_ref() {
                 ui.add(egui::Label::new(RichText::new(message).size(10.5).color(RED)).wrap());
             }
+            if let Some(Notice::Ok(message)) = self.check_status.as_ref() {
+                ui.add(egui::Label::new(RichText::new(message).size(10.5).color(SUBTLE)).wrap());
+            }
             if !matches!(service, "omnivox" | "brightspace") {
                 hairline(ui);
                 ui.horizontal(|ui| {
@@ -972,26 +930,27 @@ impl App {
         ui.add_space(8.0);
         if Self::button_danger(ui, "Disconnect", !self.busy) {
             let service = service.to_string();
-            self.spawn(ctx.clone(), move || {
-                let mut fresh = Settings::load();
-                crate::mcp::disable_service(&mut fresh, &service);
-                Message::Done(
-                    Notice::Ok(format!("{} disconnected.", service)),
-                    NextScreen::Home,
-                )
-            });
+            self.spawn(
+                ctx.clone(),
+                move |mut fresh| match crate::mcp::disable_service(&mut fresh, &service) {
+                    Ok(()) => Message::Done(
+                        Notice::Ok(format!("{} disconnected.", service)),
+                        NextScreen::Home,
+                    ),
+                    Err(message) => Message::Done(Notice::Err(message), NextScreen::Stay),
+                },
+            );
         }
         self.notice_line(ui);
     }
 
     fn set_allow_write(&mut self, service: &str, allow: bool) {
-        let mut fresh = Settings::load();
+        let mut fresh = self.settings.reload();
         if service == "moodle" {
-            if let Some(config) = fresh.moodle.as_mut() {
-                config.allow_write = Some(allow);
+            if let Err(message) = crate::mcp::set_moodle_write(&mut fresh, allow) {
+                self.notice = Some(Notice::Err(message));
             }
         }
-        let _ = fresh.save();
         self.settings = fresh;
     }
 
@@ -1041,6 +1000,10 @@ impl App {
     // ---------- home: the gallery ----------
 
     fn home_screen(&mut self, ui: &mut Ui) {
+        if let Some(message) = &self.settings.config_error {
+            ui.label(RichText::new(message).size(12.0).color(RED));
+            ui.add_space(8.0);
+        }
         let layout = self.gallery_layout(ui);
         let Some(logos) = self.logos.as_ref() else {
             return;
@@ -1050,21 +1013,21 @@ impl App {
             &logos.moodle,
             "Moodle",
             layout.tiles[0],
-            self.settings.moodle().is_some(),
+            !self.settings.account_list("moodle").is_empty(),
         );
         let omnivox_clicked = Self::tile(
             ui,
             &logos.omnivox,
             "Omnivox",
             layout.tiles[1],
-            self.settings.omnivox().is_some(),
+            !self.settings.account_list("omnivox").is_empty(),
         );
         let brightspace_clicked = Self::tile(
             ui,
             &logos.brightspace,
             "Brightspace / myCourses",
             layout.tiles[2],
-            self.settings.brightspace().is_some(),
+            !self.settings.account_list("brightspace").is_empty(),
         );
         if moodle_clicked || omnivox_clicked || brightspace_clicked {
             let service = if moodle_clicked {
@@ -1277,6 +1240,78 @@ impl App {
     }
 
     fn open_service(&mut self, service: &'static str, ctx: &Context) {
+        let root = Settings::load();
+        let id = root
+            .account_list(service)
+            .first()
+            .map(|(id, _)| id.clone())
+            .unwrap_or_else(|| service.into());
+        self.open_account(service, &id, ctx);
+    }
+
+    /// Switch or add accounts. Hidden on first connect (no saved accounts yet).
+    /// Placed under the service header so back / logo / title stay on top.
+    fn account_picker(&mut self, ui: &mut Ui, ctx: &Context) {
+        if self.account_choices.is_empty() {
+            return;
+        }
+        let mut selected = self
+            .settings
+            .account_scope
+            .as_ref()
+            .map(|(_, id)| id.clone())
+            .unwrap_or_else(|| self.screen.into());
+        let is_new = !self.account_choices.iter().any(|(id, _)| id == &selected);
+        let previous = selected.clone();
+        let label = if is_new {
+            "New account".into()
+        } else {
+            self.account_choices
+                .iter()
+                .find(|(id, _)| id == &selected)
+                .map(|(id, url)| format!("{url} · {}", id.chars().take(8).collect::<String>()))
+                .unwrap_or_else(|| "Account".into())
+        };
+        ui.label(RichText::new("Account").size(12.0).strong().color(INK));
+        egui::ComboBox::from_id_salt("account-picker")
+            .width(ui.available_width())
+            .selected_text(RichText::new(label).color(INK))
+            .show_ui(ui, |ui| {
+                ui.set_min_width(220.0);
+                for (id, url) in &self.account_choices {
+                    ui.selectable_value(
+                        &mut selected,
+                        id.clone(),
+                        format!("{url} · {}", id.chars().take(8).collect::<String>()),
+                    );
+                }
+                if is_new {
+                    ui.separator();
+                    ui.add_enabled(
+                        false,
+                        egui::Label::new(RichText::new("New account").color(SUBTLE)),
+                    );
+                }
+            });
+        if selected != previous {
+            self.open_account(self.screen, &selected, ctx);
+        }
+        // Offer "add another" only while viewing a saved account, not while drafting a new one.
+        if !is_new {
+            ui.add_space(6.0);
+            if Self::button_soft(ui, "+ Add account", !self.busy) {
+                let id = crate::config::random_hex(8);
+                self.open_account(self.screen, &id, ctx);
+                self.draft.editing = true;
+            }
+        }
+        ui.add_space(10.0);
+    }
+
+    fn open_account(&mut self, service: &'static str, id: &str, ctx: &Context) {
+        let root = Settings::load();
+        self.account_choices = root.account_list(service);
+        self.settings = root.for_account(service, id);
         self.draft = Draft::default();
         self.draft.editing = false;
         self.screen = service;
@@ -1325,9 +1360,15 @@ impl App {
                 .add_enabled_ui(self.bind_error.is_none(), |ui| switch(ui, &mut local_on))
                 .inner
             {
-                self.local_enabled.store(local_on, Ordering::SeqCst);
-                if !local_on {
-                    self.tunnel.stop();
+                if self.set_link_preferences(local_on, self.settings.gateway.public_enabled()) {
+                    self.local_enabled.store(local_on, Ordering::SeqCst);
+                    if !local_on {
+                        self.tunnel.stop();
+                    } else {
+                        self.tunnel.state = TunnelState::Idle;
+                    }
+                } else {
+                    local_on = self.local_enabled.load(Ordering::SeqCst);
                 }
             }
         });
@@ -1373,22 +1414,24 @@ impl App {
             self.tunnel.state,
             TunnelState::Starting | TunnelState::Ready(_)
         );
-        let can_toggle = !self.busy
-            && (enabled
-                || (self.local_enabled.load(Ordering::SeqCst)
-                    && self.bind_error.is_none()
-                    && self.has_services()));
+        // The switch is the way to ask for a link. A missing service must not
+        // swallow the click; the local server still has to be up to receive it.
+        let can_toggle = !self.busy && self.bind_error.is_none();
         section_row(ui, "PUBLIC LINK", |row| {
             let changed = row
                 .add_enabled_ui(can_toggle, |ui| switch(ui, &mut enabled))
                 .inner;
             if changed {
-                if enabled {
-                    self.tunnel.start(self.port);
-                } else {
-                    self.tunnel.stop();
+                let local_on = self.local_enabled.load(Ordering::SeqCst) || enabled;
+                if self.set_link_preferences(local_on, enabled) {
+                    self.local_enabled.store(local_on, Ordering::SeqCst);
+                    if enabled {
+                        self.tunnel.start(self.port);
+                    } else {
+                        self.tunnel.stop();
+                    }
+                    ctx.request_repaint();
                 }
-                ctx.request_repaint();
             }
         });
         if let Some(origin) = self.tunnel.origin() {
@@ -1417,11 +1460,16 @@ impl App {
 
         let starting = self.tunnel.state == TunnelState::Starting;
         card(ui, |ui| {
-            ui.label(
-                RichText::new("Free HTTPS link through Cloudflare. No account or network setup. Connect a service and the link is created automatically.")
-                    .size(11.5)
-                    .color(SUBTLE),
-            );
+            let message = if self.bind_error.is_some() {
+                "The local server is not running, so the public link cannot be created."
+            } else {
+                public_waiting_copy(
+                    &self.tunnel.state,
+                    self.settings.gateway.public_enabled(),
+                    self.has_services(),
+                )
+            };
+            ui.label(RichText::new(message).size(11.5).color(SUBTLE));
             if let TunnelState::Failed(message) = &self.tunnel.state {
                 hint(ui, message, (RED, RED_SOFT));
             }
@@ -1436,8 +1484,6 @@ impl App {
                     );
                 });
             }
-            ui.add_space(7.0);
-            ui.label(RichText::new("Temporary link; it changes on restart. Quick Tunnels have no uptime guarantee and are intended for testing, not production.").size(10.5).color(SUBTLE));
         });
     }
 
@@ -1470,14 +1516,30 @@ impl App {
     }
 
     fn has_services(&self) -> bool {
-        self.settings.moodle().is_some()
-            || self.settings.omnivox().is_some()
-            || self.settings.brightspace().is_some()
+        if self.settings.account_scope.is_some() {
+            !Settings::load().services_active().is_empty()
+        } else {
+            !self.settings.services_active().is_empty()
+        }
+    }
+
+    fn set_link_preferences(&mut self, local: bool, public: bool) -> bool {
+        let mut fresh = Settings::load();
+        fresh.gateway.local_enabled = Some(local);
+        fresh.gateway.public_enabled = Some(public);
+        if let Err(error) = fresh.save() {
+            self.notice = Some(Notice::Err(format!(
+                "Cannot save link settings. The previous settings are still active. {error}"
+            )));
+            return false;
+        }
+        self.settings = fresh;
+        true
     }
 
     fn update_tunnel(&mut self, ctx: &Context) {
         self.tunnel.poll();
-        if !self.local_enabled.load(Ordering::SeqCst) {
+        if !self.local_enabled.load(Ordering::SeqCst) || !self.settings.gateway.public_enabled() {
             if matches!(
                 self.tunnel.state,
                 TunnelState::Starting | TunnelState::Ready(_) | TunnelState::Idle
@@ -1486,15 +1548,13 @@ impl App {
             }
             return;
         }
-        if !self.has_services() {
-            if matches!(
-                self.tunnel.state,
-                TunnelState::Starting | TunnelState::Ready(_)
-            ) {
-                self.tunnel.stop();
-                self.tunnel.state = TunnelState::Idle;
-            }
-        } else if self.tunnel.state == TunnelState::Idle && self.bind_error.is_none() {
+        // A link the user turned on stays up with or without a service.
+        // Idle only auto-starts once a service exists, so a fresh install
+        // does not open a tunnel before anyone asks for one.
+        if self.has_services()
+            && self.tunnel.state == TunnelState::Idle
+            && self.bind_error.is_none()
+        {
             self.tunnel.start(self.port);
         }
         if matches!(
@@ -1562,6 +1622,8 @@ impl App {
         let back = back_button(ui, !self.busy);
         if back {
             self.screen = "home";
+            self.settings = Settings::load();
+            self.account_choices.clear();
             self.notice = None;
             self.draft = Draft::default();
             return true;
@@ -1808,34 +1870,24 @@ impl App {
     }
 
     fn moodle_screen(&mut self, ui: &mut Ui, ctx: &egui::Context) {
-        let connected = self.viewing_connected();
         let subtitle = if self.draft.other_school {
             "Your Moodle account"
         } else {
             "Polytechnique Montréal"
         };
-        if self.top_bar(
-            ui,
-            "Moodle",
-            subtitle,
-            connected && matches!(self.check_status, Some(Notice::Ok(_))),
-        ) {
+        let online = self.viewing_connected() && matches!(self.check_status, Some(Notice::Ok(_)));
+        if self.top_bar(ui, "Moodle", subtitle, online) {
             return;
         }
-        if connected {
+        self.account_picker(ui, ctx);
+        // Re-read after the picker: switching account mutates settings/draft this frame.
+        if self.viewing_connected() {
             self.connected_view(ui, ctx, "moodle");
             return;
         }
         let configured = self.settings.moodle().is_some();
 
-        if segmented(
-            ui,
-            ["School login", "Mobile token"],
-            &mut self.draft.use_token,
-        ) {
-            self.notice = None;
-        }
-        ui.add_space(14.0);
+        ui.add_space(4.0);
 
         if !self.draft.use_token {
             Self::field(
@@ -1864,6 +1916,11 @@ impl App {
         Self::advanced_row(ui, &mut self.draft.advanced);
         if self.draft.advanced {
             ui.add_space(2.0);
+            Self::toggle(
+                ui,
+                "Use an existing mobile token",
+                &mut self.draft.use_token,
+            );
             Self::toggle(ui, "Another school", &mut self.draft.other_school);
             if self.draft.other_school {
                 Self::field(
@@ -1907,8 +1964,7 @@ impl App {
             ready,
         ) || ready && ui.input(|input| input.key_pressed(egui::Key::Enter));
         if submit {
-            self.spawn(ctx.clone(), move || {
-                let mut fresh = Settings::load();
+            self.spawn(ctx.clone(), move |mut fresh| {
                 let result = if draft.use_token && !draft.token.trim().is_empty() {
                     crate::mcp::activate_moodle(
                         &mut fresh,
@@ -1937,11 +1993,11 @@ impl App {
     }
 
     fn omnivox_screen(&mut self, ui: &mut Ui, ctx: &egui::Context) {
-        let connected = self.viewing_connected();
-        if self.top_bar(ui, "Omnivox", "Léa / Mio · Read only", connected) {
+        if self.top_bar(ui, "Omnivox", "Léa / Mio · Read only", self.viewing_connected()) {
             return;
         }
-        if connected {
+        self.account_picker(ui, ctx);
+        if self.viewing_connected() {
             self.connected_view(ui, ctx, "omnivox");
             return;
         }
@@ -1970,24 +2026,33 @@ impl App {
         ui.add_space(10.0);
         if Self::action(ui, "Connect", !self.busy) {
             let draft = self.draft.clone();
-            self.spawn(ctx.clone(), move || {
-                let mut settings = Settings::load();
-                match crate::omnivox::activate(&mut settings, &draft.url, &draft.token) {
+            self.spawn(
+                ctx.clone(),
+                move |mut settings| match crate::omnivox::activate(
+                    &mut settings,
+                    &draft.url,
+                    &draft.token,
+                ) {
                     Ok(message) => Message::Done(Notice::Ok(message), NextScreen::Home),
                     Err(message) => Message::Done(Notice::Err(message), NextScreen::Stay),
-                }
-            });
+                },
+            );
         }
         self.busy_text(ui);
         self.notice_line(ui);
     }
 
     fn brightspace_screen(&mut self, ui: &mut Ui, ctx: &egui::Context) {
-        let connected = self.viewing_connected();
-        if self.top_bar(ui, "Brightspace", "myCourses · Read only", connected) {
+        if self.top_bar(
+            ui,
+            "Brightspace",
+            "myCourses · Read only",
+            self.viewing_connected(),
+        ) {
             return;
         }
-        if connected {
+        self.account_picker(ui, ctx);
+        if self.viewing_connected() {
             self.connected_view(ui, ctx, "brightspace");
             return;
         }
@@ -2016,19 +2081,23 @@ impl App {
         ui.add_space(10.0);
         if Self::action(ui, "Connect", !self.busy) {
             let draft = self.draft.clone();
-            self.spawn(ctx.clone(), move || {
-                let mut settings = Settings::load();
-                match crate::brightspace::activate(&mut settings, &draft.url, &draft.token) {
+            self.spawn(
+                ctx.clone(),
+                move |mut settings| match crate::brightspace::activate(
+                    &mut settings,
+                    &draft.url,
+                    &draft.token,
+                ) {
                     Ok(message) => Message::Done(Notice::Ok(message), NextScreen::Home),
                     Err(message) => Message::Done(Notice::Err(message), NextScreen::Stay),
-                }
-            });
+                },
+            );
         }
         self.busy_text(ui);
         self.notice_line(ui);
     }
 
-    fn spawn(&mut self, ctx: Context, job: impl FnOnce() -> Message + Send + 'static) {
+    fn spawn(&mut self, ctx: Context, job: impl FnOnce(Settings) -> Message + Send + 'static) {
         if self.busy {
             return;
         }
@@ -2036,8 +2105,9 @@ impl App {
         self.rx = Some(receiver);
         self.busy = true;
         self.notice = None;
+        let settings = self.settings.reload();
         std::thread::spawn(move || {
-            let message = job();
+            let message = job(settings);
             let _ = sender.send(message);
             ctx.request_repaint();
         });
@@ -2127,6 +2197,18 @@ mod gallery_tests {
     }
 
     #[test]
+    fn public_link_copy_follows_the_tunnel_state() {
+        assert!(public_waiting_copy(&TunnelState::Stopped, true, false).contains("Turn the switch"));
+        assert!(public_waiting_copy(&TunnelState::Idle, false, true).contains("Turn the switch"));
+        assert!(public_waiting_copy(&TunnelState::Idle, true, false).contains("switch"));
+        assert!(
+            public_waiting_copy(&TunnelState::Failed("offline".into()), true, true)
+                .contains("try again")
+        );
+        assert!(public_waiting_copy(&TunnelState::Starting, true, true).contains("Opening"));
+    }
+
+    #[test]
     fn home_link_uses_the_current_quick_tunnel_origin() {
         let local = "http://127.0.0.1:8420/mcp/test-token";
         assert_eq!(connector_url(8420, "test-token", None), local);
@@ -2154,6 +2236,7 @@ mod gallery_tests {
             bind_error: None,
             screen: "home",
             draft: Draft::default(),
+            account_choices: Vec::new(),
             busy: false,
             notice: None,
             rx: None,
@@ -2171,9 +2254,11 @@ mod gallery_tests {
         app.update_tunnel(&ctx);
         assert_eq!(app.tunnel.state, TunnelState::Idle);
         app.tunnel.state = TunnelState::Ready("https://demo.trycloudflare.com".into());
-        app.update_tunnel(&ctx); // Disconnecting the last service revokes public access.
-        assert_eq!(app.tunnel.state, TunnelState::Idle);
-        assert!(app.tunnel.origin().is_none());
+        app.update_tunnel(&ctx); // No service does not tear down a link that is already up.
+        assert_eq!(
+            app.tunnel.state,
+            TunnelState::Ready("https://demo.trycloudflare.com".into())
+        );
         app.settings.moodle = Some(MoodleSettings {
             url: Some(MOODLE_DEFAULT_URL.into()),
             token: Some("demo".into()),
@@ -2189,6 +2274,28 @@ mod gallery_tests {
         app.bind_error = Some("port busy".into());
         app.update_tunnel(&ctx);
         assert_eq!(app.tunnel.state, TunnelState::Idle);
+
+        crate::config::tests::with_temp_config(|| {
+            app.bind_error = None;
+            app.settings.save().unwrap();
+            assert!(app.set_link_preferences(true, false));
+            // Restore persisted settings and the startup tunnel state, as after a restart.
+            app.settings = Settings::load();
+            app.tunnel.state = TunnelState::Idle;
+            app.update_tunnel(&ctx);
+            assert_eq!(app.tunnel.state, TunnelState::Stopped);
+            assert!(app.settings.gateway.local_enabled());
+            assert!(!app.settings.gateway.public_enabled());
+
+            assert!(app.set_link_preferences(false, false));
+            assert!(!Settings::load().gateway.local_enabled());
+            std::fs::remove_file(crate::config::config_path()).unwrap();
+            std::fs::create_dir(crate::config::config_path()).unwrap();
+            assert!(!app.set_link_preferences(true, true));
+            assert!(!app.settings.gateway.public_enabled());
+            assert!(!app.settings.gateway.local_enabled());
+            assert!(matches!(app.notice, Some(Notice::Err(_))));
+        });
     }
 
     #[test]
@@ -2212,6 +2319,7 @@ mod gallery_tests {
             bind_error: None,
             screen: "moodle",
             draft: Draft::default(),
+            account_choices: Vec::new(),
             busy: false,
             notice: None,
             rx: None,
@@ -2299,6 +2407,7 @@ mod gallery_tests {
             bind_error: None,
             screen: "home",
             draft: Draft::default(),
+            account_choices: Vec::new(),
             busy: false,
             notice: None,
             rx: None,
@@ -2359,6 +2468,177 @@ mod gallery_tests {
             "expected repeated zoom-in without moving the pointer, got {start} → {}",
             app.scale
         );
+    }
+
+    fn collect_texts(shapes: &[egui::epaint::ClippedShape]) -> Vec<(String, f32)> {
+        let mut texts = Vec::new();
+        fn walk(shape: &egui::Shape, texts: &mut Vec<(String, f32)>) {
+            match shape {
+                egui::Shape::Text(t) => {
+                    texts.push((t.galley.text().to_string(), t.pos.y));
+                }
+                egui::Shape::Vec(v) => {
+                    for s in v {
+                        walk(s, texts);
+                    }
+                }
+                _ => {}
+            }
+        }
+        for shape in shapes {
+            walk(&shape.shape, &mut texts);
+        }
+        texts
+    }
+
+    fn render_body(app: &mut App, ctx: &Context, size: Vec2) -> Vec<(String, f32)> {
+        let mut texts = Vec::new();
+        for _ in 0..2 {
+            let output = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), size)),
+                    ..Default::default()
+                },
+                |ctx| {
+                    CentralPanel::default()
+                        .frame(egui::Frame::new().fill(CANVAS).inner_margin(24.0))
+                        .show(ctx, |ui| {
+                            let bounds = form_bounds(ui.available_rect_before_wrap());
+                            ui.scope_builder(
+                                egui::UiBuilder::new()
+                                    .max_rect(bounds)
+                                    .layout(Layout::top_down(egui::Align::Min)),
+                                |ui| {
+                                    ui.set_width(bounds.width());
+                                    app.body(ui, ctx);
+                                },
+                            );
+                        });
+                },
+            );
+            texts = collect_texts(&output.shapes);
+        }
+        texts
+    }
+
+    #[test]
+    fn first_connect_hides_account_picker_and_shows_the_form() {
+        crate::config::tests::with_temp_config(|| {
+            let ctx = Context::default();
+            configure_context(&ctx);
+            let mut app = App {
+                settings: Settings::default().for_account("moodle", "moodle"),
+                gateway: Gateway {
+                    port: 8420,
+                    token: "demo".into(),
+                },
+                port: 8420,
+                logos: Some(crate::logos::Logos::load(&ctx)),
+                bind_error: None,
+                screen: "moodle",
+                draft: Draft::default(),
+                account_choices: Vec::new(),
+                busy: false,
+                notice: None,
+                rx: None,
+                check_rx: None,
+                check_status: None,
+                tunnel: Tunnel::default(),
+                local_enabled: Arc::new(AtomicBool::new(true)),
+                background: Background::default(),
+                copied_flash: None,
+                scale: 1.0,
+                zoom_hit: None,
+                zoom_held: None,
+                zoom_repeat_at: None,
+            };
+            let texts = render_body(&mut app, &ctx, Vec2::new(400.0, 560.0));
+            let labels: Vec<_> = texts.iter().map(|(t, _)| t.as_str()).collect();
+            assert!(labels.contains(&"Moodle"), "{labels:?}");
+            assert!(labels.contains(&"Username"), "{labels:?}");
+            assert!(labels.contains(&"Password"), "{labels:?}");
+            assert!(labels.contains(&"Connect to Moodle"), "{labels:?}");
+            assert!(
+                !labels.iter().any(|t| t.contains("New account")),
+                "picker must stay hidden with no saved accounts: {labels:?}"
+            );
+            // Header (title) must appear above the credential fields.
+            let title_y = texts.iter().find(|(t, _)| t == "Moodle").unwrap().1;
+            let user_y = texts.iter().find(|(t, _)| t == "Username").unwrap().1;
+            assert!(
+                title_y < user_y,
+                "title {title_y} should be above Username {user_y}"
+            );
+        });
+    }
+
+    #[test]
+    fn new_account_draft_shows_form_under_the_service_header() {
+        crate::config::tests::with_temp_config(|| {
+            let mut root = Settings::default();
+            root.moodle = Some(crate::config::MoodleSettings {
+                url: Some(MOODLE_DEFAULT_URL.into()),
+                token: Some("saved-token".into()),
+                allow_write: Some(false),
+            });
+            root.save().unwrap();
+            let listed = Settings::load().account_list("moodle");
+            assert_eq!(
+                listed.len(),
+                1,
+                "saved primary account must list before render: {listed:?} path={:?}",
+                crate::config::config_path()
+            );
+
+            let ctx = Context::default();
+            configure_context(&ctx);
+            let mut app = App {
+                settings: Settings::load().for_account("moodle", "brand-new-id"),
+                gateway: Gateway {
+                    port: 8420,
+                    token: "demo".into(),
+                },
+                port: 8420,
+                logos: Some(crate::logos::Logos::load(&ctx)),
+                bind_error: None,
+                screen: "moodle",
+                draft: Draft {
+                    editing: true,
+                    ..Draft::default()
+                },
+                account_choices: listed.clone(),
+                busy: false,
+                notice: None,
+                rx: None,
+                check_rx: None,
+                check_status: None,
+                tunnel: Tunnel::default(),
+                local_enabled: Arc::new(AtomicBool::new(true)),
+                background: Background::default(),
+                copied_flash: None,
+                scale: 1.0,
+                zoom_hit: None,
+                zoom_held: None,
+                zoom_repeat_at: None,
+            };
+            let texts = render_body(&mut app, &ctx, Vec2::new(400.0, 700.0));
+            let labels: Vec<_> = texts.iter().map(|(t, _)| t.as_str()).collect();
+            assert!(labels.contains(&"Moodle"), "{labels:?}");
+            assert!(labels.contains(&"New account"), "{labels:?}");
+            assert!(labels.contains(&"Username"), "{labels:?}");
+            assert!(labels.contains(&"Connect to Moodle"), "{labels:?}");
+            assert!(
+                !labels.iter().any(|t| *t == "+ Add account"),
+                "must not offer another add while drafting: {labels:?}"
+            );
+            let title_y = texts.iter().find(|(t, _)| t == "Moodle").unwrap().1;
+            let picker_y = texts.iter().find(|(t, _)| t == "New account").unwrap().1;
+            let user_y = texts.iter().find(|(t, _)| t == "Username").unwrap().1;
+            assert!(
+                title_y < picker_y && picker_y < user_y,
+                "expected header → picker → form, got title={title_y} picker={picker_y} user={user_y}"
+            );
+        });
     }
 
     #[test]

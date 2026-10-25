@@ -2,8 +2,6 @@ mod background;
 mod brightspace;
 mod catalog;
 mod config;
-#[allow(dead_code)] // Legacy Tailscale helpers; never alter existing Funnel routes.
-mod funnel;
 mod gui;
 mod http;
 mod logos;

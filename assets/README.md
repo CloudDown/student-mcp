@@ -21,5 +21,3 @@ the service only.
 downloaded on 2026-10-20 and rasterized at 256 × 256:
 https://s.brightspace.com/lib/branding/1.0.0/brightspace/favicon.ico
 The Brightspace brand belongs to D2L; its use here identifies the service only.
-
-Unused legacy assets (`poly.png` and `outlook.png`) came from Wikimedia Commons.

@@ -29,6 +29,18 @@ Successful connections
 return to the home screen with a green outline around the connected logo.
 Credentials stay in `~/.student-mcp.json`.
 
+**Multiple accounts, one connector:** open a platform and click **+ Add account**
+to connect another account. Use the account selector to manage its credentials,
+permissions or disconnection independently. No institution name is required;
+accounts are distinguished by their site address and an automatic identifier.
+Existing single-account configurations continue to work.
+
+The same MCP link exposes all connected accounts. Adding or removing an account
+does not change that link or its token (restarting the Quick Tunnel still changes
+its hostname). `student_status` lists the account IDs; service tools accept
+`account_id`, required when that platform has multiple accounts. With just one
+account on a platform, existing calls work without specifying an ID.
+
 Click a configured service to manage it: its connection is checked in the
 background (with **Retry** to check again), and you can change permissions,
 replace credentials or disconnect. A green outline means credentials are saved,
@@ -38,6 +50,8 @@ Connect a service, then copy the HTTPS link below the logos into your AI's MCP
 connector settings. The app creates the link automatically in the background.
 Click it to view errors, retry, or turn public access off. The copy button is
 enabled only while a public tunnel is running; local access is in link settings.
+Local and public link switches are saved across restarts. Turning off the local
+link also stops the public tunnel; re-enabling it respects the saved public setting.
 
 **Runs in the background:** closing the window hides it in the Windows/Linux
 notification area or macOS menu bar, keeping the MCP server and public link
@@ -110,11 +124,14 @@ AI or subscription supports custom MCP connectors.
 
 Always: `student_status`. As soon as a service is connected, its tools appear:
 
-- **Moodle**: `moodle_status`, `moodle_my_courses`, `moodle_course_content`, `moodle_assignments`, `moodle_quizzes`, `moodle_grades`, `moodle_calendar`, `ws_discover`, `ws_schema`, `ws_call` (embedded Moodle catalogue, ~750 functions)
+- **Moodle**: `moodle_status`, `moodle_my_courses`, `moodle_course_content`, `moodle_file`, `moodle_assignments`, `moodle_quizzes`, `moodle_grades`, `moodle_calendar`, `ws_discover`, `ws_schema`, `ws_call` (embedded Moodle catalogue, ~750 functions)
 - **Omnivox** (read only, via omnivox-mcp): `omnivox_status`, `omnivox_my_courses`, `omnivox_course_documents`, `omnivox_assignments`, `omnivox_grades`, `omnivox_schedule`, `omnivox_calendar`
 - **Brightspace** (read only): `brightspace_status`, `brightspace_my_courses` (paged), `brightspace_course_content`, `brightspace_grades`
 
 Writes stay locked until you tick **“Allow changes”** in the window.
+`ws_call` arguments cannot override authentication or the selected function;
+use JSON objects and arrays for nested Moodle parameters. Moodle API failures
+are returned as tool errors, including when Moodle responds with HTTP 200.
 
 ## Development
 
@@ -151,7 +168,7 @@ sidecar can run on each CI platform. Update those pins when updating cloudflared
 
 Layout: `src/main.rs` (CLI), `gui.rs` (egui popup), `mcp.rs` (JSON-RPC + tools),
 `http.rs` (std-only MCP HTTP server), `stdio.rs`, `moodle.rs` / `omnivox.rs` / `brightspace.rs`
-(clients), `funnel.rs` (legacy Tailscale helpers, unused by the app), `catalog.rs` (embedded catalogue),
+(clients), `catalog.rs` (embedded catalogue),
 `tunnel.rs` (managed Quick Tunnel child process), `config.rs` (`~/.student-mcp.json`).
 `background.rs` owns the tray icon and hide/reopen/quit lifecycle. Linux uses
 StatusNotifier over D-Bus without GTK; Windows/macOS use native tray menus.

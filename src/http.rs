@@ -1,16 +1,40 @@
 use crate::config::{random_hex, token_matches, Settings};
-use crate::mcp::handle_message;
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 const MAX_HEADER: usize = 32 * 1024;
 const MAX_BODY: usize = 2 * 1024 * 1024;
+const MAX_CONNECTIONS: usize = 64;
+const MAX_SESSIONS: usize = 256;
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Bind the local MCP endpoint (funnel proxies here).
+/// A slot is released on every exit path, including a failed thread spawn.
+struct ConnectionSlot(Arc<AtomicUsize>);
+
+impl ConnectionSlot {
+    fn acquire(active: &Arc<AtomicUsize>) -> Option<Self> {
+        active
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
+                (count < MAX_CONNECTIONS).then_some(count + 1)
+            })
+            .ok()?;
+        Some(Self(Arc::clone(active)))
+    }
+}
+
+impl Drop for ConnectionSlot {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// Bind the local MCP endpoint (the managed tunnel proxies here).
 pub fn bind(port: u16) -> Result<TcpListener, std::io::Error> {
     TcpListener::bind(("127.0.0.1", port))
 }
@@ -22,13 +46,19 @@ pub fn serve(listener: TcpListener) -> Result<(), String> {
 }
 
 pub fn serve_controlled(listener: TcpListener, enabled: Arc<AtomicBool>) -> Result<(), String> {
-    let sessions: Arc<Mutex<HashMap<String, ()>>> = Arc::new(Mutex::new(HashMap::new()));
+    let sessions = Arc::new(Mutex::new(Sessions::default()));
+    let active = Arc::new(AtomicUsize::new(0));
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
+                // Drop excess connections without blocking the accept loop.
+                let Some(slot) = ConnectionSlot::acquire(&active) else {
+                    continue;
+                };
                 let sessions = Arc::clone(&sessions);
                 let enabled = Arc::clone(&enabled);
-                std::thread::spawn(move || {
+                let _ = std::thread::Builder::new().spawn(move || {
+                    let _slot = slot;
                     let _ = connection(stream, sessions, enabled);
                 });
             }
@@ -44,17 +74,56 @@ struct Request {
     accept_sse: bool,
     session: Option<String>,
     authorization: Option<String>,
+    protocol_version: Option<String>,
     body: Vec<u8>,
     close: bool,
 }
 
+#[derive(Default)]
+struct Sessions {
+    order: VecDeque<String>,
+    live: HashMap<String, ()>,
+}
+
+impl Sessions {
+    fn insert(&mut self, id: String) {
+        if self.live.contains_key(&id) {
+            return;
+        }
+        while self.live.len() >= MAX_SESSIONS {
+            match self.order.pop_front() {
+                Some(old) => {
+                    self.live.remove(&old);
+                }
+                None => {
+                    self.live.clear();
+                    break;
+                }
+            }
+        }
+        self.order.push_back(id.clone());
+        self.live.insert(id, ());
+    }
+
+    fn contains(&self, id: &str) -> bool {
+        self.live.contains_key(id)
+    }
+
+    fn remove(&mut self, id: &str) {
+        self.live.remove(id);
+        self.order.retain(|saved| saved != id);
+    }
+}
+
 fn connection(
     mut stream: TcpStream,
-    sessions: Arc<Mutex<HashMap<String, ()>>>,
+    sessions: Arc<Mutex<Sessions>>,
     enabled: Arc<AtomicBool>,
 ) -> std::io::Result<()> {
+    stream.set_write_timeout(Some(WRITE_TIMEOUT))?;
+    let mut pending = Vec::new();
     loop {
-        let request = match read_request(&mut stream) {
+        let request = match read_request(&mut stream, &mut pending, REQUEST_TIMEOUT) {
             Ok(Some(request)) => request,
             Ok(None) => return Ok(()), // client closed cleanly
             Err(error) => {
@@ -88,17 +157,25 @@ fn connection(
 
 type HttpError = (u16, String);
 
-fn read_request(stream: &mut TcpStream) -> Result<Option<Request>, HttpError> {
-    let mut buffer: Vec<u8> = Vec::new();
+fn read_request(
+    stream: &mut TcpStream,
+    pending: &mut Vec<u8>,
+    timeout: Duration,
+) -> Result<Option<Request>, HttpError> {
+    let deadline = Instant::now() + timeout;
+    let mut buffer = std::mem::take(pending);
     let mut chunk = [0u8; 4096];
     let header_end = loop {
         if let Some(position) = find_double_crlf(&buffer) {
+            if position > MAX_HEADER {
+                return Err((431, "{\"error\":\"Headers too large.\"}".to_string()));
+            }
             break position;
         }
         if buffer.len() > MAX_HEADER {
             return Err((431, "{\"error\":\"Headers too large.\"}".to_string()));
         }
-        let read = stream.read(&mut chunk).map_err(broken)?;
+        let read = read_before(stream, &mut chunk, deadline)?;
         if read == 0 {
             if buffer.is_empty() {
                 return Ok(None); // clean EOF between keep-alive requests
@@ -115,9 +192,10 @@ fn read_request(stream: &mut TcpStream) -> Result<Option<Request>, HttpError> {
     if method.is_empty() || target.is_empty() {
         return Err((400, "{\"error\":\"Malformed HTTP request.\"}".to_string()));
     }
-    let mut content_length = 0usize;
+    let mut content_length = None;
     let mut session = None;
     let mut authorization = None;
+    let mut protocol_version = None;
     let mut close = false;
     let mut accept_sse = false;
     for line in lines {
@@ -125,15 +203,37 @@ fn read_request(stream: &mut TcpStream) -> Result<Option<Request>, HttpError> {
             let key = key.trim().to_lowercase();
             let value = value.trim();
             match key.as_str() {
-                "content-length" => content_length = value.parse().unwrap_or(0),
+                "content-length" => {
+                    if content_length.is_some()
+                        || value.is_empty()
+                        || !value.bytes().all(|c| c.is_ascii_digit())
+                    {
+                        return Err((400, "{\"error\":\"Invalid Content-Length.\"}".into()));
+                    }
+                    content_length =
+                        Some(value.parse::<usize>().map_err(|_| {
+                            (400, "{\"error\":\"Invalid Content-Length.\"}".into())
+                        })?);
+                }
+                "transfer-encoding" => {
+                    return Err((
+                        400,
+                        "{\"error\":\"Transfer-Encoding is not supported; send Content-Length.\"}"
+                            .into(),
+                    ))
+                }
                 "mcp-session-id" => session = Some(value.to_string()),
                 "authorization" => authorization = Some(value.to_string()),
+                "mcp-protocol-version" if protocol_version.is_none() => {
+                    protocol_version = Some(value.to_string());
+                }
                 "connection" => close = value.eq_ignore_ascii_case("close"),
                 "accept" => accept_sse = value.to_ascii_lowercase().contains("text/event-stream"),
                 _ => {}
             }
         }
     }
+    let content_length = content_length.unwrap_or(0);
     if content_length > MAX_BODY {
         return Err((413, "{\"error\":\"Request body too large.\"}".to_string()));
     }
@@ -143,13 +243,13 @@ fn read_request(stream: &mut TcpStream) -> Result<Option<Request>, HttpError> {
         body.extend_from_slice(&buffer[body_start..]);
     }
     while body.len() < content_length {
-        let read = stream.read(&mut chunk).map_err(broken)?;
+        let read = read_before(stream, &mut chunk, deadline)?;
         if read == 0 {
             return Err(broken(()));
         }
         body.extend_from_slice(&chunk[..read]);
     }
-    body.truncate(content_length);
+    *pending = body.split_off(content_length);
     let path = target.split('?').next().unwrap_or("").to_string();
     Ok(Some(Request {
         method,
@@ -157,9 +257,32 @@ fn read_request(stream: &mut TcpStream) -> Result<Option<Request>, HttpError> {
         accept_sse,
         session,
         authorization,
+        protocol_version,
         body,
         close,
     }))
+}
+
+fn read_before(
+    stream: &mut TcpStream,
+    buffer: &mut [u8],
+    deadline: Instant,
+) -> Result<usize, HttpError> {
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    if remaining.is_zero() {
+        return Err((408, "{\"error\":\"Request timed out.\"}".into()));
+    }
+    stream.set_read_timeout(Some(remaining)).map_err(broken)?;
+    stream.read(buffer).map_err(|error| {
+        if matches!(
+            error.kind(),
+            std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+        ) {
+            (408, "{\"error\":\"Request timed out.\"}".into())
+        } else {
+            broken(error)
+        }
+    })
 }
 
 fn broken(_: impl Sized) -> HttpError {
@@ -179,17 +302,28 @@ fn find_double_crlf(buffer: &[u8]) -> Option<usize> {
 }
 
 fn bearer(authorization: &Option<String>) -> Option<String> {
-    let value = authorization.as_deref()?;
-    value
-        .strip_prefix("Bearer ")
-        .or_else(|| value.strip_prefix("bearer "))
-        .map(str::trim)
-        .map(str::to_string)
+    let value = authorization.as_deref()?.trim();
+    let mut parts = value.splitn(2, char::is_whitespace);
+    let scheme = parts.next()?;
+    let token = parts.next()?.trim();
+    if scheme.eq_ignore_ascii_case("bearer") && !token.is_empty() {
+        Some(token.to_string())
+    } else {
+        None
+    }
+}
+
+fn presented_token_matches(expected: &str, header: &Option<String>, path_token: &str) -> bool {
+    // A stale Authorization header must not hide a correct secret in the URL,
+    // and a correct bearer must not be rejected because the path token differs.
+    let header_ok = token_matches(expected, bearer(header).as_deref());
+    let path_ok = !path_token.is_empty() && token_matches(expected, Some(path_token));
+    header_ok || path_ok
 }
 
 fn route(
     request: &Request,
-    sessions: &Arc<Mutex<HashMap<String, ()>>>,
+    sessions: &Arc<Mutex<Sessions>>,
 ) -> (u16, Vec<(String, String)>, Vec<u8>) {
     let settings = Settings::load();
     let gateway = settings.gateway();
@@ -198,7 +332,7 @@ fn route(
 
 fn route_with(
     request: &Request,
-    sessions: &Arc<Mutex<HashMap<String, ()>>>,
+    sessions: &Arc<Mutex<Sessions>>,
     settings: &Settings,
     gateway_token: &str,
 ) -> (u16, Vec<(String, String)>, Vec<u8>) {
@@ -208,12 +342,7 @@ fn route_with(
             .trim_start_matches('/')
             .trim()
             .to_string();
-        let provided = bearer(&request.authorization).or(if path_token.is_empty() {
-            None
-        } else {
-            Some(path_token)
-        });
-        if !token_matches(gateway_token, provided.as_deref()) {
+        if !presented_token_matches(gateway_token, &request.authorization, &path_token) {
             return unauthorized();
         }
         match request.method.as_str() {
@@ -336,7 +465,7 @@ fn jsonrpc_error(status: u16, message: &str) -> (u16, Vec<(String, String)>, Vec
 
 fn post_mcp(
     request: &Request,
-    sessions: &Arc<Mutex<HashMap<String, ()>>>,
+    sessions: &Arc<Mutex<Sessions>>,
     settings: &Settings,
 ) -> (u16, Vec<(String, String)>, Vec<u8>) {
     let message: Value = match serde_json::from_slice(&request.body) {
@@ -353,29 +482,44 @@ fn post_mcp(
     if is_notification {
         return (202, Vec::new(), Vec::new());
     }
+    let body_version = message
+        .pointer("/params/_meta/io.modelcontextprotocol~1protocolVersion")
+        .and_then(Value::as_str);
+    if let (Some(header), Some(body)) = (request.protocol_version.as_deref(), body_version) {
+        if header != body {
+            let id = message.get("id").cloned().unwrap_or(Value::Null);
+            let reply = crate::mcp::header_mismatch(
+                &id,
+                "MCP-Protocol-Version does not match the protocol version in the request body.",
+            );
+            return (
+                400,
+                Vec::new(),
+                serde_json::to_vec(&reply).unwrap_or_default(),
+            );
+        }
+    }
     let method = message
         .get("method")
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_string();
     let mut headers: Vec<(String, String)> = Vec::new();
+    let stateless = crate::mcp::allows_stateless(&message, request.protocol_version.as_deref());
     if method == "initialize" {
         let fresh = random_hex(16);
         if let Ok(mut map) = sessions.lock() {
-            if map.len() > 256 {
-                map.clear(); // generous eviction; every connector re-initializes anyway
-            }
-            map.insert(fresh.clone(), ());
+            map.insert(fresh.clone());
         }
         headers.push(("Mcp-Session-Id".to_string(), fresh));
-    } else {
+    } else if !stateless {
         let known = request
             .session
             .as_ref()
             .map(|session| {
                 sessions
                     .lock()
-                    .map(|map| map.contains_key(session))
+                    .map(|map| map.contains(session))
                     .unwrap_or(false)
             })
             .unwrap_or(false);
@@ -383,11 +527,16 @@ fn post_mcp(
             return jsonrpc_error(400, "Unknown MCP session: initialize first.");
         }
     }
-    match handle_message(settings, &message) {
+    match crate::mcp::handle_message_versioned(settings, &message, request.protocol_version.as_deref())
+    {
         Some(reply) => {
+            let status = match reply.pointer("/error/code").and_then(Value::as_i64) {
+                Some(-32020 | -32022) => 400,
+                _ => 200,
+            };
             let body = serde_json::to_vec(&reply).unwrap_or_default();
             let _ = request.accept_sse; // JSON direct mode: one JSON body per request
-            (200, headers, body)
+            (status, headers, body)
         }
         None => (202, Vec::new(), Vec::new()),
     }
@@ -442,38 +591,127 @@ mod tests {
     #[test]
     fn local_switch_blocks_requests_and_can_be_reenabled() {
         use super::*;
-        let enabled = Arc::new(AtomicBool::new(true));
-        for active in [true, false, true] {
-            enabled.store(active, Ordering::SeqCst);
-            let listener = bind(0).unwrap();
-            let address = listener.local_addr().unwrap();
-            let control = Arc::clone(&enabled);
-            let worker = std::thread::spawn(move || {
-                let (stream, _) = listener.accept().unwrap();
-                connection(stream, Arc::new(Mutex::new(HashMap::new())), control).unwrap();
-            });
-            let mut client = TcpStream::connect(address).unwrap();
-            client
-                .set_read_timeout(Some(std::time::Duration::from_secs(2)))
-                .unwrap();
-            client.write_all(b"GET /.well-known/oauth-authorization-server HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").unwrap();
-            let mut response = String::new();
-            client.read_to_string(&mut response).unwrap();
-            assert!(
-                response.starts_with(if active {
-                    "HTTP/1.1 404"
-                } else {
-                    "HTTP/1.1 503"
-                }),
-                "{response}"
-            );
-            worker.join().unwrap();
-        }
+        crate::config::tests::with_temp_config(|| {
+            let enabled = Arc::new(AtomicBool::new(true));
+            for active in [true, false, true] {
+                enabled.store(active, Ordering::SeqCst);
+                let listener = bind(0).unwrap();
+                let address = listener.local_addr().unwrap();
+                let control = Arc::clone(&enabled);
+                let worker = std::thread::spawn(move || {
+                    let (stream, _) = listener.accept().unwrap();
+                    connection(stream, Arc::new(Mutex::new(Sessions::default())), control).unwrap();
+                });
+                let mut client = TcpStream::connect(address).unwrap();
+                client
+                    .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                    .unwrap();
+                client.write_all(b"GET /.well-known/oauth-authorization-server HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").unwrap();
+                let mut response = String::new();
+                client.read_to_string(&mut response).unwrap();
+                assert!(
+                    response.starts_with(if active {
+                        "HTTP/1.1 404"
+                    } else {
+                        "HTTP/1.1 503"
+                    }),
+                    "{response}"
+                );
+                worker.join().unwrap();
+            }
+        });
     }
 
     use super::*;
 
     const TOKEN: &str = "test-token";
+
+    fn socket_pair() -> (TcpStream, TcpStream) {
+        let listener = bind(0).unwrap();
+        let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (server, _) = listener.accept().unwrap();
+        (client, server)
+    }
+
+    #[test]
+    fn connection_capacity_is_bounded_and_released() {
+        let active = Arc::new(AtomicUsize::new(0));
+        let mut slots: Vec<_> = (0..MAX_CONNECTIONS)
+            .map(|_| ConnectionSlot::acquire(&active).unwrap())
+            .collect();
+        assert!(ConnectionSlot::acquire(&active).is_none());
+        slots.pop();
+        let recovered = ConnectionSlot::acquire(&active).expect("closed connection frees capacity");
+        drop(slots);
+        drop(recovered);
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn idle_connections_and_incomplete_bodies_time_out() {
+        for prefix in [
+            "",
+            "POST /mcp/test-token HTTP/1.1\r\nContent-Length: 10\r\n\r\n{}",
+        ] {
+            let (mut client, mut server) = socket_pair();
+            client.write_all(prefix.as_bytes()).unwrap();
+            let result = read_request(&mut server, &mut Vec::new(), Duration::from_millis(40));
+            assert!(matches!(result, Err((408, _))));
+        }
+    }
+
+    #[test]
+    fn slow_trickle_does_not_extend_request_deadline() {
+        let (mut client, mut server) = socket_pair();
+        let writer = std::thread::spawn(move || {
+            for _ in 0..100 {
+                if client.write_all(b"x").is_err() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        });
+        let started = Instant::now();
+        let result = read_request(&mut server, &mut Vec::new(), Duration::from_millis(60));
+        assert!(matches!(result, Err((408, _))));
+        assert!(started.elapsed() < Duration::from_millis(800));
+        drop(server);
+        writer.join().unwrap();
+    }
+
+    #[test]
+    fn keep_alive_preserves_pipelined_requests() {
+        let (mut client, mut server) = socket_pair();
+        client.write_all(b"POST /first HTTP/1.1\r\nContent-Length: 2\r\n\r\n{}GET /second HTTP/1.1\r\nConnection: close\r\n\r\n").unwrap();
+        let mut pending = Vec::new();
+        let first = read_request(&mut server, &mut pending, Duration::from_secs(1))
+            .unwrap()
+            .unwrap();
+        assert_eq!(first.path, "/first");
+        assert_eq!(first.body, b"{}");
+        let second = read_request(&mut server, &mut pending, Duration::from_secs(1))
+            .unwrap()
+            .unwrap();
+        assert_eq!(second.path, "/second");
+        assert!(second.close);
+    }
+
+    #[test]
+    fn malformed_framing_and_oversized_requests_are_rejected() {
+        for (headers, status) in [
+            ("Content-Length: invalid".to_string(), 400),
+            ("Content-Length: 0\r\nContent-Length: 1".to_string(), 400),
+            ("Transfer-Encoding: chunked".to_string(), 400),
+            (format!("Content-Length: {}", MAX_BODY + 1), 413),
+            (format!("X-Fill: {}", "x".repeat(MAX_HEADER)), 431),
+        ] {
+            let (_client, mut server) = socket_pair();
+            let mut pending =
+                format!("POST /mcp/test-token HTTP/1.1\r\n{headers}\r\n\r\n").into_bytes();
+            let result = read_request(&mut server, &mut pending, Duration::from_secs(1));
+            assert!(matches!(result, Err((code, _)) if code == status));
+        }
+    }
 
     fn request(method: &str, path: &str) -> Request {
         Request {
@@ -482,13 +720,14 @@ mod tests {
             accept_sse: true,
             session: None,
             authorization: None,
+            protocol_version: None,
             body: br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#.to_vec(),
             close: false,
         }
     }
 
-    fn sessions() -> Arc<Mutex<HashMap<String, ()>>> {
-        Arc::new(Mutex::new(HashMap::new()))
+    fn sessions() -> Arc<Mutex<Sessions>> {
+        Arc::new(Mutex::new(Sessions::default()))
     }
 
     fn call(request: &Request) -> (u16, Vec<(String, String)>, Vec<u8>) {
@@ -554,6 +793,67 @@ mod tests {
         let status_page: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(status_page["oauth"], false);
         assert_eq!(status_page["status"], "ok");
+    }
+
+    #[test]
+    fn either_the_path_token_or_the_bearer_token_is_enough() {
+        let mut message = request("POST", "/mcp/test-token");
+        message.authorization = Some("Bearer wrong".into());
+        assert_eq!(call(&message).0, 200);
+        let mut message = request("POST", "/mcp/wrong");
+        message.authorization = Some("bearer test-token".into());
+        assert_eq!(call(&message).0, 200);
+        let mut message = request("POST", "/mcp/wrong");
+        message.authorization = Some("Bearer also-wrong".into());
+        assert_eq!(call(&message).0, 401);
+    }
+
+    #[test]
+    fn sessions_drop_the_oldest_without_clearing_the_rest() {
+        let sessions = sessions();
+        let settings = Settings::default();
+        let mut first = None;
+        let mut last = None;
+        for index in 0..=MAX_SESSIONS {
+            let (status, headers, _) =
+                route_with(&request("POST", "/mcp/test-token"), &sessions, &settings, TOKEN);
+            assert_eq!(status, 200, "{index}");
+            let id = headers
+                .into_iter()
+                .find(|(key, _)| key == "Mcp-Session-Id")
+                .unwrap()
+                .1;
+            if index == 0 {
+                first = Some(id.clone());
+            }
+            last = Some(id);
+        }
+        let mut ping = request("POST", "/mcp/test-token");
+        ping.body = br#"{"jsonrpc":"2.0","id":2,"method":"ping"}"#.to_vec();
+        ping.session = first;
+        assert_eq!(route_with(&ping, &sessions, &settings, TOKEN).0, 400);
+        ping.session = last;
+        assert_eq!(route_with(&ping, &sessions, &settings, TOKEN).0, 200);
+    }
+
+    #[test]
+    fn modern_requests_do_not_need_a_session() {
+        let mut message = request("POST", "/mcp/test-token");
+        message.protocol_version = Some("2026-07-28".into());
+        message.body = br#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}"#.to_vec();
+        let (status, headers, body) = call(&message);
+        assert_eq!(status, 200);
+        assert!(headers.iter().all(|(key, _)| key != "Mcp-Session-Id"));
+        let reply: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(reply["result"]["resultType"], "complete");
+        assert!(reply["result"]["tools"].is_array());
+
+        message.protocol_version = Some("2026-08-01".into());
+        message.body = br#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}"#.to_vec();
+        let (status, _, body) = call(&message);
+        assert_eq!(status, 400);
+        let reply: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(reply["error"]["code"], -32020);
     }
 
     #[test]

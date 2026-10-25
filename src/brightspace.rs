@@ -107,8 +107,8 @@ pub fn activate(
         url: Some(base_url),
         token: Some(token.into()),
     });
-    updated.save().map_err(|_| {
-        "Cannot save Brightspace credentials to the private config file.".to_string()
+    updated.save().map_err(|error| {
+        format!("Cannot save Brightspace credentials to the private config file: {error}")
     })?;
     *settings = updated;
     Ok("Brightspace connected (read only).".into())

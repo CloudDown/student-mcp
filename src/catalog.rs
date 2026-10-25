@@ -56,18 +56,33 @@ impl Catalog {
         self.entries.iter().find(|entry| entry.name == name)
     }
 
-    /// Search by function name / description substring.
+    /// Search by function name, then description. Name matches come first.
     pub fn search(&self, query: &str, limit: usize) -> Vec<CatalogEntry> {
         let needle = query.trim().to_lowercase();
-        self.entries
+        let mut matched: Vec<(u8, &CatalogEntry)> = self
+            .entries
             .iter()
-            .filter(|entry| {
-                needle.is_empty()
-                    || entry.name.to_lowercase().contains(&needle)
-                    || entry.description.to_lowercase().contains(&needle)
+            .filter_map(|entry| {
+                if needle.is_empty() {
+                    return Some((2, entry));
+                }
+                let name = entry.name.to_lowercase();
+                if name == needle {
+                    Some((0, entry))
+                } else if name.contains(&needle) {
+                    Some((1, entry))
+                } else if entry.description.to_lowercase().contains(&needle) {
+                    Some((2, entry))
+                } else {
+                    None
+                }
             })
+            .collect();
+        matched.sort_by(|left, right| left.0.cmp(&right.0));
+        matched
+            .into_iter()
             .take(limit.max(1))
-            .cloned()
+            .map(|(_, entry)| entry.clone())
             .collect()
     }
 
@@ -115,6 +130,13 @@ mod tests {
         assert!(results
             .iter()
             .any(|entry| entry.name == "core_enrol_get_users_courses"));
+    }
+
+    #[test]
+    fn search_ranks_an_exact_function_name_first() {
+        let catalog = Catalog::load();
+        let results = catalog.search("core_enrol_get_users_courses", 5);
+        assert_eq!(results[0].name, "core_enrol_get_users_courses");
     }
 
     #[test]
