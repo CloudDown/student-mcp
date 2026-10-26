@@ -589,8 +589,13 @@ pub fn test_service(settings: &Settings, id: &str) -> Result<String, String> {
             let config = settings
                 .omnivox()
                 .ok_or("Omnivox is not connected anymore.")?;
+            let college = crate::config::is_omnivox_host(&config.base_url);
             crate::omnivox::OmnivoxClient::new(config).status()?;
-            Ok("Omnivox connected (read only, through the MCP gateway).".into())
+            Ok(if college {
+                "Omnivox connected (read only).".into()
+            } else {
+                "Omnivox connected (read only, through the MCP gateway).".into()
+            })
         }
         "brightspace" => {
             let config = settings

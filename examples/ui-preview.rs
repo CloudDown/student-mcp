@@ -21,6 +21,8 @@ mod mcp;
 mod moodle;
 #[path = "../src/omnivox.rs"]
 mod omnivox;
+#[path = "../src/session.rs"]
+mod session;
 #[path = "../src/tunnel.rs"]
 mod tunnel;
 

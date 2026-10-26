@@ -1,9 +1,8 @@
 # student-mcp
 
 A small **Rust binary** (a window + a local MCP server) that connects student
-services to AI assistants: **Moodle**, **Omnivox** (through a local
-[omnivox-mcp](https://github.com/Beat-YT/omnivox-mcp) gateway), and **Brightspace /
-myCourses** (with an institution-authorized OAuth token).
+services to AI assistants: **Moodle**, **Omnivox**, and **Brightspace /
+myCourses**, using the same school login you already have.
 
 - 🪟 **Minimal popup window**: click a service, type your credentials, that's it (no web UI).
 - 🔌 **MCP server**: stdio for local clients, automatic HTTPS `/mcp/<token>` link for web AI connectors through Cloudflare Quick Tunnels.
@@ -64,17 +63,18 @@ On pure Wayland without XWayland, background hiding is disabled and closing quit
 If the Linux tray service disappears, a hidden window is restored.
 This does not start the app automatically when logging into the computer.
 
-Omnivox is read-only: Skytech has no public student API, so this app talks to a
-local [omnivox-mcp](https://github.com/Beat-YT/omnivox-mcp) gateway. Log in there
-(MFA included), then enter its address and access key — not your Omnivox
-password.
+Omnivox is read-only: enter your college Omnivox address, student number and
+password. Only the session is saved, never the password. If the college asks for
+two-factor authentication, complete it once in the portal, then connect again.
+A local [omnivox-mcp](https://github.com/Beat-YT/omnivox-mcp) gateway remains
+available under **Advanced options**.
 
 Brightspace / myCourses (McGill and other D2L schools) is read-only: enter the
-institution's site address and an approved OAuth access token, not your school
-password. Tokens expire and must currently be replaced manually; browser OAuth
-and automatic refresh are not implemented. This does not guarantee that McGill
-or another institution allows student API access. See
-[the guide](docs/GUIDE.md#quebec-integration-targets) for remaining targets.
+site address and your normal school username and password. Only the session is
+saved. Schools that send you through Microsoft SSO cannot use that password
+form; paste `d2lSessionVal` and `d2lSecureSessionVal` from your browser under
+**Advanced options**. Tokens expire and must be replaced via **Change login**.
+See [the guide](docs/GUIDE.md#quebec-integration-targets) for remaining targets.
 
 ## Using the tools
 
@@ -125,7 +125,7 @@ AI or subscription supports custom MCP connectors.
 Always: `student_status`. As soon as a service is connected, its tools appear:
 
 - **Moodle**: `moodle_status`, `moodle_my_courses`, `moodle_course_content`, `moodle_file`, `moodle_assignments`, `moodle_quizzes`, `moodle_grades`, `moodle_calendar`, `ws_discover`, `ws_schema`, `ws_call` (embedded Moodle catalogue, ~750 functions)
-- **Omnivox** (read only, via omnivox-mcp): `omnivox_status`, `omnivox_my_courses`, `omnivox_course_documents`, `omnivox_assignments`, `omnivox_grades`, `omnivox_schedule`, `omnivox_calendar`
+- **Omnivox** (read only): `omnivox_status`, `omnivox_my_courses`, `omnivox_course_documents`, `omnivox_assignments`, `omnivox_grades`, `omnivox_schedule`, `omnivox_calendar`
 - **Brightspace** (read only): `brightspace_status`, `brightspace_my_courses` (paged), `brightspace_course_content`, `brightspace_grades`
 
 Writes stay locked until you tick **“Allow changes”** in the window.

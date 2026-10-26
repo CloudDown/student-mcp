@@ -381,11 +381,15 @@ impl Settings {
     pub fn omnivox(&self) -> Option<OmnivoxConfig> {
         let saved = self.omnivox.as_ref()?;
         let token = saved.token.as_deref()?.trim();
-        if token.is_empty() || token.chars().any(char::is_whitespace) {
+        if token.is_empty() {
+            return None;
+        }
+        let base_url = normalize_omnivox_url(saved.url.as_deref()?).ok()?;
+        if !is_omnivox_host(&base_url) && token.chars().any(char::is_whitespace) {
             return None;
         }
         Some(OmnivoxConfig {
-            base_url: normalize_omnivox_url(saved.url.as_deref()?).ok()?,
+            base_url,
             token: token.to_string(),
         })
     }
@@ -393,7 +397,7 @@ impl Settings {
     pub fn brightspace(&self) -> Option<BrightspaceConfig> {
         let saved = self.brightspace.as_ref()?;
         let token = saved.token.as_deref()?.trim();
-        if token.is_empty() || token.chars().any(char::is_whitespace) {
+        if token.is_empty() {
             return None;
         }
         Some(BrightspaceConfig {
@@ -401,6 +405,13 @@ impl Settings {
             token: token.to_string(),
         })
     }
+}
+
+pub fn is_omnivox_host(url: &str) -> bool {
+    Url::parse(url)
+        .ok()
+        .and_then(|parsed| parsed.host_str().map(str::to_ascii_lowercase))
+        .is_some_and(|host| host == "omnivox.ca" || host.ends_with(".omnivox.ca"))
 }
 
 pub fn config_path() -> PathBuf {
@@ -511,10 +522,7 @@ pub fn normalize_omnivox_url(input: &str) -> Result<String, String> {
     let url = parse_site_url(input)?;
     let host = url.host_str().unwrap_or("").to_ascii_lowercase();
     if host == "omnivox.ca" || host.ends_with(".omnivox.ca") {
-        return Err(
-            "Use the address of your Omnivox MCP gateway (for example http://127.0.0.1:3000), not the college Omnivox site."
-                .into(),
-        );
+        return Ok(url.origin().ascii_serialization());
     }
     match url.path().trim_end_matches('/') {
         "" | "/mcp" | "/tools" => {}
@@ -764,8 +772,11 @@ pub(crate) mod tests {
         ] {
             assert_eq!(normalize_omnivox_url(input).unwrap(), origin);
         }
+        assert_eq!(
+            normalize_omnivox_url("https://cegepmontpetit.omnivox.ca/Login/Account/Login").unwrap(),
+            "https://cegepmontpetit.omnivox.ca"
+        );
         for input in [
-            "https://cegepmontpetit.omnivox.ca",
             "http://school.example",
             "https://127.0.0.1:3000/unexpected",
             "https://user:password@127.0.0.1:3000",
@@ -789,6 +800,20 @@ pub(crate) mod tests {
             loaded.disable("omnivox");
             loaded.save().unwrap();
             assert!(Settings::load().omnivox().is_none());
+        });
+        with_temp_config(|| {
+            let settings = Settings {
+                omnivox: Some(OmnivoxSettings {
+                    url: Some("https://cegepmontpetit.omnivox.ca".into()),
+                    token: Some("SidLea=abc; Mobile=tok".into()),
+                }),
+                ..Default::default()
+            };
+            settings.save().unwrap();
+            assert_eq!(
+                Settings::load().omnivox().unwrap().token,
+                "SidLea=abc; Mobile=tok"
+            );
         });
     }
 

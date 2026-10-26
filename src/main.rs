@@ -8,6 +8,7 @@ mod logos;
 mod mcp;
 mod moodle;
 mod omnivox;
+mod session;
 mod stdio;
 mod tunnel;
 

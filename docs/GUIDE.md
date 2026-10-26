@@ -47,26 +47,28 @@ mode is disabled and closing the window quits normally.
 2. *Mobile token*: paste an existing mobile token. This is the reliable option
    when SSO blocks the password flow.
 
-**Omnivox (Léa / Mio).** Skytech has no public student API. Run
-[omnivox-mcp](https://github.com/Beat-YT/omnivox-mcp) locally, complete its
-Electron login (MFA included), then enter that gateway's address (for example
-`http://127.0.0.1:3000`) and the access key from `accessKey.txt`. The app
-verifies the gateway catalog before saving. This connector only reads courses,
-documents, assignments, grades, schedule and calendar. College Omnivox site
-addresses are rejected: the password login stays in omnivox-mcp.
+**Omnivox (Léa / Mio).** Enter the college Omnivox address
+(`https://cegepxxx.omnivox.ca`), your student number and password. The app
+posts the official login form, keeps only the session cookies, and reads
+courses, documents, assignments, grades, schedule and calendar from the
+mobile JSON endpoints. The password is never stored. If Omnivox then asks for
+two-factor authentication, complete it in the portal and retry, or use
+**Advanced options** with a local
+[omnivox-mcp](https://github.com/Beat-YT/omnivox-mcp) gateway (`http://127.0.0.1:3000`
+and `accessKey.txt`).
 
 **Brightspace / myCourses.** Enter your institution's Brightspace site address
-and an institution-authorized OAuth access token (without `Bearer`). The app
-verifies your profile and course-enrollment access before saving credentials.
-This connector only reads your account, courses, content and visible grades.
-Course lists retain `PagingInfo`; supply `bookmark` to request the next page.
+and your normal username and password. The app signs in on the school login
+page, keeps only the session cookies, and verifies your profile and course
+enrollments. This connector only reads your account, courses, content and
+visible grades. Course lists retain `PagingInfo`; supply `bookmark` to request
+the next page. The password is never stored.
 
-API access requires institutional approval; a normal student login alone is
-not enough. Access tokens expire and must be replaced via **Change login**.
-The app does not yet implement browser OAuth or automatic token refresh.
-Required scopes: `users:own_profile:read`, `enrollment:own_enrollment:read`,
-`content:toc:read`, `grades:own_grades:read` (subject to institutional permissions).
-The connector uses LP API 1.49 and LE API 1.82.
+If the school uses Microsoft SSO, the password form is refused. Open Brightspace
+in your browser, sign in, then under **Advanced options** paste the
+`d2lSessionVal` and `d2lSecureSessionVal` cookies (or an institution-authorized
+OAuth token, without `Bearer`). Sessions expire and must be replaced via
+**Change login**. The connector uses LP API 1.49 and LE API 1.82.
 
 Once configured, clicking its logo opens a **manage** screen. A live check
 runs automatically and can be retried with **Retry**. The saved connection
@@ -82,12 +84,15 @@ Only implemented connectors are displayed, without empty slots.
 
 - **Moodle** also covers installations such as StudiUM; it is not a separate
   platform. Each institution must enable the required mobile/Web Service access.
-- **Omnivox (including Léa/Mio)** is a read-only client of a local
-  [omnivox-mcp](https://github.com/Beat-YT/omnivox-mcp) gateway. There is still
-  no public Skytech student API; login, cookies and MFA stay in that project.
-  The connector is tested with local HTTP fixtures, not a live college account.
-- **Brightspace** has a read-only API connector tested with local HTTP fixtures;
-  it has not been validated against a real institutional account.
+- **Omnivox (including Léa/Mio)** signs in with the student's college login and
+  reads the `/Mobl/` JSON endpoints. Two-factor and some college portals may
+  still need the local [omnivox-mcp](https://github.com/Beat-YT/omnivox-mcp)
+  gateway under advanced options. The connector is tested with local HTTP
+  fixtures, not a live college account.
+- **Brightspace** signs in with the student's school login and reads the Valence
+  API with session cookies (OAuth tokens still work). SSO schools need cookies
+  pasted from the browser. Tested with local HTTP fixtures; it has not been
+  validated against a real institutional account.
 - **monPortail/Brio** is not integrated yet. Laval requires institutional SSO/MFA;
   no suitable public student API was found. Current browser-session evidence and
   an authorized test account are needed; old monPortail API examples from 2017
@@ -155,6 +160,11 @@ student-mcp version
   `--port=`.
 - **Moodle rejects the school login**: SSO or 2FA blocks `/login/token.php` →
   switch to the **Mobile token** mode.
+- **Brightspace asks for SSO cookies**: the school sends you through Microsoft
+  or another identity provider. Sign in in your browser, copy `d2lSessionVal`
+  and `d2lSecureSessionVal`, and paste them under **Advanced options**.
+- **Omnivox asks for two-factor**: complete it in the portal, then retry, or
+  use the Omnivox MCP gateway under **Advanced options**.
 - **The assistant cannot open a Moodle PDF**: Moodle file URLs need the web
   service token, which is never given to the model. Use `moodle_file` with the
   `fileurl` from `moodle_course_content`; do not fetch that URL with a generic

@@ -2001,45 +2001,105 @@ impl App {
             self.connected_view(ui, ctx, "omnivox");
             return;
         }
-        Self::field(
-            ui,
-            "Omnivox MCP address",
-            &mut self.draft.url,
-            "http://127.0.0.1:3000",
-            false,
-        );
-        Self::secret_field(
-            ui,
-            "Access key",
-            &mut self.draft.token,
-            "accessKey.txt",
-            &mut self.draft.password_visible,
-        );
+        let configured = self.settings.omnivox().is_some();
+        if self.draft.use_token {
+            Self::field(
+                ui,
+                "Omnivox MCP address",
+                &mut self.draft.url,
+                "http://127.0.0.1:3000",
+                false,
+            );
+            Self::secret_field(
+                ui,
+                "Access key",
+                &mut self.draft.token,
+                "accessKey.txt",
+                &mut self.draft.password_visible,
+            );
+        } else {
+            Self::field(
+                ui,
+                "College address",
+                &mut self.draft.url,
+                "https://cegepxxx.omnivox.ca",
+                false,
+            );
+            Self::field(
+                ui,
+                "Student number",
+                &mut self.draft.username,
+                "0000000",
+                false,
+            );
+            Self::secret_field(
+                ui,
+                "Password",
+                &mut self.draft.password,
+                "Omnivox password",
+                &mut self.draft.password_visible,
+            );
+        }
+        Self::advanced_row(ui, &mut self.draft.advanced);
+        if self.draft.advanced {
+            ui.add_space(2.0);
+            Self::toggle(
+                ui,
+                "Use an Omnivox MCP gateway",
+                &mut self.draft.use_token,
+            );
+        }
         ui.add(
             egui::Label::new(
-                RichText::new("Run Beat-YT/omnivox-mcp, log in there, then paste its address and access key. Not your Omnivox password.")
-                    .size(10.5)
-                    .color(SUBTLE),
+                RichText::new(if self.draft.use_token {
+                    "Run Beat-YT/omnivox-mcp, log in there, then paste its address and access key."
+                } else {
+                    "Uses your normal Omnivox login. The password is not saved. Two-factor prompts must be completed in the portal first."
+                })
+                .size(10.5)
+                .color(SUBTLE),
             )
             .wrap(),
         );
         ui.add_space(10.0);
-        if Self::action(ui, "Connect", !self.busy) {
-            let draft = self.draft.clone();
-            self.spawn(
-                ctx.clone(),
-                move |mut settings| match crate::omnivox::activate(
-                    &mut settings,
-                    &draft.url,
-                    &draft.token,
-                ) {
+        self.notice_line(ui);
+        self.busy_text(ui);
+        let draft = self.draft.clone();
+        let ready = !self.busy
+            && (draft.use_token && !draft.url.trim().is_empty() && !draft.token.trim().is_empty()
+                || !draft.use_token
+                    && !draft.url.trim().is_empty()
+                    && !draft.username.trim().is_empty()
+                    && !draft.password.is_empty());
+        let submit = Self::action(
+            ui,
+            if self.busy {
+                "Connecting…"
+            } else if configured {
+                "Save changes"
+            } else {
+                "Connect to Omnivox"
+            },
+            ready,
+        ) || ready && ui.input(|input| input.key_pressed(egui::Key::Enter));
+        if submit {
+            self.spawn(ctx.clone(), move |mut settings| {
+                let result = if draft.use_token {
+                    crate::omnivox::activate(&mut settings, &draft.url, &draft.token)
+                } else {
+                    crate::omnivox::activate_login(
+                        &mut settings,
+                        &draft.url,
+                        &draft.username,
+                        &draft.password,
+                    )
+                };
+                match result {
                     Ok(message) => Message::Done(Notice::Ok(message), NextScreen::Home),
                     Err(message) => Message::Done(Notice::Err(message), NextScreen::Stay),
-                },
-            );
+                }
+            });
         }
-        self.busy_text(ui);
-        self.notice_line(ui);
     }
 
     fn brightspace_screen(&mut self, ui: &mut Ui, ctx: &egui::Context) {
@@ -2056,6 +2116,7 @@ impl App {
             self.connected_view(ui, ctx, "brightspace");
             return;
         }
+        let configured = self.settings.brightspace().is_some();
         Self::field(
             ui,
             "Site address",
@@ -2063,38 +2124,90 @@ impl App {
             "https://mycourses.mcgill.ca",
             false,
         );
-        Self::secret_field(
-            ui,
-            "OAuth access token",
-            &mut self.draft.token,
-            "Access token",
-            &mut self.draft.password_visible,
-        );
+        if self.draft.use_token {
+            Self::secret_field(
+                ui,
+                "Token or session cookies",
+                &mut self.draft.token,
+                "Access token or d2lSessionVal=…",
+                &mut self.draft.password_visible,
+            );
+        } else {
+            Self::field(
+                ui,
+                "Username",
+                &mut self.draft.username,
+                "School username",
+                false,
+            );
+            Self::secret_field(
+                ui,
+                "Password",
+                &mut self.draft.password,
+                "Brightspace password",
+                &mut self.draft.password_visible,
+            );
+        }
+        Self::advanced_row(ui, &mut self.draft.advanced);
+        if self.draft.advanced {
+            ui.add_space(2.0);
+            Self::toggle(
+                ui,
+                "Use a token or browser session cookies",
+                &mut self.draft.use_token,
+            );
+        }
         ui.add(
             egui::Label::new(
-                RichText::new("Institution-approved API token required. Not your school password.")
-                    .size(10.5)
-                    .color(SUBTLE),
+                RichText::new(if self.draft.use_token {
+                    "Paste an access token, or d2lSessionVal and d2lSecureSessionVal from your browser. Not your school password."
+                } else {
+                    "Uses your normal Brightspace login. The password is not saved. Schools with Microsoft SSO need session cookies in advanced options."
+                })
+                .size(10.5)
+                .color(SUBTLE),
             )
             .wrap(),
         );
         ui.add_space(10.0);
-        if Self::action(ui, "Connect", !self.busy) {
-            let draft = self.draft.clone();
-            self.spawn(
-                ctx.clone(),
-                move |mut settings| match crate::brightspace::activate(
-                    &mut settings,
-                    &draft.url,
-                    &draft.token,
-                ) {
+        self.notice_line(ui);
+        self.busy_text(ui);
+        let draft = self.draft.clone();
+        let ready = !self.busy
+            && !draft.url.trim().is_empty()
+            && (draft.use_token && !draft.token.trim().is_empty()
+                || !draft.use_token
+                    && !draft.username.trim().is_empty()
+                    && !draft.password.is_empty());
+        let submit = Self::action(
+            ui,
+            if self.busy {
+                "Connecting…"
+            } else if configured {
+                "Save changes"
+            } else {
+                "Connect to Brightspace"
+            },
+            ready,
+        ) || ready && ui.input(|input| input.key_pressed(egui::Key::Enter));
+        if submit {
+            self.spawn(ctx.clone(), move |mut settings| {
+                let result = if draft.use_token {
+                    crate::brightspace::activate(&mut settings, &draft.url, &draft.token)
+                } else {
+                    crate::brightspace::activate_login(
+                        &mut settings,
+                        &draft.url,
+                        &draft.username,
+                        &draft.password,
+                    )
+                };
+                match result {
                     Ok(message) => Message::Done(Notice::Ok(message), NextScreen::Home),
                     Err(message) => Message::Done(Notice::Err(message), NextScreen::Stay),
-                },
-            );
+                }
+            });
         }
-        self.busy_text(ui);
-        self.notice_line(ui);
     }
 
     fn spawn(&mut self, ctx: Context, job: impl FnOnce(Settings) -> Message + Send + 'static) {
