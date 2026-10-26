@@ -23,6 +23,8 @@ mod moodle;
 mod omnivox;
 #[path = "../src/session.rs"]
 mod session;
+#[path = "../src/share.rs"]
+mod share;
 #[path = "../src/tunnel.rs"]
 mod tunnel;
 

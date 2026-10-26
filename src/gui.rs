@@ -605,6 +605,8 @@ pub fn run(port_override: Option<u16>, first_run: bool) {
     }
     let port = chosen.unwrap_or(base_port);
     gateway.port = port;
+    #[cfg(not(test))]
+    crate::share::set_port(if bind_error.is_none() { port } else { 0 });
 
     let result = eframe::run_native(
         "student-mcp",
@@ -1362,6 +1364,8 @@ impl App {
             {
                 if self.set_link_preferences(local_on, self.settings.gateway.public_enabled()) {
                     self.local_enabled.store(local_on, Ordering::SeqCst);
+                    #[cfg(not(test))]
+                    crate::share::set_port(if local_on { self.port } else { 0 });
                     if !local_on {
                         self.tunnel.stop();
                     } else {
@@ -1539,12 +1543,18 @@ impl App {
 
     fn update_tunnel(&mut self, ctx: &Context) {
         self.tunnel.poll();
+        // GUI tests use synthetic tunnel origins; do not leak them into the
+        // process-wide file-link base used by other tests.
+        #[cfg(not(test))]
+        crate::share::set_origin(self.tunnel.origin().map(str::to_string));
         if !self.local_enabled.load(Ordering::SeqCst) || !self.settings.gateway.public_enabled() {
             if matches!(
                 self.tunnel.state,
                 TunnelState::Starting | TunnelState::Ready(_) | TunnelState::Idle
             ) {
                 self.tunnel.stop();
+                #[cfg(not(test))]
+                crate::share::set_origin(None);
             }
             return;
         }

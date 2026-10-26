@@ -169,12 +169,31 @@ student-mcp version
   and `d2lSecureSessionVal`, and paste them under **Advanced options**.
 - **Omnivox asks for two-factor**: complete it in the portal, then retry, or
   use the Omnivox MCP gateway under **Advanced options**.
-- **The assistant cannot open a Moodle PDF**: Moodle file URLs need the web
-  service token, which is never given to the model. Use `moodle_file` with the
-  `fileurl` from `moodle_course_content`; do not fetch that URL with a generic
-  HTTP tool. The original PDF is attached as an MCP resource; scanned pages are
-  also rasterized with `pdftoppm` (up to 16 images). Install Poppler on this
-  computer. The AI client must accept MCP file/image content.
+- **The assistant cannot open a Moodle PDF / stops mid-chapter**: Moodle file
+  URLs need the web service token, which is never given to the model. Use
+  `moodle_file` with the `fileurl` from `moodle_course_content`; do not fetch
+  that URL with a generic HTTP tool. `moodle_file` now returns:
+  - `find` results (`matchedPage`, `matches`) when you pass a section such as
+    `"3.3"` or a phrase;
+  - extracted text, page images, and `totalPages` / `truncated` /
+    `nextPageFrom` for the requested window (up to 24 pages, plus a short tail,
+    so a 30-page chapter arrives whole);
+  - `links.reader` (full HTML reader with every page), `links.download` (direct
+    PDF), `links.text` (plain text), and `links.parts` (one URL per page window).
+
+  Links exist in `student-mcp up` mode (local link and/or public tunnel); stdio
+  clients receive the inline blob, text and images instead. PDFs larger than
+  6 MB are not inlined as base64 when links exist: use `links.download`. Open `links.reader`
+  when a chapter is long, or call `moodle_file` again with
+  `page_from=nextPageFrom`. Do not invent missing pages. `links.localOnly` is
+  true when no public tunnel is active: a browser AI cannot reach that address,
+  so rely on the inline text/images or turn the public link on. Install Poppler
+  (`pdftotext`, `pdftoppm`, `pdfinfo`, `pdftocairo`) for PDF rendering/slicing,
+  and Tesseract for scanned PDFs without a text layer.
+- **The shared file link says it expired**: links are capability URLs valid for
+  three hours. Call `moodle_file` again to mint a fresh one. Anyone with the
+  link can read that one file until it expires; the Moodle token is never in
+  the link.
 - **Claude cannot register with the sign-in service** (`ofid_…` reference):
   Claude started an OAuth flow, but this server deliberately has no OAuth. All
   `/.well-known/oauth-*` paths return 404. Delete the connector, re-add it with

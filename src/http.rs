@@ -365,6 +365,10 @@ fn route_with(
             "POST" => post_mcp(request, sessions, settings),
             _ => jsonrpc_error(405, "Unsupported HTTP method."),
         }
+    } else if let Some(response) = crate::share::route(&request.method, path) {
+        // Capability links for files returned by moodle_file. The random id in
+        // the path is the secret; no Moodle token is exposed.
+        response
     } else if is_oauth_discovery(path) {
         // This server authenticates with a secret link, not OAuth. Answering the
         // discovery probes with a plain 404 keeps Claude (and other MCP clients)
@@ -555,9 +559,20 @@ fn write_response(
     }
     if status != 204 {
         head.push_str(&format!("Content-Length: {}\r\n", body.len()));
-        head.push_str("Content-Type: application/json; charset=utf-8\r\n");
-        head.push_str("Cache-Control: no-store\r\n");
-        head.push_str("Access-Control-Allow-Origin: *\r\n");
+        let has = |name: &str| {
+            headers
+                .iter()
+                .any(|(key, _)| key.eq_ignore_ascii_case(name))
+        };
+        if !has("Content-Type") {
+            head.push_str("Content-Type: application/json; charset=utf-8\r\n");
+        }
+        if !has("Cache-Control") {
+            head.push_str("Cache-Control: no-store\r\n");
+        }
+        if !has("Access-Control-Allow-Origin") {
+            head.push_str("Access-Control-Allow-Origin: *\r\n");
+        }
     }
     head.push_str(if keep_alive {
         "Connection: keep-alive\r\n"
@@ -631,6 +646,56 @@ mod tests {
         let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
         let (server, _) = listener.accept().unwrap();
         (client, server)
+    }
+
+    #[test]
+    fn capability_file_urls_are_served_by_the_http_router() {
+        let id = crate::share::publish(
+            "notes.pdf",
+            "application/pdf",
+            b"%PDF-1.4 fake",
+            "page one\u{0C}page two",
+            2,
+        )
+        .unwrap();
+        let (status, headers, body) = call(&request("GET", &format!("/s/{id}/text")));
+        assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));
+        assert!(
+            headers
+                .iter()
+                .any(|(key, value)| key == "Content-Type" && value.starts_with("text/plain")),
+            "{headers:?}"
+        );
+        assert_eq!(body, b"page one\x0Cpage two");
+    }
+
+    #[test]
+    fn shared_file_responses_keep_their_own_content_type() {
+        let (mut client, server) = socket_pair();
+        write_response(
+            &server,
+            200,
+            vec![
+                ("Content-Type".to_string(), "application/pdf".to_string()),
+                (
+                    "Cache-Control".to_string(),
+                    "private, max-age=60".to_string(),
+                ),
+            ],
+            b"%PDF-1.4",
+            false,
+        )
+        .unwrap();
+        drop(server);
+        let mut response = Vec::new();
+        client.read_to_end(&mut response).unwrap();
+        let response = String::from_utf8_lossy(&response);
+        assert!(
+            response.contains("Content-Type: application/pdf\r\n"),
+            "{response}"
+        );
+        assert!(!response.contains("application/json"), "{response}");
+        assert!(!response.contains("no-store"), "{response}");
     }
 
     #[test]

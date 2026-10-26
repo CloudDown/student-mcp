@@ -9,6 +9,7 @@ mod mcp;
 mod moodle;
 mod omnivox;
 mod session;
+mod share;
 mod stdio;
 mod tunnel;
 

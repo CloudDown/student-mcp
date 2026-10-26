@@ -124,7 +124,16 @@ AI or subscription supports custom MCP connectors.
 
 Always: `student_status`. As soon as a service is connected, its tools appear:
 
-- **Moodle**: `moodle_status`, `moodle_my_courses`, `moodle_course_content`, `moodle_file`, `moodle_assignments`, `moodle_quizzes`, `moodle_grades`, `moodle_calendar`, `ws_discover`, `ws_schema`, `ws_call` (embedded Moodle catalogue, ~750 functions)
+- **Moodle** (student workflow tools + full Web Service escape hatch):
+  - Overview: `moodle_status`, `moodle_my_courses`, `moodle_search`, `moodle_deadlines`, `moodle_notifications`, `moodle_messages`, `moodle_conversation_messages`
+  - Course work: `moodle_course_content`, `moodle_resources`, `moodle_file`, `moodle_assignments`, `moodle_assignment_status`, `moodle_quizzes`, `moodle_quiz_status`, `moodle_grades`, `moodle_calendar`, `moodle_completion`
+  - PDF reading: `moodle_file` accepts `find` (`"3.3"`, a title, a phrase),
+    `page_from`, and `page_to`. It returns text, page images, and private
+    3-hour links: `links.download` (the PDF), `links.reader` (all pages as
+    HTML), `links.text`, and `links.parts` (one URL per page window). Short
+    PDFs are returned whole; long ones expose `truncated` / `nextPageFrom`.
+  - Forums: `moodle_announcements`, `moodle_forums`, `moodle_forum_discussions`, `moodle_forum_posts`
+  - Advanced: `ws_discover`, `ws_schema`, `ws_call` (embedded Moodle catalogue, ~750 functions; any remaining student/admin capability the token allows)
 - **Omnivox** (read only): `omnivox_status`, `omnivox_my_courses`, `omnivox_course_documents`, `omnivox_assignments`, `omnivox_grades`, `omnivox_schedule`, `omnivox_calendar`
 - **Brightspace** (read only): `brightspace_status`, `brightspace_my_courses` (paged), `brightspace_course_content`, `brightspace_grades`
 

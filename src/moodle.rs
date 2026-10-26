@@ -4,12 +4,31 @@ use std::io::Read;
 use std::time::Duration;
 use url::Url;
 
+/// What to read from a Moodle file.
+#[derive(Default, Clone)]
+pub struct FileQuery {
+    /// First page (1-based). Defaults to the page matching `find`, else 1.
+    pub page_from: Option<u32>,
+    /// Last page (inclusive). Defaults to a window of `MAX_PDF_PAGES`.
+    pub page_to: Option<u32>,
+    /// Section number or phrase to locate in the PDF text layer.
+    pub find: Option<String>,
+}
+
 const MOBILE_SERVICE: &str = "moodle_mobile_app";
 const TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_FILE_BYTES: u64 = 12 * 1024 * 1024;
 const MAX_TEXT_CHARS: usize = 80_000;
-const MAX_PDF_PAGES: u32 = 16;
+/// Pages rendered/extracted per moodle_file call. Long PDFs use page_from/page_to.
+const MAX_PDF_PAGES: u32 = 24;
+/// If the rest of a PDF is short, include it instead of returning a truncated window.
+const PDF_TAIL_EXTEND: u32 = 8;
+const PDF_HARD_MAX: u32 = MAX_PDF_PAGES + PDF_TAIL_EXTEND;
 const MAX_PAGE_BYTES: usize = 1_500_000;
+const MAX_IMAGES_TOTAL_BYTES: usize = 8_000_000;
+/// Above this size, a PDF is exposed through links instead of a giant base64 blob.
+const MAX_INLINE_BLOB_BYTES: usize = 6 * 1024 * 1024;
+const OCR_MAX_PAGES: usize = 24;
 const SENSITIVE_KEYS: [&str; 6] = [
     "wstoken",
     "token",
@@ -118,9 +137,7 @@ pub fn request_mobile_token(site: &str, username: &str, password: &str) -> Resul
         .call()
         .map_err(error_for_transport)?;
     if (300..400).contains(&response.status()) {
-        return Err(
-            "Moodle redirected the login request. Check the site address.".into(),
-        );
+        return Err("Moodle redirected the login request. Check the site address.".into());
     }
     token_from_response(response)?.ok_or_else(|| {
         "Moodle did not provide a mobile token. Check mobile service access with your school, or use the existing-token option.".into()
@@ -191,11 +208,13 @@ impl MoodleClient {
     }
 
     /// Fetch a course file with the stored WS token. The token never appears in the result.
-    pub fn download_file(&self, fileurl: &str) -> Result<Value, String> {
+    /// For PDFs, `query` can target a page window or search the text layer (`find`).
+    pub fn download_file(&self, fileurl: &str, query: &FileQuery) -> Result<Value, String> {
         let url = file_download_url(&self.base_url, &self.token, fileurl)?;
-        let response = download_agent().get(&url).call().map_err(|error| {
-            scrub_secret(error_for_file_transport(error), &self.token)
-        })?;
+        let response = download_agent()
+            .get(&url)
+            .call()
+            .map_err(|error| scrub_secret(error_for_file_transport(error), &self.token))?;
         // redirects(0) returns the 3xx response instead of an error.
         if (300..400).contains(&response.status()) {
             return Err(
@@ -238,62 +257,1183 @@ impl MoodleClient {
                     .into(),
             );
         }
-        let text = extract_text(&mime, &bytes).map(|text| scrub_secret(text, &self.token));
         let is_pdf = mime.to_ascii_lowercase().contains("pdf") || bytes.starts_with(b"%PDF");
-        let text_len = text.as_ref().map(|value| value.chars().count()).unwrap_or(0);
-        let (pages, ocr) = if is_pdf {
-            render_pdf_pages(&bytes, text_len < 800)
-        } else {
-            (Vec::new(), None)
+        if !is_pdf {
+            let text = extract_text(&mime, &bytes).map(|text| scrub_secret(text, &self.token));
+            let mut result = json!({
+                "filename": filename,
+                "mimeType": mime,
+                "size": bytes.len(),
+            });
+            match text {
+                Some(text) if !text.trim().is_empty() => result["text"] = json!(text),
+                _ => {
+                    result["note"] = json!(
+                        "Binary Moodle file downloaded. Text is inlined only for PDF and text documents."
+                    );
+                }
+            }
+            return Ok(result);
+        }
+
+        let total_pages = pdf_page_count(&bytes).unwrap_or(0);
+        // Extract the whole document once: the text layer doubles as a page index
+        // for `find` and as the complete text exposed by the shared reader link.
+        let full_text =
+            pdftotext_cli_range(&bytes, 1, if total_pages > 0 { total_pages } else { 2000 })
+                .unwrap_or_default();
+        let page_texts = split_pdf_pages(&full_text, total_pages);
+        let matches = query
+            .find
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|needle| find_pdf_matches(&page_texts, needle))
+            .unwrap_or_default();
+        let matched_page = matches
+            .iter()
+            .map(|(page, _)| *page)
+            .find(|page| *page > 2 && !looks_like_toc(*page, &page_texts))
+            .or_else(|| matches.first().map(|(page, _)| *page));
+        let start_page = query.page_from.or(matched_page).unwrap_or(1);
+        let range = resolve_pdf_range(Some(start_page), query.page_to, total_pages)?;
+
+        // Extract the window directly: some PDFs have no form-feed markers, and a
+        // padded page index must never leak another page's text.
+        let text = pdftotext_cli_range(&bytes, range.from, range.to)
+            .unwrap_or_else(|| page_slice_text(&page_texts, range.from, range.to));
+        let text_len = text.trim().chars().count();
+        let window_pages = (range.to.saturating_sub(range.from) + 1) as usize;
+        // A real text layer is usually far denser than this. Below the threshold,
+        // OCR the rendered pages so text-only clients still get the content.
+        let needs_ocr = text_len < (window_pages * 120).max(600);
+        let (pages, ocr) = render_pdf_pages(&bytes, range.from, range.to, needs_ocr);
+        let truncated = total_pages > 0 && range.to < total_pages;
+        let next_page_from = if truncated { Some(range.to + 1) } else { None };
+        let (text, text_truncated) = match usable_text(text) {
+            Some(text) => {
+                let over = text.chars().count() > MAX_TEXT_CHARS;
+                let text = if over { truncate_text(&text) } else { text };
+                (Some(scrub_secret(text, &self.token)), over)
+            }
+            None => (None, false),
         };
+
+        // Capability links (public tunnel or localhost). Publishing is cheap and
+        // lets browser AIs open/download the file instead of ignoring a blob.
+        let shared = if crate::share::enabled() {
+            crate::share::publish(
+                &filename,
+                "application/pdf",
+                &bytes,
+                &scrub_secret(full_text, &self.token),
+                total_pages,
+            )
+        } else {
+            None
+        };
+        let links = shared
+            .as_deref()
+            .and_then(|id| share_links_json(id, range.from, range.to));
+
         let mut result = json!({
             "filename": filename,
             "mimeType": mime,
             "size": bytes.len(),
+            "totalPages": if total_pages > 0 { json!(total_pages) } else { Value::Null },
+            "pageFrom": range.from,
+            "pageTo": range.to,
+            "renderedPages": pages.len(),
+            "truncated": truncated,
+            "nextPageFrom": next_page_from,
+            "textTruncated": text_truncated,
         });
-        match text {
-            Some(text) if !text.trim().is_empty() => {
-                result["text"] = json!(text);
+        let outline = pdf_outline(&page_texts);
+        if !outline.is_empty() {
+            result["outline"] = json!(outline
+                .iter()
+                .map(|(page, title)| json!({ "page": page, "title": title }))
+                .collect::<Vec<_>>());
+        }
+        if let Some(needle) = query
+            .find
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            result["find"] = json!(needle);
+            result["matchedPage"] = matched_page.map_or(Value::Null, |page| json!(page));
+            if !matches.is_empty() {
+                result["matches"] = json!(matches
+                    .iter()
+                    .map(|(page, snippet)| json!({ "page": page, "snippet": snippet }))
+                    .collect::<Vec<_>>());
             }
-            _ if is_pdf && pages.is_empty() => {
+        }
+        match &text {
+            Some(text) if !text.trim().is_empty() => result["text"] = json!(text),
+            _ if pages.is_empty() => {
                 result["note"] = json!(
-                    "The PDF downloaded, but no readable text or page images could be produced. Install Poppler (pdftoppm) on this computer."
-                );
-            }
-            _ if !is_pdf => {
-                result["note"] = json!(
-                    "Binary Moodle file downloaded. Text is inlined only for PDF and text documents."
+                    "The PDF downloaded, but no readable text or page images could be produced. Install Poppler (pdftoppm/pdftotext) on this computer."
                 );
             }
             _ => {}
         }
         if let Some(ocr) = ocr {
+            result["textSource"] = json!("ocr");
             result["ocrText"] = json!(ocr);
+        } else if text.is_some() {
+            result["textSource"] = json!("pdf-text");
         }
-        if is_pdf {
+        if let Some(links) = links {
+            if let Some(url) = links.get("download").and_then(Value::as_str) {
+                result["downloadUrl"] = json!(url);
+            }
+            if let Some(url) = links.get("reader").and_then(Value::as_str) {
+                result["readerUrl"] = json!(url);
+            }
+            result["links"] = links;
+        }
+        if bytes.len() <= MAX_INLINE_BLOB_BYTES || result.get("links").is_none() {
             use base64::Engine;
             result["file"] = json!({
                 "filename": filename,
                 "mimeType": "application/pdf",
                 "data": base64::engine::general_purpose::STANDARD.encode(&bytes),
             });
+        } else {
+            result["fileOmitted"] = json!(format!(
+                "This PDF is {:.1} MB, so it is not inlined as base64. Use links.download to open or attach it.",
+                bytes.len() as f64 / (1024.0 * 1024.0)
+            ));
         }
+        let rendered_pages = pages.len();
         if !pages.is_empty() {
-            result["pageCount"] = json!(pages.len());
+            result["pageCount"] = json!(rendered_pages);
             result["pages"] = json!(pages);
         }
-        if is_pdf {
-            result["note"] = json!(
-                "The original PDF is attached. Read that file for the exercises. Page images are a fallback for scanned textbooks; extracted text may only list titles."
+        let mut note =
+            pdf_result_note(truncated, range.from, range.to, total_pages, next_page_from);
+        if let Some(needle) = query
+            .find
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            if let Some(page) = matched_page {
+                note = format!("Found \"{needle}\" on page {page}. {note}");
+            } else {
+                note = format!(
+                    "Could not find \"{needle}\" in this PDF's text layer (it may be scanned). {note}"
+                );
+            }
+        }
+        if text_truncated {
+            note.push_str(
+                " text was capped for this response; links.text has the full extracted text.",
             );
         }
+        if rendered_pages < window_pages {
+            note.push_str(
+                " Some page images were too large to inline; links.reader still shows every page.",
+            );
+        }
+        if result.get("links").is_some() {
+            note.push_str(
+                " links.reader shows every page in a browser, links.download opens the PDF, and links.parts covers the whole document when this window is not enough.",
+            );
+        }
+        result["note"] = json!(note);
         Ok(result)
     }
+
+    fn userid(&self) -> Result<i64, String> {
+        self.site_info()?
+            .get("userid")
+            .and_then(Value::as_i64)
+            .ok_or_else(|| "Moodle did not return the token's user ID.".into())
+    }
+
+    /// Enrolled courses as a compact list agents can scan. Hidden/past courses stay out unless requested.
+    pub fn my_courses(&self, include_hidden: bool) -> Result<Value, String> {
+        let courses = self.call(
+            "core_enrol_get_users_courses",
+            &json!({ "userid": self.userid()? }),
+        )?;
+        let now = unix_now();
+        let mut items = Vec::new();
+        for course in courses.as_array().cloned().unwrap_or_default() {
+            let visible = course
+                .get("visible")
+                .and_then(|value| value.as_bool().or_else(|| value.as_i64().map(|n| n != 0)))
+                .unwrap_or(true);
+            if !include_hidden && !visible {
+                continue;
+            }
+            let enddate = course.get("enddate").and_then(Value::as_i64).unwrap_or(0);
+            let past = enddate > 0 && enddate + 30 * 86_400 < now;
+            if !include_hidden && past {
+                continue;
+            }
+            items.push(json!({
+                "id": course.get("id"),
+                "shortname": course.get("shortname"),
+                "fullname": course.get("fullname").or_else(|| course.get("displayname")),
+                "visible": visible,
+                "startdate": course.get("startdate"),
+                "enddate": course.get("enddate"),
+                "lastaccess": course.get("lastaccess"),
+                "isfavourite": course.get("isfavourite"),
+                "progress": course.get("progress"),
+            }));
+        }
+        items.sort_by(|left, right| {
+            let left_fav = left
+                .get("isfavourite")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let right_fav = right
+                .get("isfavourite")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            right_fav
+                .cmp(&left_fav)
+                .then_with(|| {
+                    let left_access = left.get("lastaccess").and_then(Value::as_i64).unwrap_or(0);
+                    let right_access = right.get("lastaccess").and_then(Value::as_i64).unwrap_or(0);
+                    right_access.cmp(&left_access)
+                })
+                .then_with(|| {
+                    let left_name = left.get("shortname").and_then(Value::as_str).unwrap_or("");
+                    let right_name = right.get("shortname").and_then(Value::as_str).unwrap_or("");
+                    left_name.cmp(right_name)
+                })
+        });
+        Ok(json!({
+            "count": items.len(),
+            "includeHidden": include_hidden,
+            "courses": items
+        }))
+    }
+
+    /// Upcoming deadlines from assignments, quizzes and the Moodle calendar/action feed.
+    pub fn deadlines(&self, days: i64, courseids: Option<Vec<i64>>) -> Result<Value, String> {
+        let days = days.clamp(1, 365);
+        let now = unix_now();
+        let until = now + days * 86_400;
+        let filter = courseids_payload(courseids.as_deref());
+        let assignments = self.call("mod_assign_get_assignments", &filter)?;
+        let quizzes = self.call("mod_quiz_get_quizzes_by_courses", &filter)?;
+        let calendar = self.call("core_calendar_get_calendar_upcoming_view", &json!({}))?;
+        let actions = self.call(
+            "core_calendar_get_action_events_by_timesort",
+            &json!({
+                "timesortfrom": now.saturating_sub(7 * 86_400),
+                "timesortto": until,
+                "limitnum": 50
+            }),
+        );
+
+        let mut items = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        let course_filter =
+            courseids.map(|ids| ids.into_iter().collect::<std::collections::HashSet<_>>());
+
+        for course in assignments
+            .get("courses")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+        {
+            let course_id = course.get("id").and_then(Value::as_i64);
+            if let (Some(filter), Some(id)) = (course_filter.as_ref(), course_id) {
+                if !filter.contains(&id) {
+                    continue;
+                }
+            }
+            let shortname = course
+                .get("shortname")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            for assignment in course
+                .get("assignments")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default()
+            {
+                let due = assignment
+                    .get("duedate")
+                    .and_then(Value::as_i64)
+                    .unwrap_or(0);
+                if due <= 0 || due < now || due > until {
+                    continue;
+                }
+                let id = assignment.get("id").and_then(Value::as_i64).unwrap_or(0);
+                let key = format!("assign:{id}");
+                if !seen.insert(key.clone()) {
+                    continue;
+                }
+                items.push(json!({
+                    "kind": "assignment",
+                    "id": id,
+                    "name": assignment.get("name"),
+                    "courseid": course_id,
+                    "course": shortname,
+                    "time": due,
+                    "opens": assignment.get("allowsubmissionsfromdate"),
+                    "cmid": assignment.get("cmid"),
+                }));
+            }
+        }
+
+        for quiz in quizzes
+            .get("quizzes")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+        {
+            let course_id = quiz.get("course").and_then(Value::as_i64);
+            if let (Some(filter), Some(id)) = (course_filter.as_ref(), course_id) {
+                if !filter.contains(&id) {
+                    continue;
+                }
+            }
+            let close = quiz.get("timeclose").and_then(Value::as_i64).unwrap_or(0);
+            let open = quiz.get("timeopen").and_then(Value::as_i64).unwrap_or(0);
+            let time = if close > 0 {
+                close
+            } else if open >= now && open <= until {
+                open
+            } else {
+                0
+            };
+            if time <= 0 || time < now || time > until {
+                continue;
+            }
+            let id = quiz.get("id").and_then(Value::as_i64).unwrap_or(0);
+            let key = format!("quiz:{id}");
+            if !seen.insert(key) {
+                continue;
+            }
+            items.push(json!({
+                "kind": "quiz",
+                "id": id,
+                "name": quiz.get("name"),
+                "courseid": course_id,
+                "time": time,
+                "opens": open,
+                "closes": close,
+                "timelimit": quiz.get("timelimit"),
+                "cmid": quiz.get("coursemodule"),
+            }));
+        }
+
+        for event in calendar
+            .get("events")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .chain(
+                actions
+                    .ok()
+                    .and_then(|value| value.get("events").and_then(Value::as_array).cloned())
+                    .unwrap_or_default(),
+            )
+        {
+            let time = event
+                .get("timesort")
+                .or_else(|| event.get("timestart"))
+                .and_then(Value::as_i64)
+                .unwrap_or(0);
+            if time <= 0 || time < now || time > until {
+                continue;
+            }
+            let course_id = event
+                .get("course")
+                .and_then(|course| course.get("id"))
+                .or_else(|| event.get("courseid"))
+                .and_then(Value::as_i64);
+            if let (Some(filter), Some(id)) = (course_filter.as_ref(), course_id) {
+                if !filter.contains(&id) {
+                    continue;
+                }
+            }
+            let event_id = event.get("id").and_then(Value::as_i64).unwrap_or(0);
+            let module = event
+                .get("modulename")
+                .and_then(Value::as_str)
+                .unwrap_or("event");
+            let key = format!("event:{module}:{event_id}:{time}");
+            if !seen.insert(key) {
+                continue;
+            }
+            let course_name = event
+                .get("course")
+                .and_then(|course| {
+                    course
+                        .get("shortname")
+                        .or_else(|| course.get("fullname"))
+                        .and_then(Value::as_str)
+                })
+                .map(str::to_string);
+            items.push(json!({
+                "kind": event.get("eventtype").cloned().unwrap_or_else(|| json!("event")),
+                "id": event_id,
+                "name": plain_text(event.get("name").and_then(Value::as_str).unwrap_or("")),
+                "courseid": course_id,
+                "course": course_name,
+                "time": time,
+                "module": module,
+                "action": event.get("action").and_then(|action| action.get("name")),
+                "url": event.get("action").and_then(|action| action.get("url")).or_else(|| event.get("url")),
+            }));
+        }
+
+        items.sort_by(|left, right| {
+            let left_time = left.get("time").and_then(Value::as_i64).unwrap_or(0);
+            let right_time = right.get("time").and_then(Value::as_i64).unwrap_or(0);
+            left_time.cmp(&right_time)
+        });
+        Ok(json!({
+            "from": now,
+            "until": until,
+            "days": days,
+            "count": items.len(),
+            "deadlines": items
+        }))
+    }
+
+    /// Course announcement forums (type=news) with recent discussion posts.
+    pub fn announcements(
+        &self,
+        courseids: Option<Vec<i64>>,
+        limit: usize,
+    ) -> Result<Value, String> {
+        let limit = limit.clamp(1, 50);
+        let ids = match courseids {
+            Some(ids) if !ids.is_empty() => ids,
+            _ => {
+                let courses = self.my_courses(false)?;
+                courses
+                    .get("courses")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|course| course.get("id").and_then(Value::as_i64))
+                    .collect()
+            }
+        };
+        if ids.is_empty() {
+            return Ok(json!({ "count": 0, "announcements": [] }));
+        }
+        let forums = self.call(
+            "mod_forum_get_forums_by_courses",
+            &json!({ "courseids": ids }),
+        )?;
+        let mut items = Vec::new();
+        for forum in forums.as_array().cloned().unwrap_or_default() {
+            let forum_type = forum.get("type").and_then(Value::as_str).unwrap_or("");
+            if forum_type != "news" {
+                continue;
+            }
+            let forum_id = match forum.get("id").and_then(Value::as_i64) {
+                Some(id) => id,
+                None => continue,
+            };
+            let course_id = forum.get("course").and_then(Value::as_i64);
+            let discussions = self.call(
+                "mod_forum_get_forum_discussions",
+                &json!({ "forumid": forum_id, "perpage": limit as i64 }),
+            )?;
+            for discussion in discussions
+                .get("discussions")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default()
+            {
+                let message = plain_text(
+                    discussion
+                        .get("message")
+                        .and_then(Value::as_str)
+                        .unwrap_or(""),
+                );
+                let discussion_id = discussion
+                    .get("discussion")
+                    .and_then(Value::as_i64)
+                    .or_else(|| discussion.get("id").and_then(Value::as_i64));
+                items.push(json!({
+                    "id": discussion.get("id"),
+                    "discussionid": discussion_id,
+                    "forumid": forum_id,
+                    "forum": forum.get("name"),
+                    "courseid": course_id,
+                    "name": plain_text(discussion.get("name").and_then(Value::as_str).unwrap_or("")),
+                    "author": discussion.get("userfullname"),
+                    "time": discussion.get("timemodified").or_else(|| discussion.get("created")),
+                    "replies": discussion.get("numreplies"),
+                    "message": truncate(&message, 4_000),
+                }));
+            }
+        }
+        items.sort_by(|left, right| {
+            let left_time = left.get("time").and_then(Value::as_i64).unwrap_or(0);
+            let right_time = right.get("time").and_then(Value::as_i64).unwrap_or(0);
+            right_time.cmp(&left_time)
+        });
+        if items.len() > limit {
+            items.truncate(limit);
+        }
+        Ok(json!({
+            "count": items.len(),
+            "announcements": items
+        }))
+    }
+
+    /// Global Moodle search across courses the student can see.
+    pub fn search(&self, query: &str, page: i64) -> Result<Value, String> {
+        let query = query.trim();
+        if query.is_empty() {
+            return Err("Provide query.".into());
+        }
+        let page = page.max(0);
+        let raw = self.call(
+            "core_search_get_results",
+            &json!({ "query": query, "page": page }),
+        )?;
+        let results = raw
+            .get("results")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|item| {
+                json!({
+                    "title": plain_text(item.get("title").and_then(Value::as_str).unwrap_or("")),
+                    "course": item.get("coursefullname"),
+                    "component": item.get("componentname"),
+                    "area": item.get("areaname"),
+                    "url": item.get("docurl").or_else(|| item.get("courseurl")),
+                    "timemodified": item.get("timemodified"),
+                    "content": truncate(
+                        &plain_text(item.get("content").and_then(Value::as_str).unwrap_or("")),
+                        500,
+                    ),
+                })
+            })
+            .collect::<Vec<_>>();
+        Ok(json!({
+            "query": query,
+            "page": page,
+            "total": raw.get("totalcount").cloned().unwrap_or_else(|| json!(results.len())),
+            "results": results
+        }))
+    }
+
+    pub fn assignment_status(&self, assignid: i64) -> Result<Value, String> {
+        let raw = self.call(
+            "mod_assign_get_submission_status",
+            &json!({ "assignid": assignid }),
+        )?;
+        let last = raw.get("lastattempt").cloned().unwrap_or(Value::Null);
+        let submission = last.get("submission").cloned().unwrap_or(Value::Null);
+        let feedback = raw.get("feedback").cloned().unwrap_or(Value::Null);
+        Ok(json!({
+            "assignid": assignid,
+            "submissionStatus": submission.get("status"),
+            "timeSubmitted": submission.get("timemodified"),
+            "gradingStatus": last.get("gradingstatus"),
+            "canEdit": last.get("canedit"),
+            "canSubmit": last.get("cansubmit"),
+            "attemptNumber": submission.get("attemptnumber"),
+            "grade": feedback.get("grade").and_then(|grade| grade.get("grade")),
+            "gradeDate": feedback.get("gradeddate"),
+            "feedbackText": truncate(
+                &plain_text(
+                    feedback
+                        .get("plugins")
+                        .and_then(Value::as_array)
+                        .and_then(|plugins| {
+                            plugins.iter().find_map(|plugin| {
+                                plugin
+                                    .get("editorfields")
+                                    .and_then(Value::as_array)
+                                    .and_then(|fields| {
+                                        fields.first()
+                                            .and_then(|field| field.get("text"))
+                                            .and_then(Value::as_str)
+                                    })
+                            })
+                        })
+                        .unwrap_or(""),
+                ),
+                2_000,
+            ),
+            "files": submission
+                .get("plugins")
+                .and_then(Value::as_array)
+                .map(|plugins| {
+                    plugins
+                        .iter()
+                        .flat_map(|plugin| {
+                            plugin
+                                .get("fileareas")
+                                .and_then(Value::as_array)
+                                .into_iter()
+                                .flatten()
+                                .flat_map(|area| {
+                                    area.get("files")
+                                        .and_then(Value::as_array)
+                                        .cloned()
+                                        .unwrap_or_default()
+                                })
+                                .map(|file| {
+                                    json!({
+                                        "filename": file.get("filename"),
+                                        "filesize": file.get("filesize"),
+                                        "fileurl": file.get("fileurl"),
+                                        "mimetype": file.get("mimetype"),
+                                    })
+                                })
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default(),
+        }))
+    }
+
+    pub fn quiz_status(&self, quizid: i64) -> Result<Value, String> {
+        let attempts = self.call(
+            "mod_quiz_get_user_attempts",
+            &json!({ "quizid": quizid, "status": "all" }),
+        )?;
+        let best = self.call("mod_quiz_get_user_best_grade", &json!({ "quizid": quizid }))?;
+        let access = self.call(
+            "mod_quiz_get_quiz_access_information",
+            &json!({ "quizid": quizid }),
+        );
+        let attempt_list = attempts
+            .get("attempts")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|attempt| {
+                json!({
+                    "id": attempt.get("id"),
+                    "attempt": attempt.get("attempt"),
+                    "state": attempt.get("state"),
+                    "timestart": attempt.get("timestart"),
+                    "timefinish": attempt.get("timefinish"),
+                    "sumgrades": attempt.get("sumgrades"),
+                })
+            })
+            .collect::<Vec<_>>();
+        Ok(json!({
+            "quizid": quizid,
+            "hasGrade": best.get("hasgrade"),
+            "bestGrade": best.get("grade"),
+            "attempts": attempt_list,
+            "access": access.ok().map(|value| json!({
+                "canAttempt": value.get("canattempt"),
+                "canPreview": value.get("canpreview"),
+                "canReviewMyAttempts": value.get("canreviewmyattempts"),
+                "preventReasons": value.get("accessrules"),
+            })),
+        }))
+    }
+
+    pub fn grades_for_course(&self, courseid: i64) -> Result<Value, String> {
+        // Many schools reject this call without the student's userid.
+        self.call(
+            "gradereport_user_get_grade_items",
+            &json!({ "courseid": courseid, "userid": self.userid()? }),
+        )
+    }
+
+    pub fn grades_overview(&self) -> Result<Value, String> {
+        let userid = self.userid()?;
+        let raw = self.call(
+            "gradereport_overview_get_course_grades",
+            &json!({ "userid": userid }),
+        )?;
+        let courses = self.my_courses(true)?;
+        let names: std::collections::HashMap<i64, String> = courses
+            .get("courses")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|course| {
+                let id = course.get("id").and_then(Value::as_i64)?;
+                let name = course
+                    .get("shortname")
+                    .or_else(|| course.get("fullname"))
+                    .and_then(Value::as_str)?
+                    .to_string();
+                Some((id, name))
+            })
+            .collect();
+        let grades = raw
+            .get("grades")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|grade| {
+                let courseid = grade.get("courseid").and_then(Value::as_i64);
+                json!({
+                    "courseid": courseid,
+                    "course": courseid.and_then(|id| names.get(&id).cloned()),
+                    "grade": grade.get("grade"),
+                    "rawgrade": grade.get("rawgrade"),
+                })
+            })
+            .collect::<Vec<_>>();
+        Ok(json!({ "count": grades.len(), "grades": grades }))
+    }
+
+    pub fn forums(&self, courseids: Option<Vec<i64>>) -> Result<Value, String> {
+        let ids = match courseids {
+            Some(ids) if !ids.is_empty() => ids,
+            _ => self
+                .my_courses(false)?
+                .get("courses")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|course| course.get("id").and_then(Value::as_i64))
+                .collect(),
+        };
+        if ids.is_empty() {
+            return Ok(json!({ "count": 0, "forums": [] }));
+        }
+        let forums = self.call(
+            "mod_forum_get_forums_by_courses",
+            &json!({ "courseids": ids }),
+        )?;
+        let items = forums
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|forum| {
+                json!({
+                    "id": forum.get("id"),
+                    "courseid": forum.get("course"),
+                    "name": forum.get("name"),
+                    "type": forum.get("type"),
+                    "intro": truncate(
+                        &plain_text(forum.get("intro").and_then(Value::as_str).unwrap_or("")),
+                        400,
+                    ),
+                    "numdiscussions": forum.get("numdiscussions"),
+                    "cmid": forum.get("cmid"),
+                })
+            })
+            .collect::<Vec<_>>();
+        Ok(json!({ "count": items.len(), "forums": items }))
+    }
+
+    pub fn forum_discussions(&self, forumid: i64, limit: usize) -> Result<Value, String> {
+        let limit = limit.clamp(1, 50) as i64;
+        let raw = self.call(
+            "mod_forum_get_forum_discussions",
+            &json!({ "forumid": forumid, "perpage": limit }),
+        )?;
+        let discussions = raw
+            .get("discussions")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|discussion| {
+                let discussion_id = discussion
+                    .get("discussion")
+                    .and_then(Value::as_i64)
+                    .or_else(|| discussion.get("id").and_then(Value::as_i64));
+                json!({
+                    "id": discussion.get("id"),
+                    "discussionid": discussion_id,
+                    "name": plain_text(discussion.get("name").and_then(Value::as_str).unwrap_or("")),
+                    "author": discussion.get("userfullname"),
+                    "time": discussion.get("timemodified").or_else(|| discussion.get("created")),
+                    "replies": discussion.get("numreplies"),
+                    "message": truncate(
+                        &plain_text(discussion.get("message").and_then(Value::as_str).unwrap_or("")),
+                        2_000,
+                    ),
+                })
+            })
+            .collect::<Vec<_>>();
+        Ok(json!({
+            "forumid": forumid,
+            "count": discussions.len(),
+            "discussions": discussions
+        }))
+    }
+
+    pub fn forum_posts(&self, discussionid: i64) -> Result<Value, String> {
+        let raw = self.call(
+            "mod_forum_get_discussion_posts",
+            &json!({ "discussionid": discussionid }),
+        )?;
+        let posts = raw
+            .get("posts")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|post| {
+                json!({
+                    "id": post.get("id"),
+                    "parent": post.get("parentid").or_else(|| post.get("parent")),
+                    "author": post.get("author")
+                        .and_then(|author| author.get("fullname"))
+                        .or_else(|| post.get("userfullname")),
+                    "time": post.get("timecreated").or_else(|| post.get("timemodified")),
+                    "subject": plain_text(post.get("subject").and_then(Value::as_str).unwrap_or("")),
+                    "message": truncate(
+                        &plain_text(post.get("message").and_then(Value::as_str).unwrap_or("")),
+                        6_000,
+                    ),
+                    "hasAttachments": post
+                        .get("hasattachments")
+                        .cloned()
+                        .or_else(|| {
+                            post.get("attachments").map(|value| {
+                                json!(value.as_array().is_some_and(|items| !items.is_empty())
+                                    || value.as_object().is_some_and(|object| !object.is_empty()))
+                            })
+                        }),
+                })
+            })
+            .collect::<Vec<_>>();
+        Ok(json!({
+            "discussionid": discussionid,
+            "forumid": raw.get("forumid"),
+            "courseid": raw.get("courseid"),
+            "count": posts.len(),
+            "posts": posts
+        }))
+    }
+
+    pub fn notifications(&self, limit: usize) -> Result<Value, String> {
+        let limit = limit.clamp(1, 50) as i64;
+        let userid = self.userid()?;
+        let unread = self.call(
+            "core_message_get_unread_notification_count",
+            &json!({ "useridto": userid }),
+        )?;
+        let raw = self.call(
+            "message_popup_get_popup_notifications",
+            &json!({ "useridto": userid, "limit": limit }),
+        )?;
+        let notifications = raw
+            .get("notifications")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|item| {
+                json!({
+                    "id": item.get("id"),
+                    "subject": plain_text(item.get("subject").and_then(Value::as_str).unwrap_or("")),
+                    "text": truncate(
+                        &plain_text(item.get("text").and_then(Value::as_str).unwrap_or("")),
+                        1_500,
+                    ),
+                    "time": item.get("timecreated"),
+                    "read": item.get("read"),
+                    "url": item.get("contexturl"),
+                })
+            })
+            .collect::<Vec<_>>();
+        Ok(json!({
+            "unread": unread,
+            "count": notifications.len(),
+            "notifications": notifications
+        }))
+    }
+
+    pub fn messages(&self, limit: usize) -> Result<Value, String> {
+        let limit = limit.clamp(1, 50) as i64;
+        let userid = self.userid()?;
+        let counts = self.call(
+            "core_message_get_unread_conversation_counts",
+            &json!({ "userid": userid }),
+        )?;
+        let raw = self.call(
+            "core_message_get_conversations",
+            &json!({ "userid": userid, "limitfrom": 0, "limitnum": limit }),
+        )?;
+        let conversations = raw
+            .get("conversations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|conversation| {
+                let members = conversation
+                    .get("members")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|member| {
+                        let id = member.get("id").and_then(Value::as_i64)?;
+                        if id == userid {
+                            return None;
+                        }
+                        Some(json!({
+                            "id": id,
+                            "fullname": member.get("fullname"),
+                        }))
+                    })
+                    .collect::<Vec<_>>();
+                let last = conversation.get("messages")
+                    .and_then(Value::as_array)
+                    .and_then(|messages| messages.first())
+                    .cloned()
+                    .unwrap_or(Value::Null);
+                json!({
+                    "id": conversation.get("id"),
+                    "name": conversation.get("name"),
+                    "type": conversation.get("type"),
+                    "unread": conversation.get("unreadcount"),
+                    "isfavourite": conversation.get("isfavourite"),
+                    "members": members,
+                    "lastMessage": plain_text(last.get("text").and_then(Value::as_str).unwrap_or("")),
+                    "lastTime": last.get("timecreated"),
+                })
+            })
+            .collect::<Vec<_>>();
+        Ok(json!({
+            "unreadCounts": counts,
+            "count": conversations.len(),
+            "conversations": conversations
+        }))
+    }
+
+    pub fn conversation_messages(
+        &self,
+        conversationid: i64,
+        limit: usize,
+    ) -> Result<Value, String> {
+        let limit = limit.clamp(1, 100) as i64;
+        let raw = self.call(
+            "core_message_get_conversation_messages",
+            &json!({
+                "currentuserid": self.userid()?,
+                "convid": conversationid,
+                "limitfrom": 0,
+                "limitnum": limit
+            }),
+        )?;
+        let messages = raw
+            .get("messages")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|message| {
+                json!({
+                    "id": message.get("id"),
+                    "useridfrom": message.get("useridfrom"),
+                    "text": truncate(
+                        &plain_text(message.get("text").and_then(Value::as_str).unwrap_or("")),
+                        4_000,
+                    ),
+                    "time": message.get("timecreated"),
+                })
+            })
+            .collect::<Vec<_>>();
+        Ok(json!({
+            "conversationid": conversationid,
+            "count": messages.len(),
+            "messages": messages
+        }))
+    }
+
+    pub fn completion(&self, courseid: i64) -> Result<Value, String> {
+        let userid = self.userid()?;
+        let activities = self.call(
+            "core_completion_get_activities_completion_status",
+            &json!({ "courseid": courseid, "userid": userid }),
+        )?;
+        let course = self.call(
+            "core_completion_get_course_completion_status",
+            &json!({ "courseid": courseid, "userid": userid }),
+        );
+        let statuses = activities
+            .get("statuses")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|status| {
+                json!({
+                    "cmid": status.get("cmid"),
+                    "modname": status.get("modname"),
+                    "instance": status.get("instance"),
+                    "state": status.get("state"),
+                    "timecompleted": status.get("timecompleted"),
+                    "hascompletion": status.get("hascompletion"),
+                    "isoverallcomplete": status.get("isoverallcomplete"),
+                })
+            })
+            .collect::<Vec<_>>();
+        Ok(json!({
+            "courseid": courseid,
+            "activities": statuses,
+            "courseCompletion": course.ok(),
+        }))
+    }
+
+    /// Pages, files, URLs, folders and books listed for a course (without full section tree).
+    pub fn resources(&self, courseid: i64) -> Result<Value, String> {
+        let ids = json!({ "courseids": [courseid] });
+        let pages = self
+            .call("mod_page_get_pages_by_courses", &ids)
+            .unwrap_or_else(|_| json!({}));
+        let files = self
+            .call("mod_resource_get_resources_by_courses", &ids)
+            .unwrap_or_else(|_| json!({}));
+        let urls = self
+            .call("mod_url_get_urls_by_courses", &ids)
+            .unwrap_or_else(|_| json!({}));
+        let folders = self
+            .call("mod_folder_get_folders_by_courses", &ids)
+            .unwrap_or_else(|_| json!({}));
+        let books = self
+            .call("mod_book_get_books_by_courses", &ids)
+            .unwrap_or_else(|_| json!({}));
+
+        let map_named = |raw: &Value, key: &str, kind: &str| {
+            raw.get(key)
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|item| {
+                    json!({
+                        "kind": kind,
+                        "id": item.get("id"),
+                        "cmid": item.get("coursemodule"),
+                        "name": item.get("name"),
+                        "intro": truncate(
+                            &plain_text(item.get("intro").and_then(Value::as_str).unwrap_or("")),
+                            300,
+                        ),
+                        "content": item.get("content").map(|value| {
+                            json!(truncate(&plain_text(value.as_str().unwrap_or("")), 2_000))
+                        }),
+                        "externalurl": item.get("externalurl"),
+                        "contentfiles": item.get("contentfiles"),
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let mut items = Vec::new();
+        items.extend(map_named(&pages, "pages", "page"));
+        items.extend(map_named(&files, "resources", "file"));
+        items.extend(map_named(&urls, "urls", "url"));
+        items.extend(map_named(&folders, "folders", "folder"));
+        items.extend(map_named(&books, "books", "book"));
+        items.sort_by(|left, right| {
+            let left_name = left.get("name").and_then(Value::as_str).unwrap_or("");
+            let right_name = right.get("name").and_then(Value::as_str).unwrap_or("");
+            left_name.cmp(right_name)
+        });
+        Ok(json!({
+            "courseid": courseid,
+            "count": items.len(),
+            "resources": items
+        }))
+    }
+}
+
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+fn courseids_payload(courseids: Option<&[i64]>) -> Value {
+    match courseids {
+        Some(ids) if !ids.is_empty() => json!({ "courseids": ids }),
+        _ => json!({}),
+    }
+}
+
+fn plain_text(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut in_tag = false;
+    let mut chars = input.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '<' => in_tag = true,
+            '>' if in_tag => in_tag = false,
+            _ if in_tag => {}
+            '&' => {
+                let mut entity = String::new();
+                while let Some(&next) = chars.peek() {
+                    if next == ';' {
+                        chars.next();
+                        break;
+                    }
+                    if entity.len() >= 10 || (!next.is_ascii_alphanumeric() && next != '#') {
+                        break;
+                    }
+                    entity.push(next);
+                    chars.next();
+                }
+                match entity.as_str() {
+                    "nbsp" => out.push(' '),
+                    "amp" => out.push('&'),
+                    "lt" => out.push('<'),
+                    "gt" => out.push('>'),
+                    "quot" => out.push('"'),
+                    "apos" | "#39" => out.push('\''),
+                    other if other.starts_with('#') => {
+                        if let Some(decoded) = other
+                            .trim_start_matches('#')
+                            .parse::<u32>()
+                            .ok()
+                            .and_then(char::from_u32)
+                        {
+                            out.push(decoded);
+                        }
+                    }
+                    _ => {
+                        out.push('&');
+                        out.push_str(&entity);
+                    }
+                }
+            }
+            _ => out.push(ch),
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn truncate(text: &str, max_chars: usize) -> String {
+    let count = text.chars().count();
+    if count <= max_chars {
+        return text.to_string();
+    }
+    let mut clipped: String = text.chars().take(max_chars.saturating_sub(1)).collect();
+    clipped.push('…');
+    clipped
 }
 
 /// MCP tool result: JSON summary, the original file, then rendered PDF pages.
 pub(crate) fn mcp_content_for_file(mut data: Value) -> Vec<Value> {
     let file = data.get("file").cloned();
+    let links = data.get("links").cloned();
     let pages = data
         .get("pages")
         .and_then(Value::as_array)
@@ -351,6 +1491,31 @@ pub(crate) fn mcp_content_for_file(mut data: Value) -> Vec<Value> {
             "mimeType": mime
         }));
     }
+    if let Some(links) = links {
+        for (key, name, description) in [
+            (
+                "download",
+                "PDF file",
+                "Direct link to the original PDF. Open or download it, then attach it to the chat if the client supports uploads.",
+            ),
+            (
+                "reader",
+                "PDF reader (all pages)",
+                "HTML reader with the full text and every page image. Open it to read pages outside the tool window.",
+            ),
+        ] {
+            let Some(uri) = links.get(key).and_then(Value::as_str) else {
+                continue;
+            };
+            content.push(json!({
+                "type": "resource_link",
+                "uri": uri,
+                "name": name,
+                "description": description,
+                "mimeType": if key == "download" { "application/pdf" } else { "text/html" }
+            }));
+        }
+    }
     content
 }
 
@@ -364,9 +1529,9 @@ pub(crate) fn file_download_url(
     if fileurl.is_empty() {
         return Err("Provide fileurl from moodle_course_content.".into());
     }
-    let parsed =
-        Url::parse(fileurl).map_err(|_| "The file URL is not valid.".to_string())?;
-    let base = Url::parse(base_url).map_err(|_| "The Moodle site address is not valid.".to_string())?;
+    let parsed = Url::parse(fileurl).map_err(|_| "The file URL is not valid.".to_string())?;
+    let base =
+        Url::parse(base_url).map_err(|_| "The Moodle site address is not valid.".to_string())?;
     if parsed.scheme() != base.scheme()
         || parsed.host_str() != base.host_str()
         || parsed.port_or_known_default() != base.port_or_known_default()
@@ -381,9 +1546,7 @@ pub(crate) fn file_download_url(
     } else if let Some(index) = path.find("/pluginfile.php") {
         &path[index + "/pluginfile.php".len()..]
     } else {
-        return Err(
-            "Use a Moodle fileurl from moodle_course_content (pluginfile.php).".into(),
-        );
+        return Err("Use a Moodle fileurl from moodle_course_content (pluginfile.php).".into());
     };
     if rest.contains("..") {
         return Err("The file URL is not valid.".into());
@@ -423,7 +1586,8 @@ fn looks_like_html(mime: &str, bytes: &[u8]) -> bool {
         .iter()
         .position(|byte| !byte.is_ascii_whitespace())
         .unwrap_or(0);
-    let head = String::from_utf8_lossy(&bytes[start..bytes.len().min(start + 32)]).to_ascii_lowercase();
+    let head =
+        String::from_utf8_lossy(&bytes[start..bytes.len().min(start + 32)]).to_ascii_lowercase();
     head.starts_with("<!doctype html") || head.starts_with("<html")
 }
 
@@ -500,14 +1664,305 @@ fn create_private_dir(path: &std::path::Path) -> Option<()> {
     }
 }
 
+#[derive(Clone, Copy)]
+struct PdfRange {
+    from: u32,
+    to: u32,
+}
+
+fn resolve_pdf_range(
+    page_from: Option<u32>,
+    page_to: Option<u32>,
+    total_pages: u32,
+) -> Result<PdfRange, String> {
+    let from = page_from.unwrap_or(1).max(1);
+    if let Some(to) = page_to {
+        if to < from {
+            return Err("page_to must be >= page_from.".into());
+        }
+    }
+    let hard_cap = from.saturating_add(PDF_HARD_MAX - 1);
+    let requested_to = page_to.unwrap_or(from.saturating_add(MAX_PDF_PAGES - 1));
+    let mut to = requested_to.min(hard_cap);
+    if total_pages > 0 {
+        if from > total_pages {
+            return Err(format!(
+                "page_from ({from}) is past the end of this PDF ({total_pages} pages)."
+            ));
+        }
+        to = to.min(total_pages);
+        // Never hide a short tail: a 30-page chapter must come back in one call.
+        if page_to.is_none()
+            && to < total_pages
+            && total_pages - to <= PDF_TAIL_EXTEND
+            && total_pages <= hard_cap
+        {
+            to = total_pages;
+        }
+    }
+    Ok(PdfRange { from, to })
+}
+
+fn split_pdf_pages(text: &str, total: u32) -> Vec<String> {
+    let mut pages: Vec<String> = text
+        .split('\u{0C}')
+        .map(|page| page.trim_matches('\n').to_string())
+        .collect();
+    if total > 0 {
+        pages.truncate(total as usize);
+        while pages.len() < total as usize {
+            pages.push(String::new());
+        }
+    } else if pages.last().is_some_and(|page| page.trim().is_empty()) {
+        pages.pop();
+    }
+    if pages.is_empty() {
+        pages.push(String::new());
+    }
+    pages
+}
+
+fn page_slice_text(pages: &[String], from: u32, to: u32) -> String {
+    let mut out = String::new();
+    for page in from..=to {
+        let Some(text) = pages.get(page.saturating_sub(1) as usize) else {
+            continue;
+        };
+        if text.trim().is_empty() {
+            continue;
+        }
+        if !out.is_empty() {
+            out.push_str("\n\n");
+        }
+        out.push_str(text);
+    }
+    out
+}
+
+fn fold_char(ch: char) -> char {
+    match ch {
+        'à' | 'â' | 'ä' | 'á' | 'ã' | 'å' => 'a',
+        'ç' => 'c',
+        'é' | 'è' | 'ê' | 'ë' => 'e',
+        'í' | 'ì' | 'î' | 'ï' => 'i',
+        'ñ' => 'n',
+        'ó' | 'ò' | 'ô' | 'ö' | 'õ' => 'o',
+        'ú' | 'ù' | 'û' | 'ü' => 'u',
+        'ý' | 'ÿ' => 'y',
+        _ => ch,
+    }
+}
+
+/// Lowercase, accent-folded, whitespace-collapsed text for honest section search.
+fn normalize_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut space = false;
+    for ch in text.chars().flat_map(char::to_lowercase) {
+        let ch = fold_char(ch);
+        if ch.is_whitespace() {
+            space = true;
+            continue;
+        }
+        if space && !out.is_empty() {
+            out.push(' ');
+        }
+        space = false;
+        out.push(ch);
+    }
+    out
+}
+
+fn find_pdf_matches(pages: &[String], needle: &str) -> Vec<(u32, String)> {
+    let needle = normalize_text(needle);
+    if needle.is_empty() {
+        return Vec::new();
+    }
+    let mut matches = Vec::new();
+    for (index, page) in pages.iter().enumerate() {
+        if page.trim().is_empty() {
+            continue;
+        }
+        if !contains_section(&normalize_text(page), &needle) {
+            continue;
+        }
+        let snippet = page
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty() && contains_section(&normalize_text(line), &needle))
+            .or_else(|| page.lines().map(str::trim).find(|line| !line.is_empty()))
+            .unwrap_or_default();
+        matches.push((index as u32 + 1, truncate_chars(snippet, 160)));
+        if matches.len() >= 10 {
+            break;
+        }
+    }
+    matches
+}
+
+/// Cheap table of contents from numbered headings; lets an agent jump straight
+/// to "3.3" even when it does not pass `find`.
+fn pdf_outline(pages: &[String]) -> Vec<(u32, String)> {
+    let mut outline = Vec::new();
+    for (index, page) in pages.iter().enumerate() {
+        let number = index as u32 + 1;
+        if looks_like_toc(number, pages) {
+            continue;
+        }
+        for line in page
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .take(6)
+        {
+            if line.chars().count() > 140 {
+                continue;
+            }
+            let head: String = line.chars().take(8).collect();
+            let numbered =
+                head.chars().next().is_some_and(|ch| ch.is_ascii_digit()) && head.contains('.');
+            let named = {
+                let lower = normalize_text(line);
+                lower.starts_with("chapitre ")
+                    || lower.starts_with("section ")
+                    || lower.starts_with("annexe ")
+            };
+            if numbered || named {
+                outline.push((number, truncate_chars(line, 140)));
+            }
+            if outline.len() >= 40 {
+                return outline;
+            }
+        }
+    }
+    outline
+}
+
+/// `3.3` must not match `13.3` or `3.30`.
+fn contains_section(haystack: &str, needle: &str) -> bool {
+    let mut start = 0;
+    while let Some(offset) = haystack[start..].find(needle) {
+        let at = start + offset;
+        let before = haystack[..at].chars().next_back();
+        let after = haystack[at + needle.len()..].chars().next();
+        let digit_before = before.is_some_and(|ch| ch.is_ascii_digit());
+        let digit_after = after.is_some_and(|ch| ch.is_ascii_digit());
+        if !digit_before && !digit_after {
+            return true;
+        }
+        start = at + 1;
+    }
+    false
+}
+
+fn looks_like_toc(page: u32, pages: &[String]) -> bool {
+    let text = pages
+        .get(page.saturating_sub(1) as usize)
+        .map(String::as_str)
+        .unwrap_or_default();
+    let head: String = text.chars().take(600).collect();
+    let head = normalize_text(&head);
+    head.contains("table des matieres")
+        || head.contains("table of contents")
+        || head.contains("sommaire")
+        || head.contains("contenu du cours")
+}
+
+fn truncate_chars(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        text.to_string()
+    } else {
+        let mut out: String = text.chars().take(max.saturating_sub(1)).collect();
+        out.push('…');
+        out
+    }
+}
+
+/// Links served by the local MCP endpoint / its tunnel. They expose the file,
+/// a full-page HTML reader, plain text, and a window per part of the document.
+fn share_links_json(id: &str, from: u32, to: u32) -> Option<Value> {
+    let links = crate::share::links_for(id)?;
+    let local_only = links.reader.contains("://127.0.0.1")
+        || links.reader.contains("://localhost")
+        || links.reader.contains("://[::1]");
+    let mut value = json!({
+        "download": links.download,
+        "reader": links.reader,
+        "text": links.text,
+        "expiresInHours": 3,
+        "localOnly": local_only,
+    });
+    if let Some(url) = crate::share::page_window_url(id, from, to) {
+        value["currentWindow"] = json!(url);
+    }
+    if links.pages > 0 {
+        let mut parts = Vec::new();
+        let mut start = 1u32;
+        while start <= links.pages {
+            if parts.len() >= 24 {
+                value["partsTruncated"] = json!(true);
+                break;
+            }
+            let end = (start + crate::share::PART_PAGES - 1).min(links.pages);
+            if let Some(url) = crate::share::page_window_url(id, start, end) {
+                parts.push(json!({ "pageFrom": start, "pageTo": end, "url": url }));
+            }
+            start = end + 1;
+        }
+        if !parts.is_empty() {
+            value["parts"] = json!(parts);
+        }
+    }
+    Some(value)
+}
+
+fn pdf_result_note(
+    truncated: bool,
+    from: u32,
+    to: u32,
+    total_pages: u32,
+    next_page_from: Option<u32>,
+) -> String {
+    if truncated {
+        let next = next_page_from.unwrap_or(to + 1);
+        let total = if total_pages > 0 {
+            total_pages.to_string()
+        } else {
+            "unknown".into()
+        };
+        format!(
+            "Rendered PDF pages {from}-{to} of {total}. This window is incomplete. Call moodle_file again with the same fileurl and page_from={next} (and optional page_to) to continue. Prefer the extracted text and page images over guessing missing pages."
+        )
+    } else if total_pages > 0 {
+        format!(
+            "Rendered PDF pages {from}-{to} of {total_pages}. Read the extracted text and page images; do not invent content for pages outside this range."
+        )
+    } else {
+        format!(
+            "Rendered PDF pages {from}-{to}. Read the extracted text and page images; if a section is missing, call moodle_file again with a higher page_from."
+        )
+    }
+}
+
 /// Poppler's pdftotext understands CID fonts / ToUnicode; the naive fallback does not.
 fn pdftotext_cli(bytes: &[u8]) -> Option<String> {
+    pdftotext_cli_range(bytes, 1, MAX_PDF_PAGES)
+}
+
+fn pdftotext_cli_range(bytes: &[u8], from: u32, to: u32) -> Option<String> {
     let dir = temp_job_dir()?;
     let path = dir.join("file.pdf");
     let written = std::fs::write(&path, bytes).is_ok();
     let output = if written {
         std::process::Command::new("pdftotext")
-            .args(["-layout", "-enc", "UTF-8"])
+            .args([
+                "-layout",
+                "-enc",
+                "UTF-8",
+                "-f",
+                &from.to_string(),
+                "-l",
+                &to.to_string(),
+            ])
             .arg(&path)
             .arg("-")
             .output()
@@ -528,7 +1983,38 @@ fn pdftotext_cli(bytes: &[u8]) -> Option<String> {
     }
 }
 
-fn render_pdf_pages(bytes: &[u8], ocr: bool) -> (Vec<Value>, Option<String>) {
+pub(crate) fn pdf_page_count(bytes: &[u8]) -> Option<u32> {
+    let dir = temp_job_dir()?;
+    let path = dir.join("file.pdf");
+    if std::fs::write(&path, bytes).is_err() {
+        let _ = std::fs::remove_dir_all(&dir);
+        return None;
+    }
+    let output = std::process::Command::new("pdfinfo")
+        .arg(&path)
+        .output()
+        .ok();
+    let _ = std::fs::remove_dir_all(&dir);
+    let output = output?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    for line in text.lines() {
+        let line = line.trim();
+        if let Some(rest) = line
+            .strip_prefix("Pages:")
+            .or_else(|| line.strip_prefix("pages:"))
+        {
+            if let Ok(count) = rest.trim().parse::<u32>() {
+                return Some(count);
+            }
+        }
+    }
+    None
+}
+
+fn render_pdf_pages(bytes: &[u8], from: u32, to: u32, ocr: bool) -> (Vec<Value>, Option<String>) {
     let Some(dir) = temp_job_dir() else {
         return (Vec::new(), None);
     };
@@ -539,16 +2025,16 @@ fn render_pdf_pages(bytes: &[u8], ocr: bool) -> (Vec<Value>, Option<String>) {
             .args([
                 "-jpeg",
                 "-jpegopt",
-                "quality=80",
+                "quality=78",
                 "-r",
-                "144",
+                "128",
                 "-scale-to",
-                "1800",
+                "1600",
                 "-f",
-                "1",
+                &from.to_string(),
                 "-l",
+                &to.to_string(),
             ])
-            .arg(MAX_PDF_PAGES.to_string())
             .arg(&pdf_path)
             .arg(&prefix)
             .status()
@@ -567,45 +2053,101 @@ fn render_pdf_pages(bytes: &[u8], ocr: bool) -> (Vec<Value>, Option<String>) {
         .filter(|path| {
             path.extension()
                 .and_then(|ext| ext.to_str())
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("jpg") || ext.eq_ignore_ascii_case("jpeg"))
+                .is_some_and(|ext| {
+                    ext.eq_ignore_ascii_case("jpg") || ext.eq_ignore_ascii_case("jpeg")
+                })
         })
         .collect();
     files.sort();
     use base64::Engine;
     let engine = base64::engine::general_purpose::STANDARD;
     let mut pages = Vec::new();
-    let mut ocr_parts = Vec::new();
-    for path in files {
+    let mut total_image_bytes = 0usize;
+    let mut ocr_targets: Vec<(u32, std::path::PathBuf)> = Vec::new();
+    for (index, path) in files.into_iter().enumerate() {
         let Ok(image) = std::fs::read(&path) else {
             continue;
         };
         if image.is_empty() || image.len() > MAX_PAGE_BYTES {
             continue;
         }
-        if ocr && ocr_parts.len() < 8 {
-            if let Some(text) = ocr_image(&path) {
-                ocr_parts.push(text);
-            }
+        let page_number = from.saturating_add(index as u32);
+        if ocr && ocr_targets.len() < OCR_MAX_PAGES {
+            ocr_targets.push((page_number, path.clone()));
         }
+        if total_image_bytes.saturating_add(image.len()) > MAX_IMAGES_TOTAL_BYTES {
+            continue;
+        }
+        total_image_bytes += image.len();
         pages.push(json!({
+            "page": page_number,
             "mimeType": "image/jpeg",
             "data": engine.encode(image),
         }));
     }
     let _ = std::fs::remove_dir_all(&dir);
-    let ocr_text = if ocr_parts.is_empty() {
-        None
-    } else {
-        usable_text(truncate_text(&ocr_parts.join("\n\n")))
-    };
+    let ocr_text = if ocr { ocr_images(&ocr_targets) } else { None };
     (pages, ocr_text)
+}
+
+/// OCR pages in parallel. Tesseract handles one page at a time, so a few
+/// workers turn a 20-page scan from ~20 s into a few seconds.
+fn ocr_images(targets: &[(u32, std::path::PathBuf)]) -> Option<String> {
+    if targets.is_empty() {
+        return None;
+    }
+    let results = std::sync::Mutex::new(Vec::new());
+    std::thread::scope(|scope| {
+        for chunk in targets.chunks(3) {
+            let results = &results;
+            scope.spawn(move || {
+                for (page, path) in chunk {
+                    if let Some(text) = ocr_image(path) {
+                        if let Ok(mut guard) = results.lock() {
+                            guard.push((*page, text));
+                        }
+                    }
+                }
+            });
+        }
+    });
+    let mut guard = results.into_inner().ok()?;
+    guard.sort_by_key(|(page, _)| *page);
+    let joined = guard
+        .iter()
+        .map(|(page, text)| format!("--- page {page} ---\n{text}"))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    usable_text(truncate_text(&joined))
+}
+
+fn ocr_language() -> &'static str {
+    static LANGUAGE: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+    LANGUAGE.get_or_init(|| {
+        let output = std::process::Command::new("tesseract")
+            .arg("--list-langs")
+            .output()
+            .ok();
+        let has_french = output
+            .map(|output| {
+                String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .any(|line| line.trim() == "fra")
+            })
+            .unwrap_or(false);
+        if has_french {
+            "fra"
+        } else {
+            "eng"
+        }
+    })
 }
 
 fn ocr_image(path: &std::path::Path) -> Option<String> {
     let output = std::process::Command::new("tesseract")
         .arg(path)
         .arg("stdout")
-        .args(["--psm", "6"])
+        .args(["-l", ocr_language(), "--psm", "6"])
         .output()
         .ok()?;
     if !output.status.success() {
@@ -674,7 +2216,9 @@ fn extract_pdf_text(bytes: &[u8]) -> Option<String> {
         let mut data = &bytes[data_start..data_start + end];
         if let Some(stripped) = data.strip_suffix(b"\r\n") {
             data = stripped;
-        } else if let Some(stripped) = data.strip_suffix(b"\n").or_else(|| data.strip_suffix(b"\r"))
+        } else if let Some(stripped) = data
+            .strip_suffix(b"\n")
+            .or_else(|| data.strip_suffix(b"\r"))
         {
             data = stripped;
         }
@@ -1058,8 +2602,7 @@ pub(crate) mod tests {
         assert!(body.contains("password=p%40ss%2Bword"), "{request}");
         assert!(body.contains("service=moodle_mobile_app"), "{request}");
         assert!(
-            headers.to_ascii_lowercase().contains("user-agent:")
-                && headers.contains("Mozilla/5.0"),
+            headers.to_ascii_lowercase().contains("user-agent:") && headers.contains("Mozilla/5.0"),
             "school WAFs reject the default ureq agent: {request}"
         );
     }
@@ -1074,7 +2617,10 @@ pub(crate) mod tests {
         assert_eq!(token, "MOBILE-TOKEN");
         let requests = worker.join().unwrap();
         assert!(requests[0].starts_with("POST "), "{requests:?}");
-        assert!(requests[1].starts_with("GET /moodle/login/token.php?"), "{requests:?}");
+        assert!(
+            requests[1].starts_with("GET /moodle/login/token.php?"),
+            "{requests:?}"
+        );
         assert!(requests[1].contains("password=secret"), "{requests:?}");
     }
 
@@ -1140,7 +2686,10 @@ pub(crate) mod tests {
         .unwrap_err();
         let requests = worker.join().unwrap();
         assert_eq!(requests.len(), 1);
-        assert!(requests[0].contains("wstoken=PRIVATE-TOKEN"), "{requests:?}");
+        assert!(
+            requests[0].contains("wstoken=PRIVATE-TOKEN"),
+            "{requests:?}"
+        );
         assert!(error.contains("redirected"), "{error}");
     }
 
@@ -1152,7 +2701,10 @@ pub(crate) mod tests {
             allow_write: false,
         });
         let error = client
-            .call("core_course_get_contents&wsfunction=core_user_create_users", &json!({}))
+            .call(
+                "core_course_get_contents&wsfunction=core_user_create_users",
+                &json!({}),
+            )
             .unwrap_err();
         assert!(error.contains("function name"), "{error}");
     }
@@ -1164,7 +2716,10 @@ pub(crate) mod tests {
         let dir = temp_job_dir().expect("temp dir");
         let mode = std::fs::metadata(&dir).unwrap().permissions().mode();
         assert_eq!(mode & 0o077, 0, "mode {mode:o}");
-        let parent = std::fs::metadata(dir.parent().unwrap()).unwrap().permissions().mode();
+        let parent = std::fs::metadata(dir.parent().unwrap())
+            .unwrap()
+            .permissions()
+            .mode();
         assert_eq!(parent & 0o077, 0, "parent mode {parent:o}");
         std::fs::remove_dir_all(dir).ok();
     }
@@ -1177,6 +2732,246 @@ pub(crate) mod tests {
         assert_eq!(requests.len(), 1, "a refused login must not be retried");
         assert!(requests[0].starts_with("POST "), "{requests:?}");
         assert!(error.contains("Moodle refused the login"), "{error}");
+    }
+
+    #[test]
+    fn plain_text_strips_html_and_entities() {
+        assert_eq!(
+            plain_text("<p>Bonjour&nbsp;<b>Max</b> &amp; cie&#39;s</p>"),
+            "Bonjour Max & cie's"
+        );
+    }
+
+    #[test]
+    fn pdf_range_caps_per_call_and_reports_continuation() {
+        let first = resolve_pdf_range(None, None, 100).unwrap();
+        assert_eq!((first.from, first.to), (1, MAX_PDF_PAGES));
+        let mid = resolve_pdf_range(Some(90), None, 100).unwrap();
+        assert_eq!((mid.from, mid.to), (90, 100));
+        let note = pdf_result_note(true, 1, MAX_PDF_PAGES, 100, Some(MAX_PDF_PAGES + 1));
+        assert!(
+            note.contains("nextPageFrom")
+                || note.contains(&format!("page_from={}", MAX_PDF_PAGES + 1)),
+            "{note}"
+        );
+        assert!(
+            note.contains("incomplete") || note.contains("continue"),
+            "{note}"
+        );
+        assert!(resolve_pdf_range(Some(20), Some(10), 50).is_err());
+        assert!(resolve_pdf_range(Some(200), None, 50).is_err());
+        // A short tail must never be silently dropped (the "last two pages" bug).
+        let short = resolve_pdf_range(None, None, 30).unwrap();
+        assert_eq!((short.from, short.to), (1, 30));
+        assert!(!pdf_result_note(false, 1, 30, 30, None).contains("incomplete"));
+        // Huge documents still window, and explicit page_to is honored.
+        let huge = resolve_pdf_range(Some(25), Some(30), 400).unwrap();
+        assert_eq!((huge.from, huge.to), (25, 30));
+    }
+
+    #[test]
+    fn pdf_search_skips_the_toc_and_finds_the_real_section() {
+        let mut pages: Vec<String> = (1..=30)
+            .map(|page| format!("Page {page}\nExercices du chapitre 3"))
+            .collect();
+        pages[1] = "Sommaire\n3.3 Taux de variation instantane .... 26".into();
+        pages[25] = "3.3 Taux de variation instantane\nLe mouvement rectiligne".into();
+        let matches = find_pdf_matches(&pages, "3.3");
+        assert_eq!(matches[0].0, 2, "{matches:?}");
+        assert!(looks_like_toc(2, &pages));
+        let best = matches
+            .iter()
+            .map(|(page, _)| *page)
+            .find(|page| *page > 2 && !looks_like_toc(*page, &pages));
+        assert_eq!(best, Some(26));
+        assert!(contains_section("chapitre 3.3 ici", "3.3"));
+        assert!(!contains_section("chapitre 13.3 ici", "3.3"));
+        assert!(!contains_section("exercice 3.30 ici", "3.3"));
+        assert!(contains_section(
+            &normalize_text("La dérivée et le taux de variation"),
+            &normalize_text("derivee")
+        ));
+        let outline = pdf_outline(&pages);
+        assert!(
+            outline
+                .iter()
+                .any(|(page, title)| *page == 26 && title.contains("3.3")),
+            "{outline:?}"
+        );
+    }
+
+    #[test]
+    fn pdf_section_search_targets_the_matching_page() {
+        if std::process::Command::new("gs")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            return; // Ghostscript is only needed to build this fixture.
+        }
+        let Some(dir) = temp_job_dir() else {
+            return;
+        };
+        let postscript = dir.join("fixture.ps");
+        let pdf_path = dir.join("fixture.pdf");
+        let source = r#"%!PS
+/Helvetica findfont 14 scalefont setfont
+1 1 30 {
+  /p exch def
+  72 740 moveto (MTH0101 - Calcul differentiel - page ) show p 3 string cvs show
+  72 710 moveto (Exercices et exemples du chapitre 3 : limites, continuite, derivation.) show
+  72 680 moveto (On calcule le taux de variation et la pente de la tangente.) show
+  72 650 moveto (La notation de Leibniz resume la derivee comme un quotient differentiel.) show
+  p 26 eq {
+    72 620 moveto (3.3 Taux de variation instantane) show
+    72 590 moveto (Le mouvement rectiligne et la notation de Leibniz.) show
+  } if
+  showpage
+} for
+"#;
+        let built = std::fs::write(&postscript, source).is_ok()
+            && std::process::Command::new("gs")
+                .args(["-q", "-dNOPAUSE", "-dBATCH", "-sDEVICE=pdfwrite"])
+                .arg(format!("-sOutputFile={}", pdf_path.display()))
+                .arg(&postscript)
+                .status()
+                .map(|status| status.success())
+                .unwrap_or(false);
+        if !built {
+            let _ = std::fs::remove_dir_all(&dir);
+            return;
+        }
+        let pdf = std::fs::read(&pdf_path).unwrap();
+        let (url, worker) = raw_server(vec![(200, "application/pdf".into(), Vec::new(), pdf)]);
+        let client = MoodleClient::new(&MoodleConfig {
+            base_url: url.clone(),
+            token: "private-token".into(),
+            allow_write: false,
+        });
+        let fileurl = format!("{url}/pluginfile.php/1/mod_resource/content/0/ch3.pdf");
+        let listener = crate::http::bind(0).unwrap();
+        let share_port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let _ = crate::http::serve_controlled(
+                listener,
+                std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            );
+        });
+        let link_guard = crate::share::LINK_LOCK.lock().unwrap();
+        crate::share::set_port(share_port);
+        let data = client
+            .download_file(
+                &fileurl,
+                &FileQuery {
+                    find: Some("3.3".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let links = &data["links"];
+        assert_eq!(links["localOnly"], true, "{data}");
+        let reader_url = links["reader"].as_str().unwrap();
+        let reader = ureq::get(reader_url).call().unwrap().into_string().unwrap();
+        assert!(reader.contains("Taux de variation"), "{reader}");
+        let parts = links["parts"].as_array().unwrap();
+        assert_eq!(parts.len(), 2, "{links}");
+        let mut part = Vec::new();
+        ureq::get(parts[1]["url"].as_str().unwrap())
+            .call()
+            .unwrap()
+            .into_reader()
+            .read_to_end(&mut part)
+            .unwrap();
+        assert_eq!(pdf_page_count(&part), Some(6));
+        drop(link_guard);
+        let _ = worker.join();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(data["totalPages"], 30);
+        assert_eq!(data["matchedPage"], 26, "{data}");
+        assert_eq!(data["pageFrom"], 26);
+        assert_eq!(data["pageTo"], 30);
+        assert_eq!(data["truncated"], false);
+        assert!(
+            data["text"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("Taux de variation"),
+            "{data}"
+        );
+        assert_eq!(data["pages"].as_array().unwrap().len(), 5);
+        assert!(
+            data["outline"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|entry| entry["page"] == 26
+                    && entry["title"].as_str().unwrap_or_default().contains("3.3")),
+            "{data}"
+        );
+        assert!(
+            data["note"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("page 26"),
+            "{data}"
+        );
+    }
+
+    #[test]
+    fn my_courses_hides_ended_and_hidden_by_default() {
+        let now = unix_now();
+        let (url, worker) = server(vec![
+            json!({"userid": 7, "functions": []}),
+            json!([
+                {
+                    "id": 1,
+                    "shortname": "LIVE",
+                    "fullname": "Live",
+                    "visible": 1,
+                    "startdate": now - 10,
+                    "enddate": now + 86_400,
+                    "lastaccess": now,
+                    "isfavourite": true,
+                    "progress": null
+                },
+                {
+                    "id": 2,
+                    "shortname": "OLD",
+                    "fullname": "Old",
+                    "visible": 1,
+                    "startdate": now - 200 * 86_400,
+                    "enddate": now - 40 * 86_400,
+                    "lastaccess": now - 50 * 86_400,
+                    "isfavourite": false,
+                    "progress": null
+                },
+                {
+                    "id": 3,
+                    "shortname": "HIDE",
+                    "fullname": "Hidden",
+                    "visible": 0,
+                    "startdate": now - 10,
+                    "enddate": now + 86_400,
+                    "lastaccess": now,
+                    "isfavourite": false,
+                    "progress": null
+                }
+            ]),
+        ]);
+        let client = MoodleClient::new(&crate::config::MoodleConfig {
+            base_url: url,
+            token: "token".into(),
+            allow_write: false,
+        });
+        let compact = client.my_courses(false).unwrap();
+        let ids: Vec<i64> = compact["courses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|course| course["id"].as_i64())
+            .collect();
+        assert_eq!(ids, vec![1]);
+        worker.join().unwrap();
     }
 
     #[test]
@@ -1238,7 +3033,10 @@ pub(crate) mod tests {
         let (url, worker) = raw_server(vec![(
             200,
             "text/plain".into(),
-            vec![("Content-Disposition".into(), r#"attachment; filename="TD5.txt""#.into())],
+            vec![(
+                "Content-Disposition".into(),
+                r#"attachment; filename="TD5.txt""#.into(),
+            )],
             body.to_vec(),
         )]);
         let settings = crate::config::Settings {
@@ -1250,10 +3048,13 @@ pub(crate) mod tests {
             ..Default::default()
         };
         let fileurl = format!("{url}/pluginfile.php/9/mod_resource/content/0/TD5.txt");
-        let reply = crate::mcp::dispatch_tool(&settings, "moodle_file", &json!({ "fileurl": fileurl }));
+        let reply =
+            crate::mcp::dispatch_tool(&settings, "moodle_file", &json!({ "fileurl": fileurl }));
         let request = worker.join().unwrap().remove(0);
         assert!(
-            request.starts_with("GET /moodle/webservice/pluginfile.php/9/mod_resource/content/0/TD5.txt?"),
+            request.starts_with(
+                "GET /moodle/webservice/pluginfile.php/9/mod_resource/content/0/TD5.txt?"
+            ),
             "{request}"
         );
         assert!(request.contains("token=PRIVATE-TOKEN"), "{request}");
@@ -1286,7 +3087,11 @@ pub(crate) mod tests {
             "size": 10,
             "text": "Exercice 1 page 452",
             "file": { "filename": "TD5.pdf", "mimeType": "application/pdf", "data": "JVBERg==" },
-            "pages": [{ "mimeType": "image/jpeg", "data": "QUJDRA==" }]
+            "pages": [{ "mimeType": "image/jpeg", "data": "QUJDRA==" }],
+            "links": {
+                "download": "https://example.test/s/1/TD5.pdf",
+                "reader": "https://example.test/s/1/read"
+            }
         });
         let content = mcp_content_for_file(data);
         assert_eq!(content[0]["type"], "text");
@@ -1301,5 +3106,10 @@ pub(crate) mod tests {
         assert_eq!(content[2]["type"], "image");
         assert_eq!(content[2]["data"], "QUJDRA==");
         assert_eq!(content[2]["mimeType"], "image/jpeg");
+        assert_eq!(content[3]["type"], "resource_link");
+        assert_eq!(content[3]["uri"], "https://example.test/s/1/TD5.pdf");
+        assert_eq!(content[3]["mimeType"], "application/pdf");
+        assert_eq!(content[4]["type"], "resource_link");
+        assert_eq!(content[4]["uri"], "https://example.test/s/1/read");
     }
 }

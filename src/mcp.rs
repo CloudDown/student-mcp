@@ -92,16 +92,29 @@ pub fn tool_definitions(settings: &Settings) -> Vec<Value> {
     if settings.moodle().is_some() {
         let moodle = json!([
             { "name": "moodle_status", "description": "Check the Moodle connection and show which site and account this token belongs to.", "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_my_courses", "description": "List the courses in which the connected student is enrolled.", "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_my_courses", "description": "List enrolled courses as a compact summary (id, names, dates). Hidden and ended courses are omitted unless include_hidden is true.", "inputSchema": { "type": "object", "properties": { "include_hidden": { "type": "boolean", "description": "Include hidden and ended courses." } } }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_search", "description": "Search Moodle courses and materials the student can access.", "inputSchema": { "type": "object", "properties": { "query": { "type": "string" }, "page": { "type": "integer", "minimum": 0 } }, "required": ["query"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_course_content", "description": "Get the sections, activities and resources in a course. To read a PDF or other file, pass its fileurl to moodle_file; do not fetch fileurl with a generic HTTP tool.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_file", "description": "Download a Moodle course file with the connected account. PDFs are returned as the original file plus page images. Read the attached PDF for the exercises. Pass fileurl from moodle_course_content. Never send the Moodle token to another tool.", "inputSchema": { "type": "object", "properties": { "fileurl": { "type": "string" } }, "required": ["fileurl"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_resources", "description": "List pages, files, URLs, folders and books in a course without the full section tree.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_file", "description": "Read a Moodle course file with the connected account. For PDFs: pass find=(\"3.3\" or a phrase) to jump to a section, or page_from/page_to for an exact window. Returns extracted text (OCR when the scan has no text layer), page images, matches, totalPages/truncated/nextPageFrom, and a links object with download/reader/text URLs. Short PDFs come back whole (a small tail is never dropped). If truncated is true, call again with page_from=nextPageFrom OR tell the user to open links.reader; never invent missing pages. Pass fileurl from moodle_course_content. Never send the Moodle token to another tool.", "inputSchema": { "type": "object", "properties": { "fileurl": { "type": "string" }, "find": { "type": "string", "description": "Section number or phrase to locate in the PDF text layer, e.g. \"3.3\" or \"taux de variation instantané\". The matching page becomes the default page_from." }, "page_from": { "type": "integer", "minimum": 1, "description": "First PDF page to render/extract (1-based). Use nextPageFrom from a previous call to continue a long PDF." }, "page_to": { "type": "integer", "minimum": 1, "description": "Last PDF page to render/extract (inclusive). Window size is capped per call." } }, "required": ["fileurl"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_assignments", "description": "List visible assignments; optionally filter to specific course IDs.", "inputSchema": { "type": "object", "properties": { "courseids": { "type": "array", "items": { "type": "integer" } } } }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_assignment_status", "description": "Submission and grading status for one assignment, including uploaded files.", "inputSchema": { "type": "object", "properties": { "assignid": { "type": "integer", "minimum": 1 } }, "required": ["assignid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_quizzes", "description": "List visible quizzes; optionally filter to specific course IDs.", "inputSchema": { "type": "object", "properties": { "courseids": { "type": "array", "items": { "type": "integer" } } } }, "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_grades", "description": "Get the connected student's grade items for a course.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_quiz_status", "description": "Attempts, best grade and access info for one quiz.", "inputSchema": { "type": "object", "properties": { "quizid": { "type": "integer", "minimum": 1 } }, "required": ["quizid"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_grades", "description": "Grade items for one course, or an overview of all course grades when courseid is omitted.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } } }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_calendar", "description": "Get the upcoming Moodle calendar view; optionally filter to one course.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } } }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_deadlines", "description": "Upcoming deadlines from assignments, quizzes and the Moodle calendar, sorted by date. Prefer this for due work.", "inputSchema": { "type": "object", "properties": { "days": { "type": "integer", "minimum": 1, "maximum": 365, "description": "How many days ahead to look (default 60)." }, "courseids": { "type": "array", "items": { "type": "integer" } } } }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_announcements", "description": "Recent posts from course announcement forums (news). Plain text, newest first.", "inputSchema": { "type": "object", "properties": { "courseids": { "type": "array", "items": { "type": "integer" } }, "limit": { "type": "integer", "minimum": 1, "maximum": 50 } } }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_forums", "description": "List forums in courses (news and discussion boards).", "inputSchema": { "type": "object", "properties": { "courseids": { "type": "array", "items": { "type": "integer" } } } }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_forum_discussions", "description": "List recent discussions in one forum.", "inputSchema": { "type": "object", "properties": { "forumid": { "type": "integer", "minimum": 1 }, "limit": { "type": "integer", "minimum": 1, "maximum": 50 } }, "required": ["forumid"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_forum_posts", "description": "Read all posts in a forum discussion. Use discussionid from moodle_announcements or moodle_forum_discussions.", "inputSchema": { "type": "object", "properties": { "discussionid": { "type": "integer", "minimum": 1 } }, "required": ["discussionid"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_notifications", "description": "Unread notification count and recent Moodle popup notifications.", "inputSchema": { "type": "object", "properties": { "limit": { "type": "integer", "minimum": 1, "maximum": 50 } } }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_messages", "description": "Private message conversations and unread counts.", "inputSchema": { "type": "object", "properties": { "limit": { "type": "integer", "minimum": 1, "maximum": 50 } } }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_conversation_messages", "description": "Messages inside one private conversation.", "inputSchema": { "type": "object", "properties": { "conversationid": { "type": "integer", "minimum": 1 }, "limit": { "type": "integer", "minimum": 1, "maximum": 100 } }, "required": ["conversationid"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_completion", "description": "Activity completion status for a course.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "ws_discover", "description": "Search Moodle Web Service functions this token can call, with description and access type.", "inputSchema": { "type": "object", "properties": { "query": { "type": "string" }, "limit": { "type": "integer", "minimum": 1, "maximum": 100 } } }, "annotations": { "readOnlyHint": true } },
             { "name": "ws_schema", "description": "Show details for an available Moodle Web Service function by exact name.", "inputSchema": { "type": "object", "properties": { "name": { "type": "string" } }, "required": ["name"] }, "annotations": { "readOnlyHint": true } },
-            { "name": "ws_call", "description": "Call an available Moodle Web Service function by exact name. Find it with ws_discover first. Writes require enabling Moodle writing in the app.", "inputSchema": crate::catalog::ws_call_schema(), "annotations": { "readOnlyHint": false } }
+            { "name": "ws_call", "description": "Call an available Moodle Web Service function by exact name. Find it with ws_discover first. Writes require enabling Moodle writing in the app. Use this for rare student actions not covered by the dedicated tools.", "inputSchema": crate::catalog::ws_call_schema(), "annotations": { "readOnlyHint": false } }
         ]);
         tools.extend(moodle.as_array().cloned().unwrap_or_default());
     }
@@ -186,13 +199,19 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
             }))
         }),
         "moodle_my_courses" => moodle_tool(settings, |config| {
-            let client = MoodleClient::new(config);
-            let info = client.site_info()?;
-            let userid = info
-                .get("userid")
-                .and_then(Value::as_i64)
-                .ok_or("Moodle did not return the token's user ID.")?;
-            client.call("core_enrol_get_users_courses", &json!({ "userid": userid }))
+            let include_hidden = args
+                .get("include_hidden")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            MoodleClient::new(config).my_courses(include_hidden)
+        }),
+        "moodle_search" => moodle_tool(settings, |config| {
+            let query = args
+                .get("query")
+                .and_then(Value::as_str)
+                .ok_or("Provide query.")?;
+            let page = args.get("page").and_then(json_i64).unwrap_or(0);
+            MoodleClient::new(config).search(query, page)
         }),
         "moodle_course_content" => moodle_tool(settings, |config| {
             let client = MoodleClient::new(config);
@@ -201,12 +220,16 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                 &json!({ "courseid": require_integer(args, "courseid")? }),
             )
         }),
+        "moodle_resources" => moodle_tool(settings, |config| {
+            MoodleClient::new(config).resources(require_integer(args, "courseid")?)
+        }),
         "moodle_file" => moodle_tool(settings, |config| {
             let fileurl = args
                 .get("fileurl")
                 .and_then(Value::as_str)
                 .ok_or("Provide fileurl from moodle_course_content.")?;
-            MoodleClient::new(config).download_file(fileurl)
+            let query = file_query(args)?;
+            MoodleClient::new(config).download_file(fileurl, &query)
         }),
         "moodle_assignments" => moodle_tool(settings, |config| {
             let client = MoodleClient::new(config);
@@ -215,6 +238,9 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                 &json!({ "courseids": args.get("courseids").cloned().unwrap_or(Value::Null) }),
             )
         }),
+        "moodle_assignment_status" => moodle_tool(settings, |config| {
+            MoodleClient::new(config).assignment_status(require_integer(args, "assignid")?)
+        }),
         "moodle_quizzes" => moodle_tool(settings, |config| {
             let client = MoodleClient::new(config);
             client.call(
@@ -222,12 +248,19 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                 &json!({ "courseids": args.get("courseids").cloned().unwrap_or(Value::Null) }),
             )
         }),
+        "moodle_quiz_status" => moodle_tool(settings, |config| {
+            MoodleClient::new(config).quiz_status(require_integer(args, "quizid")?)
+        }),
         "moodle_grades" => moodle_tool(settings, |config| {
             let client = MoodleClient::new(config);
-            client.call(
-                "gradereport_user_get_grade_items",
-                &json!({ "courseid": require_integer(args, "courseid")? }),
-            )
+            match args.get("courseid") {
+                None | Some(Value::Null) => client.grades_overview(),
+                Some(value) => {
+                    let courseid =
+                        json_positive_i64(value).ok_or("Provide an integer courseid > 0.")?;
+                    client.grades_for_course(courseid)
+                }
+            }
         }),
         "moodle_calendar" => moodle_tool(settings, |config| {
             let client = MoodleClient::new(config);
@@ -238,6 +271,63 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                 }),
             };
             client.call("core_calendar_get_calendar_upcoming_view", &payload)
+        }),
+        "moodle_deadlines" => moodle_tool(settings, |config| {
+            let days = args.get("days").and_then(json_i64).unwrap_or(60);
+            let courseids = optional_i64_list(args.get("courseids"))?;
+            MoodleClient::new(config).deadlines(days, courseids)
+        }),
+        "moodle_announcements" => moodle_tool(settings, |config| {
+            let limit = args
+                .get("limit")
+                .and_then(json_i64)
+                .unwrap_or(20)
+                .clamp(1, 50) as usize;
+            let courseids = optional_i64_list(args.get("courseids"))?;
+            MoodleClient::new(config).announcements(courseids, limit)
+        }),
+        "moodle_forums" => moodle_tool(settings, |config| {
+            let courseids = optional_i64_list(args.get("courseids"))?;
+            MoodleClient::new(config).forums(courseids)
+        }),
+        "moodle_forum_discussions" => moodle_tool(settings, |config| {
+            let limit = args
+                .get("limit")
+                .and_then(json_i64)
+                .unwrap_or(20)
+                .clamp(1, 50) as usize;
+            MoodleClient::new(config).forum_discussions(require_integer(args, "forumid")?, limit)
+        }),
+        "moodle_forum_posts" => moodle_tool(settings, |config| {
+            MoodleClient::new(config).forum_posts(require_integer(args, "discussionid")?)
+        }),
+        "moodle_notifications" => moodle_tool(settings, |config| {
+            let limit = args
+                .get("limit")
+                .and_then(json_i64)
+                .unwrap_or(20)
+                .clamp(1, 50) as usize;
+            MoodleClient::new(config).notifications(limit)
+        }),
+        "moodle_messages" => moodle_tool(settings, |config| {
+            let limit = args
+                .get("limit")
+                .and_then(json_i64)
+                .unwrap_or(20)
+                .clamp(1, 50) as usize;
+            MoodleClient::new(config).messages(limit)
+        }),
+        "moodle_conversation_messages" => moodle_tool(settings, |config| {
+            let limit = args
+                .get("limit")
+                .and_then(json_i64)
+                .unwrap_or(30)
+                .clamp(1, 100) as usize;
+            MoodleClient::new(config)
+                .conversation_messages(require_integer(args, "conversationid")?, limit)
+        }),
+        "moodle_completion" => moodle_tool(settings, |config| {
+            MoodleClient::new(config).completion(require_integer(args, "courseid")?)
         }),
         "ws_discover" => moodle_tool(settings, |config| {
             let client = MoodleClient::new(config);
@@ -364,6 +454,55 @@ fn require_integer(args: &Value, key: &str) -> Result<i64, String> {
     args.get(key)
         .and_then(json_positive_i64)
         .ok_or(format!("Provide an integer {key} > 0."))
+}
+
+fn file_query(args: &Value) -> Result<crate::moodle::FileQuery, String> {
+    Ok(crate::moodle::FileQuery {
+        page_from: optional_page_number(args.get("page_from"))?,
+        page_to: optional_page_number(args.get("page_to"))?,
+        find: args
+            .get("find")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+    })
+}
+
+fn optional_page_number(value: Option<&Value>) -> Result<Option<u32>, String> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let number = json_positive_i64(value).ok_or("Provide page_from/page_to as integers >= 1.")?;
+    if number > u32::MAX as i64 {
+        return Err("page_from/page_to is too large.".into());
+    }
+    Ok(Some(number as u32))
+}
+
+fn optional_i64_list(value: Option<&Value>) -> Result<Option<Vec<i64>>, String> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let Some(items) = value.as_array() else {
+        return Err("Provide courseids as an array of integers.".into());
+    };
+    if items.is_empty() {
+        return Ok(None);
+    }
+    let mut ids = Vec::with_capacity(items.len());
+    for item in items {
+        let id = json_positive_i64(item)
+            .ok_or_else(|| "Provide courseids as an array of integers > 0.".to_string())?;
+        ids.push(id);
+    }
+    Ok(Some(ids))
 }
 
 fn student_status(settings: &Settings) -> ToolResult {
@@ -576,7 +715,9 @@ pub fn set_moodle_write(settings: &mut Settings, allow: bool) -> Result<(), Stri
         .ok_or("Moodle is not connected anymore.")?;
     moodle.allow_write = Some(allow);
     updated.save().map_err(|error| {
-        format!("Cannot save Moodle permissions. The previous permissions are still active. {error}")
+        format!(
+            "Cannot save Moodle permissions. The previous permissions are still active. {error}"
+        )
     })?;
     *settings = updated;
     Ok(())
@@ -722,6 +863,24 @@ mod protocol_tests {
     }
 
     #[test]
+    fn moodle_file_parses_section_search_and_page_bounds() {
+        let query = file_query(&json!({
+            "fileurl": "https://moodle.example/pluginfile.php/1/x.pdf",
+            "find": "  3.3  ",
+            "page_from": "25",
+            "page_to": 30
+        }))
+        .unwrap();
+        assert_eq!(query.find.as_deref(), Some("3.3"));
+        assert_eq!(query.page_from, Some(25));
+        assert_eq!(query.page_to, Some(30));
+        let empty = file_query(&json!({"find": "   "})).unwrap();
+        assert_eq!(empty.find, None);
+        assert!(file_query(&json!({"page_from": 0})).is_err());
+        assert!(file_query(&json!({"page_to": -1})).is_err());
+    }
+
+    #[test]
     fn moodle_activation_permissions_and_disconnect_report_save_failures() {
         crate::config::tests::with_temp_config(|| {
             // A directory at the destination fails on every OS, even as root.
@@ -800,7 +959,7 @@ mod protocol_tests {
             let tools = reply["result"]["tools"].as_array().unwrap();
             assert_eq!(
                 tools.len(),
-                1 + if enabled & 1 != 0 { 11 } else { 0 }
+                1 + if enabled & 1 != 0 { 24 } else { 0 }
                     + if enabled & 2 != 0 { 7 } else { 0 }
                     + if enabled & 4 != 0 { 4 } else { 0 }
             );
@@ -815,8 +974,15 @@ mod protocol_tests {
                 if matches!(
                     name,
                     "moodle_course_content"
+                        | "moodle_resources"
                         | "moodle_file"
-                        | "moodle_grades"
+                        | "moodle_search"
+                        | "moodle_assignment_status"
+                        | "moodle_quiz_status"
+                        | "moodle_forum_discussions"
+                        | "moodle_forum_posts"
+                        | "moodle_conversation_messages"
+                        | "moodle_completion"
                         | "ws_schema"
                         | "ws_call"
                         | "brightspace_course_content"
@@ -916,7 +1082,10 @@ mod protocol_tests {
 
     #[test]
     fn course_ids_accept_whole_numbers_written_as_strings() {
-        let (url, worker) = crate::moodle::tests::server(vec![json!([])]);
+        let (url, worker) = crate::moodle::tests::server(vec![
+            json!({"userid": 42, "functions": []}),
+            json!({"usergrades": []}),
+        ]);
         let settings = Settings {
             moodle: Some(MoodleSettings {
                 url: Some(url),
@@ -928,9 +1097,48 @@ mod protocol_tests {
         let bad = dispatch_tool(&settings, "moodle_grades", &json!({"courseid": "nope"}));
         assert_eq!(bad["isError"], true);
         let good = dispatch_tool(&settings, "moodle_grades", &json!({"courseid": "15"}));
-        assert_eq!(good["isError"], false);
-        let request = worker.join().unwrap().remove(0);
-        assert!(request.contains("courseid=15"), "{request}");
+        assert_eq!(good["isError"], false, "{good}");
+        let requests = worker.join().unwrap();
+        assert!(
+            requests.iter().any(|request| {
+                request.contains("courseid=15") && request.contains("userid=42")
+            }),
+            "{requests:?}"
+        );
+    }
+
+    #[test]
+    fn moodle_student_tools_are_advertised() {
+        let settings = Settings {
+            moodle: Some(MoodleSettings {
+                url: Some("https://moodle.example.org".into()),
+                token: Some("token".into()),
+                allow_write: Some(false),
+            }),
+            ..Default::default()
+        };
+        let names: Vec<_> = tool_definitions(&settings)
+            .into_iter()
+            .filter_map(|tool| tool["name"].as_str().map(str::to_string))
+            .collect();
+        for required in [
+            "moodle_search",
+            "moodle_deadlines",
+            "moodle_announcements",
+            "moodle_assignment_status",
+            "moodle_quiz_status",
+            "moodle_forums",
+            "moodle_forum_posts",
+            "moodle_notifications",
+            "moodle_messages",
+            "moodle_completion",
+            "moodle_resources",
+        ] {
+            assert!(
+                names.iter().any(|name| name == required),
+                "missing {required}"
+            );
+        }
     }
 
     #[test]
@@ -978,5 +1186,156 @@ mod protocol_tests {
             assert_eq!(reply["isError"], true);
         }
         assert!(test_service(&Settings::default(), "omnivox").is_err());
+    }
+}
+
+#[cfg(test)]
+mod live_moodle_poly {
+    use super::*;
+    use crate::config::{MoodleSettings, Settings};
+    use serde_json::json;
+
+    fn live_settings() -> Option<Settings> {
+        let path = dirs_next_home()?.join(".student-mcp.json");
+        let raw = std::fs::read_to_string(path).ok()?;
+        let value: serde_json::Value = serde_json::from_str(&raw).ok()?;
+        let url = value.pointer("/moodle/url")?.as_str()?.to_string();
+        let token = value.pointer("/moodle/token")?.as_str()?.to_string();
+        if token.is_empty() || !url.contains("polymtl") {
+            return None;
+        }
+        Some(Settings {
+            moodle: Some(MoodleSettings {
+                url: Some(url),
+                token: Some(token),
+                allow_write: Some(false),
+            }),
+            ..Default::default()
+        })
+    }
+
+    fn dirs_next_home() -> Option<std::path::PathBuf> {
+        std::env::var_os("HOME").map(std::path::PathBuf::from)
+    }
+
+    fn text(result: &serde_json::Value) -> String {
+        result["content"][0]["text"]
+            .as_str()
+            .unwrap_or("")
+            .to_string()
+    }
+
+    #[test]
+    #[ignore = "hits the real Polytechnique Moodle with the local student token"]
+    fn live_student_tool_matrix() {
+        let Some(settings) = live_settings() else {
+            eprintln!("skip: no local polymtl moodle config");
+            return;
+        };
+        let status = dispatch_tool(&settings, "moodle_status", &json!({}));
+        assert_eq!(status["isError"], false, "{status}");
+        let courses = dispatch_tool(&settings, "moodle_my_courses", &json!({}));
+        assert_eq!(courses["isError"], false, "{courses}");
+        let courseid = serde_json::from_str::<serde_json::Value>(&text(&courses))
+            .ok()
+            .and_then(|value| value["courses"][0]["id"].as_i64())
+            .expect("course id");
+
+        for (name, args) in [
+            ("moodle_search", json!({"query": "chimie"})),
+            ("moodle_deadlines", json!({"days": 90})),
+            ("moodle_notifications", json!({"limit": 5})),
+            ("moodle_messages", json!({"limit": 5})),
+            ("moodle_announcements", json!({"limit": 5})),
+            ("moodle_forums", json!({"courseids": [courseid]})),
+            ("moodle_course_content", json!({"courseid": courseid})),
+            ("moodle_resources", json!({"courseid": courseid})),
+            ("moodle_assignments", json!({"courseids": [courseid]})),
+            ("moodle_quizzes", json!({"courseids": [courseid]})),
+            ("moodle_grades", json!({})),
+            ("moodle_grades", json!({"courseid": courseid})),
+            ("moodle_calendar", json!({})),
+            ("moodle_completion", json!({"courseid": courseid})),
+            ("ws_discover", json!({"query": "forum", "limit": 5})),
+        ] {
+            let result = dispatch_tool(&settings, name, &args);
+            assert_eq!(result["isError"], false, "{name} {args} => {result}");
+        }
+
+        let quizzes = dispatch_tool(
+            &settings,
+            "moodle_quizzes",
+            &json!({"courseids": [courseid]}),
+        );
+        let quizid = serde_json::from_str::<serde_json::Value>(&text(&quizzes))
+            .ok()
+            .and_then(|value| value["quizzes"][0]["id"].as_i64());
+        if let Some(quizid) = quizid {
+            let result = dispatch_tool(&settings, "moodle_quiz_status", &json!({"quizid": quizid}));
+            assert_eq!(result["isError"], false, "{result}");
+        }
+
+        let assigns = dispatch_tool(&settings, "moodle_assignments", &json!({}));
+        let assignid = serde_json::from_str::<serde_json::Value>(&text(&assigns))
+            .ok()
+            .and_then(|value| {
+                value["courses"].as_array()?.iter().find_map(|course| {
+                    course["assignments"]
+                        .as_array()?
+                        .first()?
+                        .get("id")?
+                        .as_i64()
+                })
+            });
+        if let Some(assignid) = assignid {
+            let result = dispatch_tool(
+                &settings,
+                "moodle_assignment_status",
+                &json!({"assignid": assignid}),
+            );
+            assert_eq!(result["isError"], false, "{result}");
+        }
+
+        let forums = dispatch_tool(
+            &settings,
+            "moodle_forums",
+            &json!({"courseids": [courseid]}),
+        );
+        let forumid = serde_json::from_str::<serde_json::Value>(&text(&forums))
+            .ok()
+            .and_then(|value| value["forums"][0]["id"].as_i64());
+        if let Some(forumid) = forumid {
+            let discussions = dispatch_tool(
+                &settings,
+                "moodle_forum_discussions",
+                &json!({"forumid": forumid, "limit": 3}),
+            );
+            assert_eq!(discussions["isError"], false, "{discussions}");
+            if let Some(discussionid) =
+                serde_json::from_str::<serde_json::Value>(&text(&discussions))
+                    .ok()
+                    .and_then(|value| value["discussions"][0]["discussionid"].as_i64())
+            {
+                let posts = dispatch_tool(
+                    &settings,
+                    "moodle_forum_posts",
+                    &json!({"discussionid": discussionid}),
+                );
+                assert_eq!(posts["isError"], false, "{posts}");
+            }
+        }
+
+        let messages = dispatch_tool(&settings, "moodle_messages", &json!({"limit": 3}));
+        if let Some(conversationid) = serde_json::from_str::<serde_json::Value>(&text(&messages))
+            .ok()
+            .and_then(|value| value["conversations"][0]["id"].as_i64())
+        {
+            let result = dispatch_tool(
+                &settings,
+                "moodle_conversation_messages",
+                &json!({"conversationid": conversationid, "limit": 5}),
+            );
+            assert_eq!(result["isError"], false, "{result}");
+        }
     }
 }
