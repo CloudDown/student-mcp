@@ -160,6 +160,10 @@ student-mcp version
   `--port=`.
 - **Moodle rejects the school login**: SSO or 2FA blocks `/login/token.php` →
   switch to the **Mobile token** mode.
+- **Moodle did not return / provide a token**: school WAFs (AWS on
+  moodle.polymtl.ca) challenge ureq's default User-Agent with HTTP 202 and an
+  empty HTML body. All Moodle HTTP clients must send `session::BROWSER_UA`.
+  Do not treat that 202 as a missing mobile token.
 - **Brightspace asks for SSO cookies**: the school sends you through Microsoft
   or another identity provider. Sign in in your browser, copy `d2lSessionVal`
   and `d2lSecureSessionVal`, and paste them under **Advanced options**.

@@ -2049,18 +2049,18 @@ impl App {
                 &mut self.draft.use_token,
             );
         }
-        ui.add(
-            egui::Label::new(
-                RichText::new(if self.draft.use_token {
-                    "Run Beat-YT/omnivox-mcp, log in there, then paste its address and access key."
-                } else {
-                    "Uses your normal Omnivox login. The password is not saved. Two-factor prompts must be completed in the portal first."
-                })
-                .size(10.5)
-                .color(SUBTLE),
-            )
-            .wrap(),
-        );
+        if self.draft.use_token {
+            ui.add(
+                egui::Label::new(
+                    RichText::new(
+                        "Run Beat-YT/omnivox-mcp, log in there, then paste its address and access key.",
+                    )
+                    .size(10.5)
+                    .color(SUBTLE),
+                )
+                .wrap(),
+            );
+        }
         ui.add_space(10.0);
         self.notice_line(ui);
         self.busy_text(ui);
@@ -2157,18 +2157,18 @@ impl App {
                 &mut self.draft.use_token,
             );
         }
-        ui.add(
-            egui::Label::new(
-                RichText::new(if self.draft.use_token {
-                    "Paste an access token, or d2lSessionVal and d2lSecureSessionVal from your browser. Not your school password."
-                } else {
-                    "Uses your normal Brightspace login. The password is not saved. Schools with Microsoft SSO need session cookies in advanced options."
-                })
-                .size(10.5)
-                .color(SUBTLE),
-            )
-            .wrap(),
-        );
+        if self.draft.use_token {
+            ui.add(
+                egui::Label::new(
+                    RichText::new(
+                        "Paste an access token, or d2lSessionVal and d2lSecureSessionVal from your browser. Not your school password.",
+                    )
+                    .size(10.5)
+                    .color(SUBTLE),
+                )
+                .wrap(),
+            );
+        }
         ui.add_space(10.0);
         self.notice_line(ui);
         self.busy_text(ui);

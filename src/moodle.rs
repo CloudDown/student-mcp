@@ -21,9 +21,20 @@ const SENSITIVE_KEYS: [&str; 6] = [
 
 fn agent() -> ureq::Agent {
     // A 307/308 would replay the token or password onto the next host.
+    // School WAFs (AWS/Cloudflare) challenge ureq's default User-Agent.
     ureq::AgentBuilder::new()
         .timeout(TIMEOUT)
         .redirects(0)
+        .user_agent(crate::session::BROWSER_UA)
+        .build()
+}
+
+fn token_login_agent() -> ureq::Agent {
+    // School Moodle sites often 301/302 token.php (http→https, trailing slash).
+    // Follow those for the login POST only; Web Service calls stay at redirects(0).
+    ureq::AgentBuilder::new()
+        .timeout(TIMEOUT)
+        .user_agent(crate::session::BROWSER_UA)
         .build()
 }
 
@@ -31,6 +42,7 @@ fn download_agent() -> ureq::Agent {
     ureq::AgentBuilder::new()
         .timeout(TIMEOUT)
         .redirects(0)
+        .user_agent(crate::session::BROWSER_UA)
         .build()
 }
 
@@ -59,10 +71,11 @@ fn token_from_json(result: &Value) -> Result<Option<String>, String> {
 }
 
 fn token_from_response(response: ureq::Response) -> Result<Option<String>, String> {
-    let result: Value = response
-        .into_json()
-        .map_err(|_| "Moodle did not return a token.".to_string())?;
-    token_from_json(&result)
+    match response.into_json() {
+        Ok(result) => token_from_json(&result),
+        // HTML/login pages are not a hard failure: try the GET fallback.
+        Err(_) => Ok(None),
+    }
 }
 
 /// Ask Moodle for a mobile-app token. The password is never stored.
@@ -77,26 +90,19 @@ pub fn request_mobile_token(site: &str, username: &str, password: &str) -> Resul
         ("password".into(), password.to_string()),
         ("service".into(), MOBILE_SERVICE.to_string()),
     ]);
-    let agent = agent();
-    match agent
+    match token_login_agent()
         .post(&format!("{base}/login/token.php"))
         .set("Content-Type", "application/x-www-form-urlencoded")
         .send_string(&form)
     {
         Ok(response) => {
-            // A redirect is not a token. Fall through to the GET form instead of
-            // following it, which would put the password on the next URL.
-            if !(300..400).contains(&response.status()) {
-                if let Some(token) = token_from_response(response)? {
-                    return Ok(token);
-                }
+            if let Some(token) = token_from_response(response)? {
+                return Ok(token);
             }
         }
         Err(ureq::Error::Status(_, response)) => {
-            if let Ok(result) = response.into_json::<Value>() {
-                if let Some(token) = token_from_json(&result)? {
-                    return Ok(token);
-                }
+            if let Some(token) = token_from_response(response)? {
+                return Ok(token);
             }
         }
         Err(_) => {
@@ -105,7 +111,9 @@ pub fn request_mobile_token(site: &str, username: &str, password: &str) -> Resul
             );
         }
     }
-    let response = agent
+    // Some school stacks only mint a token on GET. Do not follow redirects:
+    // the password is in the query string.
+    let response = agent()
         .get(&format!("{base}/login/token.php?{form}"))
         .call()
         .map_err(error_for_transport)?;
@@ -1049,6 +1057,11 @@ pub(crate) mod tests {
         assert!(body.contains("username=jane.doe"), "{request}");
         assert!(body.contains("password=p%40ss%2Bword"), "{request}");
         assert!(body.contains("service=moodle_mobile_app"), "{request}");
+        assert!(
+            headers.to_ascii_lowercase().contains("user-agent:")
+                && headers.contains("Mozilla/5.0"),
+            "school WAFs reject the default ureq agent: {request}"
+        );
     }
 
     #[test]
@@ -1063,6 +1076,51 @@ pub(crate) mod tests {
         assert!(requests[0].starts_with("POST "), "{requests:?}");
         assert!(requests[1].starts_with("GET /moodle/login/token.php?"), "{requests:?}");
         assert!(requests[1].contains("password=secret"), "{requests:?}");
+    }
+
+    #[test]
+    fn mobile_token_falls_back_when_post_returns_html() {
+        let (url, worker) = raw_server(vec![
+            (
+                200,
+                "text/html".into(),
+                Vec::new(),
+                b"<html>login</html>".to_vec(),
+            ),
+            (
+                200,
+                "application/json".into(),
+                Vec::new(),
+                br#"{"token":"MOBILE-TOKEN"}"#.to_vec(),
+            ),
+        ]);
+        let token = request_mobile_token(&url, "jane.doe", "secret").unwrap();
+        assert_eq!(token, "MOBILE-TOKEN");
+        let requests = worker.join().unwrap();
+        assert!(requests[0].starts_with("POST "), "{requests:?}");
+        assert!(requests[1].starts_with("GET "), "{requests:?}");
+    }
+
+    #[test]
+    fn mobile_token_html_does_not_use_the_old_toast() {
+        let (url, worker) = raw_server(vec![
+            (
+                200,
+                "text/html".into(),
+                Vec::new(),
+                b"<html>login</html>".to_vec(),
+            ),
+            (
+                200,
+                "text/html".into(),
+                Vec::new(),
+                b"<html>still html</html>".to_vec(),
+            ),
+        ]);
+        let error = request_mobile_token(&url, "jane.doe", "secret").unwrap_err();
+        let _ = worker.join();
+        assert!(!error.contains("did not return a token"), "{error}");
+        assert!(error.contains("did not provide a mobile token"), "{error}");
     }
 
     #[test]
