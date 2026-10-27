@@ -1,5 +1,6 @@
 //! Native screenshots of the real UI with isolated, synthetic state.
 //! cargo run --example ui-preview -- /tmp/opencode/student-mcp-screens
+//! Add --landscape for fixed-size, wide documentation captures.
 //! No HTTP listener, saved credentials, or real public tunnels are used.
 #![allow(dead_code)]
 
@@ -226,13 +227,22 @@ mod gui {
         }
     }
 
-    pub fn screenshots(directory: std::path::PathBuf) {
+    pub fn screenshots(directory: std::path::PathBuf, landscape: bool) {
         std::fs::create_dir_all(&directory).unwrap();
         let mut options = native_options();
         options.viewport = options
             .viewport
             .with_title("student-mcp · UI preview")
             .with_app_id("student-mcp-preview");
+        if landscape {
+            let size = [1280.0, 720.0];
+            options.viewport = options
+                .viewport
+                .with_inner_size(size)
+                .with_min_inner_size(size)
+                .with_max_inner_size(size)
+                .with_resizable(false);
+        }
         eframe::run_native(
             "student-mcp-preview",
             options,
@@ -607,5 +617,6 @@ fn main() {
     let directory = std::env::args_os()
         .nth(1)
         .expect("Pass an output directory for screenshots");
-    gui::screenshots(directory.into());
+    let landscape = std::env::args().skip(2).any(|arg| arg == "--landscape");
+    gui::screenshots(directory.into(), landscape);
 }
