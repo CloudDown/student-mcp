@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Native desktop installers; portable ZIPs remain a separate release artifact."""
+"""Build one universal desktop installer per OS: student-mcp-setup.exe / student-mcp.dmg."""
 import argparse
 import hashlib
 import os
@@ -11,7 +11,6 @@ import tempfile
 import tomllib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-LABELS = ("windows-x64", "windows-arm64", "macos-x64", "macos-arm64")
 
 
 def checksum(artifact):
@@ -19,6 +18,15 @@ def checksum(artifact):
     artifact.with_name(artifact.name + ".sha256").write_text(
         f"{digest}  {artifact.name}\n", encoding="utf-8"
     )
+
+
+def lipo(output, *inputs):
+    """Combine x64 and arm64 slices; the result runs on both."""
+    subprocess.run(
+        ["lipo", "-create", *(str(source) for source in inputs), "-output", str(output)],
+        check=True,
+    )
+    return output
 
 
 def macos_bundle(directory, binary, launcher, version):
@@ -46,10 +54,16 @@ def macos_bundle(directory, binary, launcher, version):
 
 
 def package_macos(args, version, output):
-    artifact = output / f"student-mcp-{args.label}.dmg"
+    artifact = output / "student-mcp.dmg"
     with tempfile.TemporaryDirectory(prefix="student-mcp-desktop-") as temporary:
         directory = pathlib.Path(temporary)
-        payload = macos_bundle(directory, args.binary, args.launcher, version)
+        merged = directory / "universal"
+        merged.mkdir()
+        binary = lipo(merged / "student-mcp", args.x64_binary, args.arm64_binary)
+        launcher = lipo(
+            merged / "student-mcp-desktop", args.x64_launcher, args.arm64_launcher
+        )
+        payload = macos_bundle(directory, binary, launcher, version)
         image_root = directory / "image"
         image_root.mkdir()
         installer = image_root / "Install student-mcp.app"
@@ -89,36 +103,40 @@ def package_macos(args, version, output):
 
 
 def package_windows(args, version, output):
-    compiler = args.iscc or str(pathlib.Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "Inno Setup 6/ISCC.exe")
-    architecture = "arm64" if args.label.endswith("arm64") else "x64compatible"
+    compiler = args.iscc or str(
+        pathlib.Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)"))
+        / "Inno Setup 6/ISCC.exe"
+    )
     subprocess.run([
         compiler,
-        f"/DAppVersion={version}", f"/DArchitecture={architecture}",
-        f"/DLabel={args.label}", f"/DBinary={args.binary}",
-        f"/DLauncher={args.launcher}", f"/DOutputDir={output}",
+        f"/DAppVersion={version}", f"/DX64Binary={args.x64_binary}",
+        f"/DX64Launcher={args.x64_launcher}", f"/DArm64Binary={args.arm64_binary}",
+        f"/DArm64Launcher={args.arm64_launcher}", f"/DOutputDir={output}",
         str(ROOT / "packaging/windows.iss"),
     ], check=True)
-    return output / f"student-mcp-{args.label}-setup.exe"
+    return output / "student-mcp-setup.exe"
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--label", required=True, choices=LABELS)
-    parser.add_argument("--binary", required=True, type=pathlib.Path)
-    parser.add_argument("--launcher", required=True, type=pathlib.Path)
+    parser.add_argument("platform", choices=("windows", "macos"))
+    for architecture in ("x64", "arm64"):
+        parser.add_argument(f"--{architecture}-binary", required=True, type=pathlib.Path)
+        parser.add_argument(f"--{architecture}-launcher", required=True, type=pathlib.Path)
     parser.add_argument("--output", type=pathlib.Path, default=pathlib.Path("release"))
     parser.add_argument("--iscc", help="Path to the Inno Setup 6 compiler (Windows only)")
     args = parser.parse_args()
-    for name in ("binary", "launcher"):
-        path = getattr(args, name).resolve()
-        if not path.is_file():
-            parser.error(f"Missing {name}: {path}")
-        setattr(args, name, path)
+    for architecture in ("x64", "arm64"):
+        for kind in ("binary", "launcher"):
+            path = getattr(args, f"{architecture}_{kind}").resolve()
+            if not path.is_file():
+                parser.error(f"Missing {architecture} {kind}: {path}")
+            setattr(args, f"{architecture}_{kind}", path)
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     with (ROOT / "Cargo.toml").open("rb") as source:
         version = tomllib.load(source)["package"]["version"]
-    package = package_windows if args.label.startswith("windows-") else package_macos
+    package = package_windows if args.platform == "windows" else package_macos
     checksum(package(args, version, output))
 
 

@@ -35,6 +35,8 @@ jobs:
             target: x86_64-apple-darwin
             label: macos-x64
     runs-on: ${{ matrix.runner }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -52,23 +54,61 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
-            libfontconfig1-dev libgtk2.0-dev 2>/dev/null || true
-      - run: cargo test --release --locked
+            libfontconfig1-dev
+      - run: cargo test --release --locked --target ${{ matrix.target }}
       - run: python -m unittest discover -s scripts -p 'test_*.py'
       - run: cargo build --release --locked --target ${{ matrix.target }}
-      - name: Smoke the MCP over stdio (linux-x64 only)
-        if: matrix.label == 'linux-x64'
+      - name: Smoke the MCP over stdio (both Linux architectures)
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           printf '%s\n%s\n' \
             '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}' \
             '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
-            | target/x86_64-unknown-linux-gnu/release/student-mcp | grep -q student_status
-      - name: Package ZIP and checksum
+            | target/${{ matrix.target }}/release/student-mcp | grep -q student_status
+      - name: Stage release payload
         shell: bash
-        run: python scripts/archive-release.py --label ${{ matrix.label }} --binary target/${{ matrix.target }}/release/student-mcp${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: |
+          mkdir -p release
+          binary="target/${{ matrix.target }}/release/student-mcp"
+          launcher="target/${{ matrix.target }}/release/student-mcp-desktop"
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            python scripts/stage-release.py --binary "$binary" --name "student-mcp-${{ matrix.label }}"
+          else
+            ext=""
+            if [ "${{ runner.os }}" = "Windows" ]; then ext=".exe"; fi
+            cp "$binary$ext" "release/student-mcp-${{ matrix.label }}$ext"
+            cp "$launcher$ext" "release/student-mcp-desktop-${{ matrix.label }}$ext"
+          fi
+      - name: Upload final Linux asset
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.label }}
+          path: release/*
+          if-no-files-found: error
+      - name: Upload architecture payload (Windows/macOS)
+        if: runner.os != 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: payload-${{ matrix.label }}
+          path: release/*
+          if-no-files-found: error
+
+  package-windows:
+    needs: build
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: payload-windows-*
+          path: payload
+          merge-multiple: true
       - name: Install Inno Setup (pinned and checksum-verified)
-        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $installer = Join-Path $env:RUNNER_TEMP 'innosetup.exe'
@@ -78,24 +118,107 @@ jobs:
           }
           $process = Start-Process $installer -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-' -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Inno Setup installation failed: $($process.ExitCode)" }
-      - name: Package native desktop installer and checksum
-        if: runner.os != 'Linux'
+      - name: Build one universal Windows setup.exe
         shell: bash
         run: |
-          python scripts/package-desktop.py --label ${{ matrix.label }} \
-            --binary target/${{ matrix.target }}/release/student-mcp${{ runner.os == 'Windows' && '.exe' || '' }} \
-            --launcher target/${{ matrix.target }}/release/student-mcp-desktop${{ runner.os == 'Windows' && '.exe' || '' }}
-      - name: Smoke Windows install and uninstall (no GUI)
+          python scripts/package-desktop.py windows \
+            --x64-binary payload/student-mcp-windows-x64.exe \
+            --x64-launcher payload/student-mcp-desktop-windows-x64.exe \
+            --arm64-binary payload/student-mcp-windows-arm64.exe \
+            --arm64-launcher payload/student-mcp-desktop-windows-arm64.exe
+      - name: Check no Visual C++ runtime installation is required
+        shell: pwsh
+        run: |
+          $reader = 'C:\Program Files\LLVM\bin\llvm-readobj.exe'
+          foreach ($binary in Get-ChildItem payload/*.exe) {
+            $imports = & $reader --coff-imports $binary.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Cannot inspect $($binary.Name)" }
+            if ($imports -match '(?i)Name: (VCRUNTIME|MSVCP|CONCRT).*\.dll') {
+              throw "External Visual C++ runtime required by $($binary.Name)"
+            }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows
+          path: release/*
+          if-no-files-found: error
+
+  package-macos:
+    needs: build
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: payload-macos-*
+          path: payload
+          merge-multiple: true
+      - name: Build one universal student-mcp.dmg
+        run: |
+          python scripts/package-desktop.py macos \
+            --x64-binary payload/student-mcp-macos-x64 \
+            --x64-launcher payload/student-mcp-desktop-macos-x64 \
+            --arm64-binary payload/student-mcp-macos-arm64 \
+            --arm64-launcher payload/student-mcp-desktop-macos-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-macos
+          path: release/*
+          if-no-files-found: error
+
+  verify-native:
+    needs: [package-windows, package-macos]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2022
+            artifact: desktop-windows
+            label: windows-x64
+          - runner: windows-11-arm
+            artifact: desktop-windows
+            label: windows-arm64
+          - runner: macos-15
+            artifact: desktop-macos
+            label: macos-arm64
+          - runner: macos-15-intel
+            artifact: desktop-macos
+            label: macos-x64
+    name: Verify installation (${{ matrix.label }})
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: release
+      - name: Smoke Windows install, upgrade and uninstall (no GUI)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $destination = Join-Path $env:RUNNER_TEMP 'student-mcp smoke'
-          $setup = (Resolve-Path 'release/student-mcp-${{ matrix.label }}-setup.exe').Path
-          $process = Start-Process $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$destination`"" -Wait -PassThru
-          if ($process.ExitCode -ne 0) { throw "Installation failed: $($process.ExitCode)" }
-          if (-not (Test-Path "$destination/student-mcp-desktop.exe")) { throw 'Desktop launcher missing' }
-          & "$destination/student-mcp.exe" --version
-          if ($LASTEXITCODE -ne 0) { throw 'Installed CLI failed' }
+          $setup = (Resolve-Path 'release/student-mcp-setup.exe').Path
+          foreach ($pass in @('install', 'upgrade')) {
+            $process = Start-Process $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$destination`"" -Wait -PassThru
+            if ($process.ExitCode -ne 0) { throw "Installation failed: $($process.ExitCode)" }
+            $files = @(Get-ChildItem $destination -File | Select-Object -ExpandProperty Name)
+            if (@($files | Where-Object { $_ -notin @('student-mcp.exe', 'student-mcp-desktop.exe', 'unins000.exe', 'unins000.dat') }).Count -gt 0) {
+              throw "Unexpected installed files: $files"
+            }
+            if (-not (Test-Path "$destination/student-mcp-desktop.exe")) { throw 'Desktop launcher missing' }
+            $expectedMachine = if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -eq 'Arm64') { 0xAA64 } else { 0x8664 }
+            foreach ($name in @('student-mcp.exe', 'student-mcp-desktop.exe')) {
+              $bytes = [System.IO.File]::ReadAllBytes((Join-Path $destination $name))
+              $header = [System.BitConverter]::ToInt32($bytes, 0x3c)
+              if ([System.BitConverter]::ToUInt16($bytes, $header + 4) -ne $expectedMachine) {
+                throw "Wrong architecture installed: $name"
+              }
+            }
+            & "$destination/student-mcp.exe" --version
+            if ($LASTEXITCODE -ne 0) { throw 'Installed CLI failed' }
+          }
           $process = Start-Process "$destination/unins000.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Uninstall failed: $($process.ExitCode)" }
           if (Test-Path "$destination/student-mcp.exe") { throw 'Uninstall left the app behind' }
@@ -103,36 +226,43 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          image="release/student-mcp-${{ matrix.label }}.dmg"
+          image="release/student-mcp.dmg"
           mount="$RUNNER_TEMP/student-mcp-volume"
           hdiutil verify "$image"
           hdiutil attach "$image" -mountpoint "$mount" -nobrowse -readonly
           trap 'hdiutil detach "$mount"' EXIT
           installer="$mount/Install student-mcp.app"
+          payload="$installer/Contents/Resources/student-mcp.app/Contents/MacOS"
           codesign --verify --deep --strict "$installer"
-          "$installer/Contents/Resources/student-mcp.app/Contents/MacOS/student-mcp" --version
+          lipo -verify_arch x86_64 arm64 "$installer/Contents/MacOS/applet"
+          lipo -verify_arch x86_64 arm64 "$payload/student-mcp"
+          lipo -verify_arch x86_64 arm64 "$payload/student-mcp-desktop"
+          for executable in "$payload/student-mcp" "$payload/student-mcp-desktop"; do
+            # Every shared-library dependency must be provided by macOS itself.
+            otool -L "$executable" | awk '/compatibility version/ { print $1 }' > "$RUNNER_TEMP/student-mcp-libraries"
+            if grep -Ev '^(/System/Library/|/usr/lib/)' "$RUNNER_TEMP/student-mcp-libraries"; then
+              echo 'Unexpected non-system macOS dependency' >&2
+              exit 1
+            fi
+          done
           test ! -e /Applications/student-mcp.app
           for pass in install upgrade; do
-            /bin/bash "$installer/Contents/Resources/install-macos.sh" "$installer/Contents/Resources/student-mcp.app"
+            /bin/bash "$installer/Contents/Resources/install-macos.sh" \
+              "$installer/Contents/Resources/student-mcp.app"
             codesign --verify --deep --strict /Applications/student-mcp.app
             /Applications/student-mcp.app/Contents/MacOS/student-mcp --version
           done
-      - uses: actions/upload-artifact@v4
-        with:
-          name: installer-${{ matrix.label }}
-          path: release/*
-          if-no-files-found: error
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [build, package-windows, package-macos, verify-native]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: installer-*
+          pattern: desktop-*
           path: release
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
@@ -140,9 +270,10 @@ jobs:
           generate_release_notes: true
           body: |
             ## Desktop installation
-            - **Windows:** download `student-mcp-windows-<architecture>-setup.exe`, double-click it and keep **Open student-mcp** selected.
-            - **macOS:** download `student-mcp-macos-<architecture>.dmg`, open it and double-click **Install student-mcp**. Confirm **Install and open**.
-            - Choose **arm64** for Apple Silicon / Windows ARM, **x64** for Intel / AMD.
+            - **Windows:** download `student-mcp-setup.exe`, double-click it and keep **Open student-mcp** selected.
+            - **macOS:** download `student-mcp.dmg`, open it and double-click **Install student-mcp**. Confirm **Install and open**.
+            - One file per OS. The same installer works on Intel/AMD and ARM (Apple Silicon / Windows on ARM).
+            - **Linux:** download `student-mcp-linux-x64` or `student-mcp-linux-arm64` (raw binary), or use `install.sh`.
             - These builds are not yet publisher-signed/notarized; Windows/macOS may warn or block them. Do not disable system security protections.
-            - Portable ZIPs and `install.sh` / `install.ps1` remain available for advanced use. SHA-256 files verify download integrity, not publisher identity.
+            - SHA-256 files verify download integrity, not publisher identity.
           files: release/*

@@ -7,13 +7,13 @@
 
 ### Windows
 
-Download the **[setup.exe](https://github.com/CloudDown/student-mcp/releases/latest)** → double-click → install and open.
-Choose **x64** for Intel / AMD, **arm64** for Windows ARM.
+Download **[student-mcp-setup.exe](https://github.com/CloudDown/student-mcp/releases/latest/download/student-mcp-setup.exe)** → double-click → install and open.
+The installer automatically selects Intel / AMD or Windows ARM.
 
 ### macOS
 
-Download the **[.dmg](https://github.com/CloudDown/student-mcp/releases/latest)** → open → double-click **Install student-mcp**.
-Choose **arm64** for Apple Silicon, **x64** for Intel.
+Download **[student-mcp.dmg](https://github.com/CloudDown/student-mcp/releases/latest/download/student-mcp.dmg)** → open → double-click **Install student-mcp**.
+The same download works on Apple Silicon and Intel. No ZIP or architecture to choose.
 
 ### Linux
 

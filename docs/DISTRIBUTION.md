@@ -7,12 +7,18 @@
 
 | Platform | Main download | Installed application |
 | --- | --- | --- |
-| Windows | `student-mcp-windows-{x64,arm64}-setup.exe` | `%LOCALAPPDATA%\student-mcp`, Start menu shortcut and uninstaller |
-| macOS | `student-mcp-macos-{x64,arm64}.dmg` | `/Applications/student-mcp.app` |
-| Linux | `student-mcp-linux-{x64,arm64}.zip` | Via `install.sh` |
+| Windows | `student-mcp-setup.exe` | `%LOCALAPPDATA%\student-mcp`, Start menu shortcut and uninstaller |
+| macOS | `student-mcp.dmg` | `/Applications/student-mcp.app` |
+| Linux | `student-mcp-linux-{x64,arm64}` (raw binary) | Via `install.sh` |
 
-All six portable ZIPs and both terminal scripts remain supported. Each ZIP,
-installer EXE and DMG has a `.sha256` sidecar. This checks integrity only, not
+There are no ZIP downloads. Windows/macOS users choose only their OS, not an
+architecture. Windows includes both payloads and selects the native one at
+installation; macOS uses universal binaries built with `lipo`. Architecture
+payloads are internal CI artifacts, not published release assets.
+
+Both terminal scripts remain supported: PowerShell downloads the same setup EXE,
+and the shell script extracts the CLI from the same DMG on macOS or downloads a
+raw binary on Linux. Each final asset has a `.sha256` sidecar. This checks integrity only, not
 authenticity when both files come from the same compromised source.
 
 The desktop launcher calls the adjacent `student-mcp` binary with `up`. On
@@ -30,24 +36,46 @@ Applications, asking for administrator permission only when needed, then opens
 it as the logged-in user. An existing running copy must be quit first. Copying
 is staged on the Applications volume, with rollback if the final move fails.
 The installer never removes quarantine attributes or disables Gatekeeper.
-No login/startup service is installed on either platform. Scripts still use
-their existing binary-only installation paths.
+No login/startup service is installed on either platform. The shell script keeps
+its existing binary-only installation path; PowerShell uses the native installer.
+The installers contain the application: they do not download and execute a
+remote command, and work without an installation-time network connection.
+
+### Only what the app needs
+
+- **Windows:** installs the native-architecture app, its small GUI launcher,
+  the Start menu shortcut and uninstaller. The C runtime is statically linked;
+  no Visual C++ redistributable is installed. The other architecture stays in
+  the setup file, not in the installed directory.
+- **macOS:** installs only the app bundle. Its two executables are universal;
+  they use system frameworks, not Homebrew libraries. The installer app is not
+  copied into Applications. The build targets macOS 11 or later.
+- **Linux:** installs only the native binary under `~/.student-mcp/bin`, reusing
+  the desktop's graphics libraries. The release reference environment is Ubuntu
+  24.04 (x64/ARM64); other distributions need a compatible glibc and working
+  X11/Wayland/OpenGL stack. This is not a promise of support for all Linux
+  distributions. The script checks that the binary runs before replacing an
+  existing installation and reports loader incompatibilities without changing it.
+
+No installer adds Rust, Python, Node.js, a separate SSH client, a package manager,
+or a background login service. Linux system packages are not silently modified.
 
 ## Local packaging
 
 Requires Python 3.11+, the native host build tools, and Inno Setup on Windows
-or Xcode Command Line Tools (`osacompile`, `codesign`, `hdiutil`) on macOS:
+or Xcode Command Line Tools (`lipo`, `osacompile`, `codesign`, `hdiutil`) on macOS.
+Supply binaries built for both targets (CI builds each on its native runner):
 
 ```bash
-cargo build --release --locked
-python3 scripts/package-desktop.py --label macos-arm64 \
-  --binary target/release/student-mcp \
-  --launcher target/release/student-mcp-desktop
+python3 scripts/package-desktop.py macos \
+  --x64-binary target/x86_64-apple-darwin/release/student-mcp \
+  --x64-launcher target/x86_64-apple-darwin/release/student-mcp-desktop \
+  --arm64-binary target/aarch64-apple-darwin/release/student-mcp \
+  --arm64-launcher target/aarch64-apple-darwin/release/student-mcp-desktop
 ```
 
-On Windows use `python`, `--label windows-x64` (or `windows-arm64`), and `.exe`
-on both binary paths. `--iscc` can override the compiler location. Build on the
-matching architecture or supply binaries for the intended target. Outputs go
+On Windows use `python`, the `windows` subcommand, and matching x64/ARM64 MSVC
+`.exe` paths for all four inputs. `--iscc` can override the compiler location. Outputs go
 to `release/`, never alongside credentials.
 
 ## Signing — still required
@@ -84,9 +112,12 @@ the current workflow does not claim publisher verification.
 ## Validation
 
 Offline: `python3 -m unittest discover -s scripts -p 'test_*.py'`.
-CI additionally compiles the native installers, installs/uninstalls Windows
-silently, and mounts/verifies the DMG, copies/upgrades the app and runs the
-installed CLI on macOS.
+CI additionally compiles the native installers and blocks release until install/
+upgrade checks pass on Windows x64/ARM64 and Intel/Apple Silicon Macs. Windows
+checks the installed PE architecture, allowed files, CLI execution and uninstall;
+macOS verifies universal slices, system-only shared-library dependencies, bundle
+integrity and installed CLI execution. Windows imports are checked for unwanted
+Visual C++ runtime DLL dependencies. Both Linux builds run the MCP stdio smoke.
 These checks do not prove the interactive first-run experience.
 
 Before releasing to students, test downloaded artifacts on clean native

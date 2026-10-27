@@ -6,21 +6,21 @@ A small window plus a local MCP server, with a built-in srv.us tunnel client.
 
 Download from the [latest release](https://github.com/CloudDown/student-mcp/releases/latest):
 
-- **Windows:** double-click `student-mcp-windows-<architecture>-setup.exe`,
+- **Windows:** double-click `student-mcp-setup.exe`,
   install, and leave **Open student-mcp** selected. Reopen from the Start menu;
   uninstall through Windows Settings → Apps.
-- **macOS:** open `student-mcp-macos-<architecture>.dmg`, double-click
+- **macOS:** open `student-mcp.dmg`, double-click
   **Install student-mcp**, then **Install and open**. Reopen from Applications.
   To remove it, quit from its menu-bar icon and move the app to the Trash.
-- **arm64** is for Apple Silicon / Windows ARM; **x64** is for Intel / AMD.
+- One download per desktop OS: Intel/AMD and ARM are handled automatically.
 - Quit any running copy before upgrading. Removing/updating the application
   does not delete saved accounts or tunnel identity files in your home folder.
 
 The installers are not yet publisher-signed/notarized; OS security checks may
 warn or block them. Do not disable those checks. See
 [distribution and signing](DISTRIBUTION.md) for the remaining release work.
-Linux and advanced users can still use `install.sh` / `install.ps1` or the
-portable ZIPs, as described in the [README](../README.md#install).
+Linux and advanced users can still use `install.sh` / `install.ps1`, as described
+in the [README](../README.md#install). No ZIPs are published.
 
 ## 1. What you see when it opens
 

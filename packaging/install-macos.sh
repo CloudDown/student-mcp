@@ -8,6 +8,8 @@ if [ ! -x "$source_app/Contents/MacOS/student-mcp" ] || [ ! -x "$source_app/Cont
   echo 'The installer is missing its application payload. Download the DMG again.' >&2
   exit 1
 fi
+# Check OS/CPU compatibility before moving an existing installation aside.
+"$source_app/Contents/MacOS/student-mcp" --version
 if /usr/bin/pgrep -x student-mcp >/dev/null; then
   echo 'Quit student-mcp from its menu-bar icon, then run the installer again.' >&2
   exit 1
