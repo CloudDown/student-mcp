@@ -1648,21 +1648,6 @@ fn resolve_search_courses(courses: &[Value], query: &str, courseid: Option<i64>)
                     score += 8;
                 }
             }
-            if tokens.iter().any(|token| token == "physique") && short.starts_with("phs") {
-                score += 30;
-            }
-            if tokens.iter().any(|token| token == "chimie") && short.starts_with("che") {
-                score += 30;
-            }
-            if tokens.iter().any(|token| {
-                token == "calcul"
-                    || token == "algebre"
-                    || token == "algèbre"
-                    || token.starts_with("math")
-            }) && short.starts_with("mth")
-            {
-                score += 30;
-            }
             (score > 0).then_some((score, course))
         })
         .collect::<Vec<_>>();
@@ -1680,7 +1665,7 @@ fn leftover_search_tokens(query: &str, courses: &[Value]) -> Vec<String> {
     search_tokens(query)
         .into_iter()
         .filter(|token| {
-            if is_filler_token(token) || is_subject_token(token) {
+            if is_filler_token(token) {
                 return false;
             }
             !courses.iter().any(|course| {
@@ -1947,15 +1932,6 @@ fn is_filler_token(token: &str) -> bool {
             | "course"
             | "moodle"
     )
-}
-
-fn is_subject_token(token: &str) -> bool {
-    token == "physique"
-        || token == "chimie"
-        || token == "calcul"
-        || token == "algebre"
-        || token == "algèbre"
-        || token.starts_with("math")
 }
 
 fn unix_now() -> i64 {
@@ -3541,7 +3517,7 @@ pub(crate) mod tests {
             allow_write: false,
         });
         let found = client
-            .search("Les exos du TD5 de physique 0102", 0, None)
+            .search("PHS0102 TD5", 0, None)
             .unwrap();
         assert_eq!(found["total"], 1);
         assert_eq!(found["results"][0]["title"], "TD Chapitre 5");
