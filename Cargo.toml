@@ -2,7 +2,7 @@
 name = "student-mcp"
 version = "0.3.0"
 edition = "2021"
-description = "Local MCP popup for student services with an automatic Cloudflare Quick Tunnel link."
+description = "Local MCP popup for student services with an automatic stable HTTPS link."
 license = "MIT"
 
 [dependencies]
@@ -11,9 +11,14 @@ getrandom = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ureq = { version = "2", features = ["json", "tls"] }
+cookie_store = { version = "0.21", default-features = false }
 url = "2"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 base64 = "0.22"
+russh = { version = "0.65", default-features = false, features = ["ring"] }
+tokio = { version = "1", features = ["rt", "net", "time", "sync", "macros", "io-util"] }
+sha2 = "0.11"
+data-encoding = "2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ksni = { version = "0.3.7", features = ["blocking"] }

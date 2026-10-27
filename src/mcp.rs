@@ -943,6 +943,7 @@ mod protocol_tests {
             settings.omnivox = (enabled & 2 != 0).then(|| crate::config::OmnivoxSettings {
                 url: Some("http://127.0.0.1:3000".into()),
                 token: Some("test-token".into()),
+                ..Default::default()
             });
             settings.moodle = (enabled & 1 != 0).then(|| MoodleSettings {
                 url: Some("https://moodle.example.org".into()),

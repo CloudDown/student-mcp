@@ -40,11 +40,6 @@ pub fn bind(port: u16) -> Result<TcpListener, std::io::Error> {
 }
 
 /// Accept loop: one thread per connection, keep-alive honoured.
-#[cfg(test)]
-pub fn serve(listener: TcpListener) -> Result<(), String> {
-    serve_controlled(listener, Arc::new(AtomicBool::new(true)))
-}
-
 pub fn serve_controlled(listener: TcpListener, enabled: Arc<AtomicBool>) -> Result<(), String> {
     let sessions = Arc::new(Mutex::new(Sessions::default()));
     let active = Arc::new(AtomicUsize::new(0));

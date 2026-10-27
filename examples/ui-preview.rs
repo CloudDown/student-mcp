@@ -58,6 +58,7 @@ mod gui {
             settings.omnivox = Some(crate::config::OmnivoxSettings {
                 url: Some("http://127.0.0.1:3000".into()),
                 token: Some("demo-omnivox-token".into()),
+                ..Default::default()
             });
         }
         if matches!(scene, "brightspace-connected" | "gallery-connected") {
@@ -99,6 +100,7 @@ mod gui {
                 _ => "moodle",
             },
             draft: Draft::default(),
+            pending_omnivox: None,
             account_choices: Vec::new(),
             busy: scene == "busy",
             notice: None,
@@ -156,7 +158,8 @@ mod gui {
             app.notice = Some(Notice::Err("Moodle refused the connection. Check the credentials, or switch to a mobile token if your school uses SSO or two-factor authentication.".into()));
         }
         if scene == "links-public" || scene == "gallery-public" {
-            app.tunnel.state = TunnelState::Ready("https://demo-student.trycloudflare.com".into());
+            app.tunnel.state =
+                TunnelState::Ready("https://abcdefghijklmnopqrstuvwxyz.srv.us".into());
         }
         app
     }
@@ -338,9 +341,8 @@ mod gui {
                 configure_context(&ctx);
                 let mut app = fixture(&ctx, "gallery-public");
                 app.gateway.token = "a".repeat(64);
-                app.tunnel.state = TunnelState::Ready(
-                    "https://industrial-partition-findings-tables.trycloudflare.com".into(),
-                );
+                app.tunnel.state =
+                    TunnelState::Ready("https://abcdefghijklmnopqrstuvwxyz.srv.us".into());
                 for _ in 0..2 {
                     let mut footer = Rect::NOTHING;
                     let output = ctx.run(
@@ -458,8 +460,7 @@ mod gui {
                                 ..Default::default()
                             },
                             |ctx| {
-                                CentralPanel::default()
-                                    .show(ctx, |ui| app.public_section(ui, ctx));
+                                CentralPanel::default().show(ctx, |ui| app.public_section(ui, ctx));
                             },
                         );
                         switch_center = output.shapes.iter().find_map(|shape| match &shape.shape {
@@ -524,7 +525,7 @@ mod gui {
                         TunnelState::Starting,
                         TunnelState::Stopped,
                         TunnelState::Failed("offline".into()),
-                        TunnelState::Ready("https://demo-student.trycloudflare.com".into()),
+                        TunnelState::Ready("https://abcdefghijklmnopqrstuvwxyz.srv.us".into()),
                     ] {
                         let ctx = Context::default();
                         configure_context(&ctx);

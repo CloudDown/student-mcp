@@ -1,6 +1,6 @@
 # student-mcp guide
 
-A small window plus a local MCP server, with a bundled Cloudflare tunnel component.
+A small window plus a local MCP server, with a built-in srv.us tunnel client.
 
 ## 1. What you see when it opens
 
@@ -49,11 +49,18 @@ mode is disabled and closing the window quits normally.
 
 **Omnivox (Léa / Mio).** Enter the college Omnivox address
 (`https://cegepxxx.omnivox.ca`), your student number and password. The app
-posts the official login form, keeps only the session cookies, and reads
-courses, documents, assignments, grades, schedule and calendar from the
-mobile JSON endpoints. The password is never stored. If Omnivox then asks for
-two-factor authentication, complete it in the portal and retry, or use
-**Advanced options** with a local
+signs in through the **mobile** Omnivox page (the one the official app uses),
+keeps only the session cookies, and reads courses, documents, assignments,
+grades, schedule and calendar from the mobile JSON endpoints. If Omnivox asks
+for **identity verification**, the app shows a **Security code (6 digits)**
+field. Enter the code received by email and click **Verify and connect**.
+**Send a new code** requests another code in the same session; use the most
+recent one. An invalid code can be retried, while an expired session requires
+signing in again. **Cancel verification** discards the pending session. Neither
+the password nor the code is saved, and existing accounts are replaced only
+after the new connection is verified. The app also saves a random mobile device
+id so the same mobile session can be reopened after a restart.
+**Advanced options** also supports a local
 [omnivox-mcp](https://github.com/Beat-YT/omnivox-mcp) gateway (`http://127.0.0.1:3000`
 and `accessKey.txt`).
 
@@ -84,11 +91,17 @@ Only implemented connectors are displayed, without empty slots.
 
 - **Moodle** also covers installations such as StudiUM; it is not a separate
   platform. Each institution must enable the required mobile/Web Service access.
-- **Omnivox (including Léa/Mio)** signs in with the student's college login and
-  reads the `/Mobl/` JSON endpoints. Two-factor and some college portals may
-  still need the local [omnivox-mcp](https://github.com/Beat-YT/omnivox-mcp)
-  gateway under advanced options. The connector is tested with local HTTP
-  fixtures, not a live college account.
+- **Omnivox (including Léa/Mio)** signs in with the student's college login
+  through Omnivox's mobile login page and reads the `/Mobl/` JSON endpoints.
+  A web session from `/Login/Account/Login` is rejected by `/Mobl/`, so the
+  connector keeps the same mobile identity (user agent, device id, AuthHash)
+  for the whole session. The email-code verification API is supported directly.
+  Other portal variants may need the local
+  [omnivox-mcp](https://github.com/Beat-YT/omnivox-mcp) gateway under advanced
+  options. Login and email-code form loading are checked against the live
+  Maisonneuve MFA API; code validation, mobile-session establishment and
+  persistence are covered by local HTTP fixtures. End-to-end verification with a
+  real email code still depends on the college account.
 - **Brightspace** signs in with the student's school login and reads the Valence
   API with session cookies (OAuth tokens still work). SSO schools need cookies
   pasted from the browser. Tested with local HTTP fixtures; it has not been
@@ -114,33 +127,45 @@ References: [D2L API authentication](https://docs.valence.desire2learn.com/basic
 
 ## 4. Automatic public link for web AI
 
-1. Install the app; the installer includes a checksum-verified `cloudflared`.
-2. Connect a service. A free Cloudflare Quick Tunnel starts automatically:
-   no additional account, domain, sudo command or network setup.
-3. Copy the **complete** `https://random-name.trycloudflare.com/mcp/<token>` link
+1. Install the app; its single binary includes the SSH tunnel client.
+2. Connect a service. A free, stable srv.us tunnel starts automatically:
+   no additional account, domain, SSH installation or network setup.
+3. Copy the **complete** `https://<stable-id>.srv.us/mcp/<token>` link
    into your AI's **MCP connector settings**, not a chat message. In Claude,
    choose "Continue anyway" if it warns about OAuth.
 4. Keep the app running and the computer awake and online; you can close its
-   window into the tray. To stop this public tunnel, use **Remove the public
-   link**, disconnect the last service, or **Quit student-mcp** in the tray menu.
+   window into the tray. To stop this public tunnel, turn off **Public link** in
+   link settings, or use **Quit student-mcp** in the tray menu.
    Existing Tailscale configuration and other apps are left untouched.
 
-The tunnel exposes only the app's current loopback HTTP port. The app owns its
-child process, reports startup failures and unexpected exits, and lets you retry
-from link settings. Cloudflare can see the proxied exchanges; no project-hosted
+The tunnel exposes only the app's current loopback HTTP port. The app reconnects
+automatically after a network interruption and stops all tunnel tasks on quit or
+when public access is disabled. **srv.us terminates HTTPS: its operator can
+technically read/alter exchanges and see/reuse the secret link.** No project-hosted
 relay is used. Anyone holding the complete secret link can use your enabled
-tools, so do not share it or include it in screenshots.
+tools, so do not share it or include it in screenshots. Prefer local stdio if
+you do not accept this third-party trust.
 
-**The hostname changes whenever a new tunnel is created.** Replace the saved
-connector URL after restarting the app/tunnel. Quick Tunnels are for testing and
-development, with no uptime guarantee, a 200 in-flight request limit, and no SSE.
-The current MCP server answers with JSON rather than SSE. Compatibility with
-your actual AI client and its connector/subscription rules must still be checked.
+**The hostname stays the same across app restarts and port changes.** The app
+generates a dedicated SSH key in `~/.student-mcp.srvus-key`; back it up privately.
+Deleting that file means a new hostname. The key is not your school login or MCP
+token. `~/.student-mcp.srvus-host` records the relay's host key on first use;
+unexpected changes stop public access instead of reconnecting to a different key.
+These paths follow any custom configuration file location. A corrupted identity
+is left unchanged and reported rather than silently resetting your address.
 
-See [Cloudflare Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
+Replace an old Cloudflare connector URL **once** with this new srv.us URL.
+There is no automatic fallback to temporary hostnames. srv.us is best-effort:
+there is no uptime or two-million-user capacity guarantee. Networks blocking
+outbound TCP port 22 prevent the tunnel from connecting. The current MCP server
+answers with JSON rather than SSE. Compatibility with your actual AI client and
+its connector/subscription rules must still be checked.
+
+See [srv.us](https://docs.srv.us/) and [security and validation](SRVUS-EXPERIMENT.md).
 
 The token protects the URL: without it you get a 401. You can rotate the token
-by deleting `gateway.token` in `~/.student-mcp.json`.
+by quitting the app, deleting `gateway.token` in `~/.student-mcp.json`, then
+restarting. Copy the new full connector URL; its hostname stays the same.
 
 ## 5. Commands
 
@@ -167,8 +192,9 @@ student-mcp version
 - **Brightspace asks for SSO cookies**: the school sends you through Microsoft
   or another identity provider. Sign in in your browser, copy `d2lSessionVal`
   and `d2lSecureSessionVal`, and paste them under **Advanced options**.
-- **Omnivox asks for two-factor**: complete it in the portal, then retry, or
-  use the Omnivox MCP gateway under **Advanced options**.
+- **Omnivox asks for identity verification**: enter the emailed 6-digit code in
+  the app. Use **Send a new code** if needed. If the session expires, sign in
+  again to start a new verification.
 - **The assistant cannot open a Moodle PDF / stops mid-chapter**: Moodle file
   URLs need the web service token, which is never given to the model. Use
   `moodle_file` with the `fileurl` from `moodle_course_content`; do not fetch
@@ -200,10 +226,14 @@ student-mcp version
   the **complete** `/mcp/<token>` link, and choose **Continue anyway**. If your
   Claude version offers request headers, use `Authorization: Bearer <token>`.
 - **No public link**: connect a service first, then open link settings for the
-  error and retry. If `cloudflared` is missing, reinstall from a release that
-  bundles it. For source builds, follow the sidecar instructions in the README.
+  error. Network failures retry automatically. Check access to `srv.us` on TCP
+  port 22. Identity file errors require checking folder permissions/restoring
+  your backup; they do not silently regenerate an existing key.
+- **srv.us server identity changed**: public access stops. Verify the change
+  with the provider before touching `~/.student-mcp.srvus-host`; do not simply
+  delete it to bypass the warning.
 - **Claude reports HTTP 502 or an expired link**: keep the app open. A freshly
-  generated hostname may take about a minute to resolve: first wait and retry
-  the same link. If the tunnel stopped, retry it in link settings, then replace
-  the connector URL with the new one. Firewalls or Cloudflare outages can also
-  block it.
+  generated hostname may take time to resolve: first wait and retry the same
+  link. The app reconnects automatically, keeping that address. Firewalls or
+  srv.us outages can also block it. A stable URL does not make an offline app
+  reachable.

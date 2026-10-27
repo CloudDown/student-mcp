@@ -73,7 +73,13 @@ pub fn html_form_action(html: &str) -> Option<String> {
     let start = lower.find("<form")?;
     let rest = &html[start..];
     let end = rest.find('>')?;
-    html_attr(&rest[..=end], "action")
+    html_attr(&rest[..=end], "action").map(|action| {
+        // Attribute values are HTML, not URL, encoded in the source.
+        action
+            .replace("&amp;", "&")
+            .replace("&#38;", "&")
+            .replace("&#x26;", "&")
+    })
 }
 
 pub fn html_form_inputs(html: &str) -> Vec<(String, String)> {
@@ -100,7 +106,7 @@ pub fn html_has_password_field(html: &str) -> bool {
         .any(|(name, _)| name.eq_ignore_ascii_case("password") || name.to_ascii_lowercase().contains("password"))
 }
 
-fn html_attr(tag: &str, key: &str) -> Option<String> {
+pub(crate) fn html_attr(tag: &str, key: &str) -> Option<String> {
     let lower = tag.to_ascii_lowercase();
     let needle = format!("{key}=");
     let pos = lower.find(&needle)?;

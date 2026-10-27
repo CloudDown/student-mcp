@@ -5,9 +5,9 @@ services to AI assistants: **Moodle**, **Omnivox**, and **Brightspace /
 myCourses**, using the same school login you already have.
 
 - 🪟 **Minimal popup window**: click a service, type your credentials, that's it (no web UI).
-- 🔌 **MCP server**: stdio for local clients, automatic HTTPS `/mcp/<token>` link for web AI connectors through Cloudflare Quick Tunnels.
+- 🔌 **MCP server**: stdio for local clients, stable HTTPS `/mcp/<token>` link for web AI connectors through srv.us, with automatic reconnect.
 - 🔐 Status quo: the Moodle token stays out of the URL, and passwords are never written to disk.
-- 📦 Install: one command, app + verified `cloudflared` component bundled; GitHub Actions builds 6 platforms. No Cloudflare account, domain, Tailscale or network configuration needed.
+- 📦 Install: one command, one binary with an embedded SSH client; GitHub Actions builds 6 platforms. No extra account, SSH installation, domain or network configuration needed.
 
 ## Install
 
@@ -35,8 +35,8 @@ accounts are distinguished by their site address and an automatic identifier.
 Existing single-account configurations continue to work.
 
 The same MCP link exposes all connected accounts. Adding or removing an account
-does not change that link or its token (restarting the Quick Tunnel still changes
-its hostname). `student_status` lists the account IDs; service tools accept
+does not change that link or its token. Restarting the app or changing its local
+port keeps the same hostname. `student_status` lists the account IDs; service tools accept
 `account_id`, required when that platform has multiple accounts. With just one
 account on a platform, existing calls work without specifying an ID.
 
@@ -64,10 +64,13 @@ If the Linux tray service disappears, a hidden window is restored.
 This does not start the app automatically when logging into the computer.
 
 Omnivox is read-only: enter your college Omnivox address, student number and
-password. Only the session is saved, never the password. If the college asks for
-two-factor authentication, complete it once in the portal, then connect again.
-A local [omnivox-mcp](https://github.com/Beat-YT/omnivox-mcp) gateway remains
-available under **Advanced options**.
+password. The app signs in through Omnivox's mobile login, so the saved session
+works with the same `/Mobl/` endpoints as the official mobile app. If Omnivox
+requests identity verification, enter the **6-digit code received by email** in
+the app, then click **Verify and connect**. You can request a new code without
+restarting the login. Only the verified session is saved, never the password or
+security code. A local [omnivox-mcp](https://github.com/Beat-YT/omnivox-mcp)
+gateway remains available under **Advanced options**.
 
 Brightspace / myCourses (McGill and other D2L schools) is read-only: enter the
 site address and your normal school username and password. Only the session is
@@ -92,7 +95,7 @@ window and the tools change without restarting the assistant.
 ### Web AI (MCP connector, e.g. Claude)
 
 1. Install the app and connect a service. Wait for the public link to appear.
-2. Copy the complete `https://random-name.trycloudflare.com/mcp/<token>` link.
+2. Copy the complete `https://<stable-id>.srv.us/mcp/<token>` link.
 3. Claude → ⚙️ Settings → Connectors → *Add a custom connector* → paste the **complete** URL.
    This server authenticates with that secret link, not OAuth: choose
    **“Continue anyway”** if Claude mentions OAuth.
@@ -107,16 +110,31 @@ the secret link.
 
 The token in the URL is the only secret; without it a request gets a 401.
 Keep the link private: anyone holding it can use your enabled tools. Traffic
-passes through Cloudflare, not a project-hosted relay. Closing the app or using
-**“Remove the public link”** terminates its tunnel, without changing any other
-app's tunnels or existing Tailscale routes. Disconnecting the last service also
-stops the tunnel. The app must remain running (its window can be hidden in the
+passes through srv.us, not a project-hosted relay. **srv.us terminates HTTPS and
+can technically read/alter exchanges and see the secret link.** Use local stdio
+instead if you do not accept that trust. Quitting the app or switching off
+**Public link** terminates its tunnel, without changing any other
+app's tunnels or existing Tailscale routes. The app must remain running (its window can be hidden in the
 tray) and the computer awake and online.
 
-**Temporary, best-effort link:** every new tunnel gets a different hostname;
-update the connector in your AI after restarting it. Quick Tunnels are intended
-for testing/development, have no uptime guarantee, support at most 200 concurrent
-requests, and do not support SSE. Our MCP server uses JSON responses, not SSE.
+**Stable, best-effort link:** a dedicated Ed25519 key is generated automatically
+and saved beside the configuration as `~/.student-mcp.srvus-key` (owner-only on
+Unix). Back it up privately to keep your hostname after reinstalling or moving
+computers. Never share it. The separate `~/.student-mcp.srvus-host` file pins the
+relay's SSH identity on first use; changes are refused, not silently accepted.
+Configuration overrides place these files beside the overridden config instead.
+The app reconnects automatically with bounded backoff after network failures.
+Stopping public access or quitting stops all tunnel tasks. Losing the saved key
+changes your URL; a corrupt key is left
+untouched and reported as an error. Changing the MCP token does not change the
+hostname, but requires updating the token part in your AI connector.
+
+**Migrating from Cloudflare:** replace your old `trycloudflare.com` connector URL
+once with the new srv.us link. Saved school accounts and the MCP token are kept.
+There is no automatic fallback to changing hostnames or to another provider.
+
+srv.us has no uptime or large-scale capacity guarantee. Outbound SSH port 22 must
+be allowed by your network. Our MCP server uses JSON responses, not SSE.
 Actual AI-client compatibility still needs validation in that client; not every
 AI or subscription supports custom MCP connectors.
 
@@ -151,34 +169,24 @@ cargo run              # MCP stdio
 cargo build --release  # small binary (opt-level=z, lto, strip)
 ```
 
-For local development, fetch the sidecar beside the executable before `cargo run -- up`:
-
-```bash
-python3 scripts/fetch-cloudflared.py --label linux-x64 --output target/debug
-```
-
-Use your platform label (`linux-arm64`, `macos-x64`, `macos-arm64`,
-`windows-x64`, `windows-arm64`) as appropriate. An explicit
-`STUDENT_MCP_CLOUDFLARED` path can override the sidecar for development.
-Upstream has no Windows ARM64 binary; that package uses the x64 sidecar via
-Windows 11 ARM's x64 emulation. Native Mac/Windows validation is still required.
+The srv.us SSH client is compiled into the app, including Windows ARM64; there
+is no sidecar to download or system SSH command to install. Native Mac/Windows
+validation is still required.
 
 Offline packaging tests: `python3 -m unittest discover -s scripts -p 'test_*.py'`.
 To test the real public MCP endpoint (isolated configuration, no student accounts):
 
 ```bash
-STUDENT_MCP_CLOUDFLARED="$PWD/target/debug/cloudflared" \
-  cargo test --locked public_mcp_smoke -- --ignored --nocapture
+cargo test --locked public_mcp_smoke -- --ignored --nocapture
 ```
 
-Release packaging pins the sidecar version and upstream SHA-256 digests in
-`scripts/fetch-cloudflared.py`, includes its Apache license, and verifies the
-sidecar can run on each CI platform. Update those pins when updating cloudflared.
+Release ZIPs contain the single app binary and have a SHA-256 checksum. Rust
+dependencies are locked in `Cargo.lock`. See [srv.us security and validation](docs/SRVUS-EXPERIMENT.md).
 
 Layout: `src/main.rs` (CLI), `gui.rs` (egui popup), `mcp.rs` (JSON-RPC + tools),
 `http.rs` (std-only MCP HTTP server), `stdio.rs`, `moodle.rs` / `omnivox.rs` / `brightspace.rs`
 (clients), `catalog.rs` (embedded catalogue),
-`tunnel.rs` (managed Quick Tunnel child process), `config.rs` (`~/.student-mcp.json`).
+`tunnel.rs` / `tunnel/` (managed srv.us connection and persistent identity), `config.rs` (`~/.student-mcp.json`).
 `background.rs` owns the tray icon and hide/reopen/quit lifecycle. Linux uses
 StatusNotifier over D-Bus without GTK; Windows/macOS use native tray menus.
 

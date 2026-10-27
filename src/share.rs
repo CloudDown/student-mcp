@@ -1,7 +1,7 @@
 //! Shareable file links for MCP tool results.
 //!
 //! Browser AIs often ignore a base64 PDF blob returned by a tool. The same file
-//! served over the local HTTP endpoint (or its Cloudflare tunnel) can be opened,
+//! served over the local HTTP endpoint (or its srv.us tunnel) can be opened,
 //! downloaded, or read as HTML — the closest thing to a drag-and-drop upload.
 //!
 //! Links are capability URLs: the 128-bit id is the secret, and artifacts expire

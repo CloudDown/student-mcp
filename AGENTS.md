@@ -43,6 +43,41 @@ Vérifier : `curl` sans UA Chrome → 202 vide ; avec `Mozilla/5.0 … Chrome/12
   fail, enchaîner le fallback GET. Ne pas toaster
   « Moodle did not return a token. » (parse JSON).
 
+## Cookies Omnivox et validation par courriel
+
+Le parcours MFA supprime le cookie temporaire `omt` avec une valeur **non vide**
+et `Expires=Thu, 01-Jan-1970 05:00:00 GMT`. Il ne faut pas le renvoyer : cela
+provoque un **401 immédiat** sur `/api/mfa/login/validate-method/{id}`, même
+avec des identifiants acceptés et une session neuve.
+
+Le login Omnivox utilise `cookie_store::CookieStore` pour respecter les
+expirations, suppressions, domaines et chemins. Ne pas le remplacer par une
+simple map nom/valeur. Un refus HTTP 401/403 ne prouve pas une expiration ;
+réserver ce message au résultat explicite `SessionExpired` de l'API.
+
+## Session mobile Omnivox (`/Mobl/`)
+
+`/Mobl/` **refuse une session web** obtenue sur `/Login/Account/Login` : elle
+répond `302 /Mobl/Login/AuthNeeded`. C’est l’erreur
+« Omnivox redirected the request ». Le connecteur doit donc se comporter comme
+l’app mobile officielle de bout en bout :
+
+- ouvrir `/intr/Module/Identification/Login/Mobile/LoginMobile.aspx?typeUtilisateur=Etudiant`
+  et poster ce formulaire (et non le formulaire web Identifiant/Password) ;
+- envoyer l’User-Agent `OVX InfoDevice=… AppVer=3.8.9 IdAppareil=<40 hex> Code=<AuthHash>`
+  et l’en-tête `X-User-Agent-Ovx` sur le login, le MFA et chaque appel `/Mobl/` ;
+- poser les cookies `ForceWeb=false` et `IndicateurNouveauLogin=true` avant le
+  POST de login ;
+- après le code MFA, suivre `reply.url` (le token peut être dans le fragment
+  `#…Token=…`, que le serveur ne voit pas), puis appeler
+  `/Mobl/App/Initialisation` pour obtenir `AuthHash` et prouver que la session
+  mobile est valide ;
+- persister `device_id` et `auth_hash` avec les cookies : le serveur peut lier
+  la session à l’identité mobile. Ne jamais persister mot de passe ni code.
+
+Le cookie `olt` s’écrit avec `Domain=omnivox.ca`, comme le JS MFA officiel,
+pour couvrir un handoff vers un autre sous-domaine.
+
 ## Layout
 
 - `src/gui.rs` — fenêtre

@@ -46,7 +46,7 @@ fn usage() {
 Commands:
   student-mcp (no command)        stdio MCP server for local AI clients
   student-mcp up [--port=8420]    Small configuration window + local MCP
-                                  (automatic public link through Cloudflare Quick Tunnels)
+                                  (automatic stable public link through srv.us)
   student-mcp install             Opens the configuration window
   student-mcp version
 

@@ -457,16 +457,19 @@ impl GalleryLayout {
 
 fn public_waiting_copy(state: &TunnelState, public_on: bool, has_services: bool) -> &'static str {
     if !public_on || matches!(state, TunnelState::Stopped) {
-        return "Public link is off. Turn the switch on to create an HTTPS link through Cloudflare. No account needed.";
+        return "Public link is off. Turn the switch on to restore your stable HTTPS link through srv.us. No account needed.";
     }
     match state {
-        TunnelState::Starting => "Opening a free HTTPS link through Cloudflare.",
-        TunnelState::Failed(_) => "The public link was not created. Turn the switch on to try again.",
+        TunnelState::Starting => "Opening your stable HTTPS link through srv.us.",
+        TunnelState::Reconnecting(_) => "Reconnecting to srv.us. Your saved link stays the same.",
+        TunnelState::Failed(_) => {
+            "The public link was not created. Turn the switch on to try again."
+        }
         TunnelState::Ready(_) => "",
         _ if !has_services => {
             "No service is connected yet. Turn the switch on to create the HTTPS link anyway."
         }
-        _ => "Turn the switch on to create a free HTTPS link through Cloudflare.",
+        _ => "Turn the switch on to create a free, stable HTTPS link through srv.us.",
     }
 }
 
@@ -485,6 +488,7 @@ enum Notice {
 
 enum Message {
     Done(Notice, NextScreen),
+    OmnivoxVerification(Box<crate::omnivox::PendingLogin>, Option<Notice>),
 }
 
 enum NextScreen {
@@ -509,6 +513,9 @@ struct Draft {
     use_token: bool,
     advanced: bool,
     password_visible: bool,
+    verification_prompt: Option<String>,
+    verification_code: String,
+    verification_can_resend: bool,
     /// True only when the user explicitly asks to change an existing connection.
     editing: bool,
 }
@@ -521,6 +528,7 @@ pub struct App {
     bind_error: Option<String>,
     screen: &'static str, // "home" | "moodle" | "omnivox" | "brightspace" | "links"
     draft: Draft,
+    pending_omnivox: Option<Box<crate::omnivox::PendingLogin>>,
     /// Saved accounts for the current service (id, url). Refreshed on open,
     /// not every frame — avoids racing disk I/O while drafting a new account.
     account_choices: Vec<(String, String)>,
@@ -621,6 +629,7 @@ pub fn run(port_override: Option<u16>, first_run: bool) {
                 bind_error,
                 screen: "home",
                 draft: Draft::default(),
+                pending_omnivox: None,
                 account_choices: Vec::new(),
                 busy: false,
                 notice: None,
@@ -1148,6 +1157,7 @@ impl App {
             (
                 match &self.tunnel.state {
                     TunnelState::Starting => "Creating your public link…",
+                    TunnelState::Reconnecting(_) => "Reconnecting your public link…",
                     TunnelState::Failed(_) => "Public link unavailable — click to retry",
                     TunnelState::Stopped => "Public link off — click to enable",
                     _ => "Connect a service to create your link",
@@ -1315,6 +1325,8 @@ impl App {
         self.account_choices = root.account_list(service);
         self.settings = root.for_account(service, id);
         self.draft = Draft::default();
+        self.pending_omnivox = None;
+        self.notice = None;
         self.draft.editing = false;
         self.screen = service;
         match service {
@@ -1416,7 +1428,7 @@ impl App {
     fn public_section(&mut self, ui: &mut Ui, ctx: &egui::Context) {
         let mut enabled = matches!(
             self.tunnel.state,
-            TunnelState::Starting | TunnelState::Ready(_)
+            TunnelState::Starting | TunnelState::Reconnecting(_) | TunnelState::Ready(_)
         );
         // The switch is the way to ask for a link. A missing service must not
         // swallow the click; the local server still has to be up to receive it.
@@ -1438,6 +1450,12 @@ impl App {
                 }
             }
         });
+        ui.label(
+            RichText::new("Stable link via srv.us. This relay can read your AI exchanges and secret link. Keep the link private.")
+                .size(10.5)
+                .color(SUBTLE),
+        );
+        ui.add_space(6.0);
         if let Some(origin) = self.tunnel.origin() {
             let url = mcp_endpoint(origin, &self.gateway.token);
             card(ui, |ui| {
@@ -1462,7 +1480,10 @@ impl App {
             return;
         }
 
-        let starting = self.tunnel.state == TunnelState::Starting;
+        let starting = matches!(
+            self.tunnel.state,
+            TunnelState::Starting | TunnelState::Reconnecting(_)
+        );
         card(ui, |ui| {
             let message = if self.bind_error.is_some() {
                 "The local server is not running, so the public link cannot be created."
@@ -1474,7 +1495,9 @@ impl App {
                 )
             };
             ui.label(RichText::new(message).size(11.5).color(SUBTLE));
-            if let TunnelState::Failed(message) = &self.tunnel.state {
+            if let TunnelState::Failed(message) | TunnelState::Reconnecting(message) =
+                &self.tunnel.state
+            {
                 hint(ui, message, (RED, RED_SOFT));
             }
             if starting {
@@ -1550,7 +1573,10 @@ impl App {
         if !self.local_enabled.load(Ordering::SeqCst) || !self.settings.gateway.public_enabled() {
             if matches!(
                 self.tunnel.state,
-                TunnelState::Starting | TunnelState::Ready(_) | TunnelState::Idle
+                TunnelState::Starting
+                    | TunnelState::Reconnecting(_)
+                    | TunnelState::Ready(_)
+                    | TunnelState::Idle
             ) {
                 self.tunnel.stop();
                 #[cfg(not(test))]
@@ -1569,7 +1595,7 @@ impl App {
         }
         if matches!(
             self.tunnel.state,
-            TunnelState::Starting | TunnelState::Ready(_)
+            TunnelState::Starting | TunnelState::Reconnecting(_) | TunnelState::Ready(_)
         ) {
             ctx.request_repaint_after(std::time::Duration::from_millis(250));
         }
@@ -1636,6 +1662,7 @@ impl App {
             self.account_choices.clear();
             self.notice = None;
             self.draft = Draft::default();
+            self.pending_omnivox = None;
             return true;
         }
         ui.add_space(12.0);
@@ -2003,10 +2030,19 @@ impl App {
     }
 
     fn omnivox_screen(&mut self, ui: &mut Ui, ctx: &egui::Context) {
-        if self.top_bar(ui, "Omnivox", "Léa / Mio · Read only", self.viewing_connected()) {
+        if self.top_bar(
+            ui,
+            "Omnivox",
+            "Léa / Mio · Read only",
+            self.viewing_connected(),
+        ) {
             return;
         }
         self.account_picker(ui, ctx);
+        if self.draft.verification_prompt.is_some() {
+            self.omnivox_verification_screen(ui, ctx);
+            return;
+        }
         if self.viewing_connected() {
             self.connected_view(ui, ctx, "omnivox");
             return;
@@ -2053,11 +2089,7 @@ impl App {
         Self::advanced_row(ui, &mut self.draft.advanced);
         if self.draft.advanced {
             ui.add_space(2.0);
-            Self::toggle(
-                ui,
-                "Use an Omnivox MCP gateway",
-                &mut self.draft.use_token,
-            );
+            Self::toggle(ui, "Use an Omnivox MCP gateway", &mut self.draft.use_token);
         }
         if self.draft.use_token {
             ui.add(
@@ -2096,6 +2128,7 @@ impl App {
             self.spawn(ctx.clone(), move |mut settings| {
                 let result = if draft.use_token {
                     crate::omnivox::activate(&mut settings, &draft.url, &draft.token)
+                        .map(crate::omnivox::LoginOutcome::Connected)
                 } else {
                     crate::omnivox::activate_login(
                         &mut settings,
@@ -2105,10 +2138,100 @@ impl App {
                     )
                 };
                 match result {
-                    Ok(message) => Message::Done(Notice::Ok(message), NextScreen::Home),
+                    Ok(crate::omnivox::LoginOutcome::Connected(message)) => {
+                        Message::Done(Notice::Ok(message), NextScreen::Home)
+                    }
+                    Ok(crate::omnivox::LoginOutcome::VerificationRequired(pending)) => {
+                        Message::OmnivoxVerification(pending, None)
+                    }
                     Err(message) => Message::Done(Notice::Err(message), NextScreen::Stay),
                 }
             });
+        }
+    }
+
+    fn omnivox_verification_screen(&mut self, ui: &mut Ui, ctx: &Context) {
+        ui.label(
+            RichText::new("Identity verification")
+                .size(16.0)
+                .strong()
+                .color(INK),
+        );
+        ui.add_space(8.0);
+        ui.add(
+            egui::Label::new(
+                RichText::new(
+                    self.draft
+                        .verification_prompt
+                        .as_deref()
+                        .unwrap_or_default(),
+                )
+                .size(12.0)
+                .color(SUBTLE),
+            )
+            .wrap(),
+        );
+        ui.add_space(18.0);
+        Self::field(
+            ui,
+            "Security code (6 digits)",
+            &mut self.draft.verification_code,
+            "000000",
+            false,
+        );
+        self.notice_line(ui);
+        self.busy_text(ui);
+        let code = self.draft.verification_code.trim();
+        let ready = !self.busy && code.len() == 6 && code.bytes().all(|byte| byte.is_ascii_digit());
+        let submit = Self::action(
+            ui,
+            if self.busy {
+                "Verifying…"
+            } else {
+                "Verify and connect"
+            },
+            ready,
+        ) || ready && ui.input(|input| input.key_pressed(egui::Key::Enter));
+        if submit {
+            if let Some(mut pending) = self.pending_omnivox.take() {
+                let code = std::mem::take(&mut self.draft.verification_code);
+                self.spawn(ctx.clone(), move |mut settings| {
+                    match pending.verify(&mut settings, &code) {
+                        Ok(message) => Message::Done(Notice::Ok(message), NextScreen::Home),
+                        Err(message) if pending.expired => {
+                            Message::Done(Notice::Err(message), NextScreen::Stay)
+                        }
+                        Err(message) => {
+                            Message::OmnivoxVerification(pending, Some(Notice::Err(message)))
+                        }
+                    }
+                });
+            }
+        }
+        ui.add_space(8.0);
+        if self.draft.verification_can_resend
+            && Self::button_soft(ui, "Send a new code", !self.busy)
+        {
+            if let Some(mut pending) = self.pending_omnivox.take() {
+                self.draft.verification_code.clear();
+                self.spawn(ctx.clone(), move |_| {
+                    let notice = match pending.resend() {
+                        Ok(message) => Notice::Ok(message),
+                        Err(message) => Notice::Err(message),
+                    };
+                    if pending.expired {
+                        Message::Done(notice, NextScreen::Stay)
+                    } else {
+                        Message::OmnivoxVerification(pending, Some(notice))
+                    }
+                });
+            }
+        }
+        if Self::button_soft(ui, "Cancel verification", !self.busy) {
+            self.pending_omnivox = None;
+            self.draft.verification_prompt = None;
+            self.draft.verification_code.clear();
+            self.notice = None;
         }
     }
 
@@ -2247,6 +2370,9 @@ impl App {
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 self.rx = None;
                 self.busy = false;
+                self.pending_omnivox = None;
+                self.draft.verification_prompt = None;
+                self.draft.verification_code.clear();
                 self.notice = Some(Notice::Err(
                     "The connection was interrupted. Try again.".into(),
                 ));
@@ -2257,6 +2383,9 @@ impl App {
         self.busy = false;
         match message {
             Message::Done(notice, next) => {
+                self.pending_omnivox = None;
+                self.draft.verification_prompt = None;
+                self.draft.verification_code.clear();
                 self.notice = Some(notice);
                 match next {
                     NextScreen::Stay => {}
@@ -2266,6 +2395,15 @@ impl App {
                         self.screen = "home";
                     }
                 }
+            }
+            Message::OmnivoxVerification(pending, notice) => {
+                self.draft.password.clear();
+                self.draft.password_visible = false;
+                self.draft.verification_code.clear();
+                self.draft.verification_prompt = Some(pending.prompt.clone());
+                self.draft.verification_can_resend = pending.can_resend;
+                self.pending_omnivox = Some(pending);
+                self.notice = notice;
             }
         }
     }
@@ -2332,16 +2470,12 @@ mod gallery_tests {
     }
 
     #[test]
-    fn home_link_uses_the_current_quick_tunnel_origin() {
+    fn home_link_uses_the_current_stable_tunnel_origin() {
         let local = "http://127.0.0.1:8420/mcp/test-token";
         assert_eq!(connector_url(8420, "test-token", None), local);
         assert_eq!(
-            connector_url(
-                8420,
-                "test-token",
-                Some("https://student.trycloudflare.com")
-            ),
-            "https://student.trycloudflare.com/mcp/test-token"
+            connector_url(8420, "test-token", Some("https://student.srv.us")),
+            "https://student.srv.us/mcp/test-token"
         );
     }
 
@@ -2359,6 +2493,7 @@ mod gallery_tests {
             bind_error: None,
             screen: "home",
             draft: Draft::default(),
+            pending_omnivox: None,
             account_choices: Vec::new(),
             busy: false,
             notice: None,
@@ -2376,11 +2511,11 @@ mod gallery_tests {
         };
         app.update_tunnel(&ctx);
         assert_eq!(app.tunnel.state, TunnelState::Idle);
-        app.tunnel.state = TunnelState::Ready("https://demo.trycloudflare.com".into());
+        app.tunnel.state = TunnelState::Ready("https://demo.srv.us".into());
         app.update_tunnel(&ctx); // No service does not tear down a link that is already up.
         assert_eq!(
             app.tunnel.state,
-            TunnelState::Ready("https://demo.trycloudflare.com".into())
+            TunnelState::Ready("https://demo.srv.us".into())
         );
         app.settings.moodle = Some(MoodleSettings {
             url: Some(MOODLE_DEFAULT_URL.into()),
@@ -2442,6 +2577,7 @@ mod gallery_tests {
             bind_error: None,
             screen: "moodle",
             draft: Draft::default(),
+            pending_omnivox: None,
             account_choices: Vec::new(),
             busy: false,
             notice: None,
@@ -2530,6 +2666,7 @@ mod gallery_tests {
             bind_error: None,
             screen: "home",
             draft: Draft::default(),
+            pending_omnivox: None,
             account_choices: Vec::new(),
             busy: false,
             notice: None,
@@ -2645,6 +2782,86 @@ mod gallery_tests {
     }
 
     #[test]
+    fn omnivox_verification_clears_password_and_cannot_follow_an_account_switch() {
+        crate::config::tests::with_temp_config(|| {
+            let ctx = Context::default();
+            configure_context(&ctx);
+            let mut app = App {
+                settings: Settings::default().for_account("omnivox", "first-account"),
+                gateway: Gateway {
+                    port: 8420,
+                    token: "demo".into(),
+                },
+                port: 8420,
+                logos: None,
+                bind_error: None,
+                screen: "omnivox",
+                draft: Draft {
+                    password: "secret-pass".into(),
+                    ..Default::default()
+                },
+                pending_omnivox: None,
+                account_choices: Vec::new(),
+                busy: true,
+                notice: None,
+                rx: None,
+                check_rx: None,
+                check_status: None,
+                tunnel: Tunnel::default(),
+                local_enabled: Arc::new(AtomicBool::new(true)),
+                background: Background::default(),
+                copied_flash: None,
+                scale: 1.0,
+                zoom_hit: None,
+                zoom_held: None,
+                zoom_repeat_at: None,
+            };
+            let (sender, receiver) = channel();
+            app.rx = Some(receiver);
+            sender
+                .send(Message::OmnivoxVerification(
+                    crate::omnivox::tests::verification_fixture(),
+                    None,
+                ))
+                .unwrap_or_else(|_| panic!("UI receiver disconnected"));
+            app.poll_jobs();
+            assert!(!app.busy);
+            assert!(app.draft.password.is_empty());
+            assert!(app.pending_omnivox.is_some());
+            let texts = render_body(&mut app, &ctx, Vec2::new(440.0, 700.0));
+            let labels: Vec<_> = texts.iter().map(|(text, _)| text.as_str()).collect();
+            for label in [
+                "Security code (6 digits)",
+                "Verify and connect",
+                "Send a new code",
+                "Cancel verification",
+            ] {
+                assert!(labels.contains(&label), "{labels:?}");
+            }
+            assert!(!labels.contains(&"Password"));
+            // Moving the session to a worker must not flash the password form.
+            let pending = app.pending_omnivox.take().unwrap();
+            app.busy = true;
+            let texts = render_body(&mut app, &ctx, Vec2::new(440.0, 700.0));
+            assert!(texts
+                .iter()
+                .any(|(text, _)| text == "Security code (6 digits)"));
+            app.pending_omnivox = Some(pending);
+            app.busy = false;
+            app.draft.verification_code = "123456".into();
+            app.open_account("omnivox", "second-account", &ctx);
+            assert!(app.pending_omnivox.is_none());
+            assert!(app.draft.verification_prompt.is_none());
+            assert!(app.draft.verification_code.is_empty());
+            assert_eq!(
+                app.settings.account_scope.as_ref().unwrap().1,
+                "second-account"
+            );
+            assert!(Settings::load().omnivox.is_none());
+        });
+    }
+
+    #[test]
     fn first_connect_hides_account_picker_and_shows_the_form() {
         crate::config::tests::with_temp_config(|| {
             let ctx = Context::default();
@@ -2660,6 +2877,7 @@ mod gallery_tests {
                 bind_error: None,
                 screen: "moodle",
                 draft: Draft::default(),
+                pending_omnivox: None,
                 account_choices: Vec::new(),
                 busy: false,
                 notice: None,
@@ -2729,6 +2947,7 @@ mod gallery_tests {
                     editing: true,
                     ..Draft::default()
                 },
+                pending_omnivox: None,
                 account_choices: listed.clone(),
                 busy: false,
                 notice: None,

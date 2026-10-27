@@ -55,6 +55,10 @@ impl std::fmt::Debug for MoodleSettings {
 pub struct OmnivoxSettings {
     pub url: Option<String>,
     pub token: Option<String>,
+    /// Mobile app device id used to rebuild the `OVX` user agent.
+    pub device_id: Option<String>,
+    /// Mobile session auth hash returned by /Mobl/App/Initialisation.
+    pub auth_hash: Option<String>,
 }
 
 // Never include access keys when debugging settings.
@@ -63,6 +67,8 @@ impl std::fmt::Debug for OmnivoxSettings {
         f.debug_struct("OmnivoxSettings")
             .field("url", &self.url)
             .field("token", &"[redacted]")
+            .field("device_id", &self.device_id)
+            .field("auth_hash", &"[redacted]")
             .finish()
     }
 }
@@ -145,6 +151,8 @@ pub struct MoodleConfig {
 pub struct OmnivoxConfig {
     pub base_url: String,
     pub token: String,
+    pub device_id: Option<String>,
+    pub auth_hash: Option<String>,
 }
 
 #[derive(Clone)]
@@ -391,6 +399,19 @@ impl Settings {
         Some(OmnivoxConfig {
             base_url,
             token: token.to_string(),
+            device_id: saved
+                .device_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|id| valid_device_id(id))
+                .map(str::to_string),
+            auth_hash: saved
+                .auth_hash
+                .as_deref()
+                .map(str::trim)
+                .filter(|hash| !hash.is_empty() && hash.len() <= 256)
+                .filter(|hash| hash.bytes().all(|byte| byte.is_ascii_graphic()))
+                .map(str::to_string),
         })
     }
 
@@ -412,6 +433,10 @@ pub fn is_omnivox_host(url: &str) -> bool {
         .ok()
         .and_then(|parsed| parsed.host_str().map(str::to_ascii_lowercase))
         .is_some_and(|host| host == "omnivox.ca" || host.ends_with(".omnivox.ca"))
+}
+
+fn valid_device_id(id: &str) -> bool {
+    id.len() == 40 && id.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 pub fn config_path() -> PathBuf {
@@ -789,6 +814,7 @@ pub(crate) mod tests {
                 omnivox: Some(OmnivoxSettings {
                     url: Some("http://127.0.0.1:3000".into()),
                     token: Some("private-token".into()),
+                    ..Default::default()
                 }),
                 ..Default::default()
             };
@@ -806,6 +832,7 @@ pub(crate) mod tests {
                 omnivox: Some(OmnivoxSettings {
                     url: Some("https://cegepmontpetit.omnivox.ca".into()),
                     token: Some("SidLea=abc; Mobile=tok".into()),
+                    ..Default::default()
                 }),
                 ..Default::default()
             };
@@ -879,6 +906,7 @@ pub(crate) mod tests {
                 omnivox: Some(OmnivoxSettings {
                     url: Some("http://127.0.0.1:3000".into()),
                     token: Some("ox-token".into()),
+                    ..Default::default()
                 }),
                 brightspace: None,
             });

@@ -50,26 +50,20 @@ fi
 
 unzip -q "$tmp/$file" -d "$tmp/app"
 binary="$tmp/app/student-mcp"
-sidecar="$tmp/app/cloudflared"
-license="$tmp/app/LICENSE-cloudflared.txt"
-if [ ! -f "$binary" ] || [ ! -f "$sidecar" ] || [ ! -f "$license" ]; then
-  printf 'The download does not contain the app and its Cloudflare tunnel component.\n' >&2
+if [ ! -f "$binary" ]; then
+  printf 'The download does not contain the student-mcp app.\n' >&2
   exit 1
 fi
 chmod +x "$binary"
-chmod +x "$sidecar"
 
 if [ "${MOODLE_INSTALL_CHECK_ONLY:-}" = 1 ]; then
   "$binary" --help
-  "$sidecar" --version
 else
   # Persist the binary, then pop the small window in the background.
   install_dir="$HOME/.student-mcp/bin"
   mkdir -p "$install_dir"
   cp "$binary" "$install_dir/student-mcp"
-  cp "$sidecar" "$license" "$install_dir/"
   chmod +x "$install_dir/student-mcp"
-  chmod +x "$install_dir/cloudflared"
   nohup "$install_dir/student-mcp" up > "$HOME/.student-mcp/window.log" 2>&1 &
   printf "The student-mcp window is opening. Installed file: %s\n" "$install_dir/student-mcp"
 fi
