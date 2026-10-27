@@ -1,29 +1,20 @@
 <h1 align="center">student-mcp</h1>
+<p align="center">
+  <img src="src/resources/assets/app-icon.png" width="72" alt="student-mcp tray icon">
+</p>
 <p align="center">Moodle, Omnivox and Brightspace in your MCP assistant.</p>
 
-A small Rust connector configured in your browser: no native GUI runtime,
-frontend build toolchain, or hosted configuration service.
-
-## Repository layout
-
-- `src/services/` — one folder per connector: `moodle/`, `omnivox/`, `brightspace/`.
-- `src/` — shared application code; embedded interface and icons in `src/resources/`.
-- `tools/` — maintenance, tests, installer templates and a single [guide](tools/GUIDE.md).
-
-Installation scripts and templates live in `tools/packaging/`.
-`target/` is a generated build cache, not source code; Cargo recreates it when needed.
+<p align="center"><img src="tools/screens/home.png" width="100%" alt="Local configuration page with Moodle connected and a demo AI connection link" /></p>
 
 ## Install
 
 ### Windows
 
 Download **[student-mcp-setup.exe](https://github.com/CloudDown/student-mcp/releases/latest/download/student-mcp-setup.exe)** → double-click → install and open.
-The installer automatically selects Intel / AMD or Windows ARM.
 
 ### macOS
 
 Download **[student-mcp.dmg](https://github.com/CloudDown/student-mcp/releases/latest/download/student-mcp.dmg)** → open → double-click **Install student-mcp**.
-The same download works on Apple Silicon and Intel. No ZIP or architecture to choose.
 
 ### Linux
 
@@ -31,8 +22,9 @@ The same download works on Apple Silicon and Intel. No ZIP or architecture to ch
 curl -fsSL https://raw.githubusercontent.com/CloudDown/student-mcp/main/tools/packaging/install.sh | bash
 ```
 
-Windows/macOS builds are not yet publisher-signed/notarized and may be blocked.
-[Installation details](tools/GUIDE.md#installation).
+Windows/macOS builds are not yet publisher-signed. [Details](tools/GUIDE.md#installation).
+
+<p align="center"><img src="tools/screens/moodle.png" width="100%" alt="Moodle sign-in on the local configuration page" /></p>
 
 <table>
   <tr>
@@ -42,13 +34,7 @@ Windows/macOS builds are not yet publisher-signed/notarized and may be blocked.
   </tr>
 </table>
 
-Sign in → copy the link → add it to your assistant's **MCP connectors**.
-Keep the app running and your computer online. Keep the link private.
-Closing the browser tab keeps the connector running; launch it again to reopen
-settings, or stop it from the page. Configuration stays on a separate local port.
-
-PDFs are sent as original files by default. Text extraction and page images are
-available on request; no local OCR is needed. Brightspace is experimental (local
-fixtures only); complete Omnivox MFA still needs institutional end-to-end validation.
+Sign in on the local page → copy the link → add it to your assistant's **MCP connectors**.
+Keep the computer online. Closing the tab leaves a tray icon; quit from there or from the page.
 
 <p align="center"><a href="tools/GUIDE.md">Docs</a> · <a href="tools/GUIDE.md#4-automatic-public-link-for-web-ai">Privacy &amp; relay</a> · MIT code; <a href="src/services/moodle/catalog/LICENSE.md">GPL-3.0+ Moodle catalogue</a></p>
