@@ -16,7 +16,6 @@ use std::{
 use tiny_http::{Header, Method, Response, Server};
 
 fn open_browser(url: &str) {
-    eprintln!("Configuration: {url}");
     #[cfg(target_os = "linux")]
     let result = std::process::Command::new("xdg-open").arg(url).spawn();
     #[cfg(target_os = "macos")]

@@ -725,6 +725,20 @@ impl MoodleClient {
                 .get("modulename")
                 .and_then(Value::as_str)
                 .unwrap_or("event");
+            let event_type = event
+                .get("eventtype")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            if event_type == "auth_outage" {
+                continue;
+            }
+            let instance = event.get("instance").and_then(Value::as_i64).unwrap_or(0);
+            if instance > 0
+                && ((module == "assign" && seen.contains(&format!("assign:{instance}")))
+                    || (module == "quiz" && seen.contains(&format!("quiz:{instance}"))))
+            {
+                continue;
+            }
             let key = format!("event:{module}:{event_id}:{time}");
             if !seen.insert(key) {
                 continue;
@@ -776,14 +790,7 @@ impl MoodleClient {
             Some(ids) if !ids.is_empty() => ids,
             _ => {
                 let courses = self.my_courses(false)?;
-                courses
-                    .get("courses")
-                    .and_then(Value::as_array)
-                    .cloned()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter_map(|course| course.get("id").and_then(Value::as_i64))
-                    .collect()
+                current_or_favourite_course_ids(&courses)
             }
         };
         if ids.is_empty() {
@@ -852,44 +859,67 @@ impl MoodleClient {
         }))
     }
 
-    /// Global Moodle search across courses the student can see.
-    pub fn search(&self, query: &str, page: i64) -> Result<Value, String> {
+    /// Search enrolled courses first (so TD5 matches "TD Chapitre 5"), then Moodle's global search.
+    pub fn search(&self, query: &str, page: i64, courseid: Option<i64>) -> Result<Value, String> {
         let query = query.trim();
         if query.is_empty() {
             return Err("Provide query.".into());
         }
         let page = page.max(0);
-        let raw = self.call(
-            "core_search_get_results",
-            &json!({ "query": query, "page": page }),
-        )?;
-        let results = raw
-            .get("results")
+        let courses = self.my_courses(false)?;
+        let course_list = courses
+            .get("courses")
             .and_then(Value::as_array)
             .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|item| {
-                json!({
-                    "title": plain_text(item.get("title").and_then(Value::as_str).unwrap_or("")),
-                    "course": item.get("coursefullname"),
-                    "component": item.get("componentname"),
-                    "area": item.get("areaname"),
-                    "url": item.get("docurl").or_else(|| item.get("courseurl")),
-                    "timemodified": item.get("timemodified"),
-                    "content": truncate(
-                        &plain_text(item.get("content").and_then(Value::as_str).unwrap_or("")),
-                        500,
-                    ),
-                })
-            })
-            .collect::<Vec<_>>();
+            .unwrap_or_default();
+        let targets = resolve_search_courses(&course_list, query, courseid);
+        let leftover = leftover_search_tokens(query, &targets);
+        let mut results = Vec::new();
+        if page == 0 {
+            if leftover.is_empty() {
+                results.extend(targets.iter().filter_map(course_search_hit));
+            } else {
+                for course in &targets {
+                    let Some(id) = course.get("id").and_then(Value::as_i64) else {
+                        continue;
+                    };
+                    let content = self.course_content(id, None)?;
+                    results.extend(search_course_modules(course, &content, query));
+                }
+                if results.is_empty() {
+                    results.extend(targets.iter().filter_map(course_search_hit));
+                }
+            }
+        }
+        if results.is_empty() {
+            let mut payload = json!({ "query": query, "page": page });
+            if !targets.is_empty() {
+                payload["filters"] = json!({
+                    "courseids": targets
+                        .iter()
+                        .filter_map(|course| course.get("id").and_then(Value::as_i64))
+                        .collect::<Vec<_>>()
+                });
+            }
+            let raw = self.call("core_search_get_results", &payload)?;
+            results.extend(map_global_search_results(&raw));
+        }
         Ok(json!({
             "query": query,
             "page": page,
-            "total": raw.get("totalcount").cloned().unwrap_or_else(|| json!(results.len())),
+            "courseids": targets
+                .iter()
+                .filter_map(|course| course.get("id").and_then(Value::as_i64))
+                .collect::<Vec<_>>(),
+            "total": results.len(),
             "results": results
         }))
+    }
+
+    /// Compact section tree: names, activities and fileurl values, without Moodle's raw blobs.
+    pub fn course_content(&self, courseid: i64, query: Option<&str>) -> Result<Value, String> {
+        let raw = self.call("core_course_get_contents", &json!({ "courseid": courseid }))?;
+        Ok(compact_course_contents(courseid, &raw, query))
     }
 
     pub fn assignment_status(&self, assignid: i64) -> Result<Value, String> {
@@ -1007,10 +1037,16 @@ impl MoodleClient {
 
     pub fn grades_for_course(&self, courseid: i64) -> Result<Value, String> {
         // Many schools reject this call without the student's userid.
-        self.call(
+        let raw = self.call(
             "gradereport_user_get_grade_items",
             &json!({ "courseid": courseid, "userid": self.userid()? }),
-        )
+        )?;
+        let grades = compact_grade_items(&raw);
+        Ok(json!({
+            "courseid": courseid,
+            "count": grades.len(),
+            "grades": grades
+        }))
     }
 
     pub fn grades_overview(&self) -> Result<Value, String> {
@@ -1019,7 +1055,7 @@ impl MoodleClient {
             "gradereport_overview_get_course_grades",
             &json!({ "userid": userid }),
         )?;
-        let courses = self.my_courses(true)?;
+        let courses = self.my_courses(false)?;
         let names: std::collections::HashMap<i64, String> = courses
             .get("courses")
             .and_then(Value::as_array)
@@ -1041,14 +1077,25 @@ impl MoodleClient {
             .cloned()
             .unwrap_or_default()
             .into_iter()
-            .map(|grade| {
-                let courseid = grade.get("courseid").and_then(Value::as_i64);
-                json!({
+            .filter_map(|grade| {
+                let courseid = grade.get("courseid").and_then(Value::as_i64)?;
+                if !names.contains_key(&courseid) {
+                    return None;
+                }
+                let formatted = grade
+                    .get("grade")
+                    .and_then(Value::as_str)
+                    .unwrap_or("-")
+                    .trim();
+                if formatted.is_empty() || formatted == "-" {
+                    return None;
+                }
+                Some(json!({
                     "courseid": courseid,
-                    "course": courseid.and_then(|id| names.get(&id).cloned()),
-                    "grade": grade.get("grade"),
+                    "course": names.get(&courseid).cloned(),
+                    "grade": formatted,
                     "rawgrade": grade.get("rawgrade"),
-                })
+                }))
             })
             .collect::<Vec<_>>();
         Ok(json!({ "count": grades.len(), "grades": grades }))
@@ -1403,6 +1450,512 @@ impl MoodleClient {
             "resources": items
         }))
     }
+}
+
+fn compact_course_contents(courseid: i64, raw: &Value, query: Option<&str>) -> Value {
+    let mut sections = Vec::new();
+    for section in raw.as_array().cloned().unwrap_or_default() {
+        let mut modules = Vec::new();
+        for module in section
+            .get("modules")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+        {
+            let name = plain_text(module.get("name").and_then(Value::as_str).unwrap_or(""));
+            let leftover = query.map(|query| leftover_search_tokens(query, &[]));
+            let mut files = compact_module_files(&module);
+            if let Some(leftover) = leftover.as_deref() {
+                files.retain(|file| {
+                    haystack_matches(
+                        file.get("filename").and_then(Value::as_str).unwrap_or(""),
+                        &[],
+                        leftover,
+                    )
+                });
+                if files.is_empty() && !haystack_matches(&name, &[], leftover) {
+                    continue;
+                }
+            }
+            let mut item = json!({
+                "id": module.get("id"),
+                "modname": module.get("modname"),
+                "name": name,
+            });
+            if let Some(url) = module.get("url").cloned().filter(|value| !value.is_null()) {
+                item["url"] = url;
+            }
+            if !files.is_empty() {
+                item["files"] = Value::Array(files);
+            }
+            modules.push(item);
+        }
+        if query.is_some() && modules.is_empty() {
+            continue;
+        }
+        let name = plain_text(section.get("name").and_then(Value::as_str).unwrap_or(""));
+        let summary = truncate(
+            &plain_text(section.get("summary").and_then(Value::as_str).unwrap_or("")),
+            240,
+        );
+        let mut item = json!({
+            "id": section.get("id"),
+            "section": section.get("section"),
+            "name": name,
+            "modules": modules,
+        });
+        if !summary.is_empty() {
+            item["summary"] = json!(summary);
+        }
+        sections.push(item);
+    }
+    json!({
+        "courseid": courseid,
+        "count": sections.len(),
+        "sections": sections
+    })
+}
+
+fn compact_module_files(module: &Value) -> Vec<Value> {
+    module
+        .get("contents")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|file| {
+            let filename = file.get("filename").and_then(Value::as_str).unwrap_or("");
+            if filename.is_empty() || filename == "." {
+                return None;
+            }
+            if file.get("type").and_then(Value::as_str) == Some("content") {
+                return None;
+            }
+            let mut item = json!({ "filename": filename });
+            if let Some(url) = file.get("fileurl").cloned().filter(|value| !value.is_null()) {
+                item["fileurl"] = url;
+            }
+            if let Some(size) = file.get("filesize").cloned().filter(|value| !value.is_null()) {
+                item["filesize"] = size;
+            }
+            if let Some(mime) = file.get("mimetype").cloned().filter(|value| !value.is_null()) {
+                item["mimetype"] = mime;
+            }
+            Some(item)
+        })
+        .collect()
+}
+
+fn compact_grade_items(raw: &Value) -> Vec<Value> {
+    raw.get("usergrades")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .flat_map(|row| {
+            row.get("gradeitems")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default()
+        })
+        .filter_map(|item| {
+            let itemtype = item.get("itemtype").and_then(Value::as_str).unwrap_or("");
+            let name = item
+                .get("itemname")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .unwrap_or("");
+            let name = if name.is_empty() {
+                if itemtype == "course" {
+                    "Course total"
+                } else {
+                    return None;
+                }
+            } else {
+                name
+            };
+            Some(json!({
+                "name": name,
+                "module": item.get("itemmodule"),
+                "type": itemtype,
+                "grade": item.get("gradeformatted"),
+                "raw": item.get("graderaw"),
+                "max": item.get("grademax"),
+                "percentage": item.get("percentageformatted"),
+                "gradedAt": item.get("gradedategraded"),
+            }))
+        })
+        .collect()
+}
+
+fn current_or_favourite_course_ids(courses: &Value) -> Vec<i64> {
+    let now = unix_now();
+    courses
+        .get("courses")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|course| {
+            let id = course.get("id").and_then(Value::as_i64)?;
+            let favourite = course
+                .get("isfavourite")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let enddate = course.get("enddate").and_then(Value::as_i64).unwrap_or(0);
+            if favourite || enddate > now {
+                Some(id)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn resolve_search_courses(courses: &[Value], query: &str, courseid: Option<i64>) -> Vec<Value> {
+    if let Some(id) = courseid {
+        let found = courses
+            .iter()
+            .find(|course| course.get("id").and_then(Value::as_i64) == Some(id))
+            .cloned()
+            .unwrap_or_else(|| json!({ "id": id }));
+        return vec![found];
+    }
+    let tokens = search_tokens(query);
+    if tokens.is_empty() {
+        return Vec::new();
+    }
+    let mut scored = courses
+        .iter()
+        .filter_map(|course| {
+            let short = course
+                .get("shortname")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            let full = course
+                .get("fullname")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            let short_tokens = normalize_tokens(&short);
+            let mut score = 0;
+            for token in &tokens {
+                if short_tokens.iter().any(|part| part == token) || short == *token {
+                    score += 50;
+                } else if token.len() >= 3 && short.contains(token) {
+                    score += 20;
+                } else if token.len() >= 4 && full.contains(token) {
+                    score += 8;
+                }
+            }
+            if tokens.iter().any(|token| token == "physique") && short.starts_with("phs") {
+                score += 30;
+            }
+            if tokens.iter().any(|token| token == "chimie") && short.starts_with("che") {
+                score += 30;
+            }
+            if tokens.iter().any(|token| {
+                token == "calcul"
+                    || token == "algebre"
+                    || token == "algèbre"
+                    || token.starts_with("math")
+            }) && short.starts_with("mth")
+            {
+                score += 30;
+            }
+            (score > 0).then_some((score, course))
+        })
+        .collect::<Vec<_>>();
+    scored.sort_by(|left, right| right.0.cmp(&left.0));
+    let best = scored.first().map(|(score, _)| *score).unwrap_or(0);
+    scored
+        .into_iter()
+        .filter(|(score, _)| *score + 10 >= best)
+        .take(3)
+        .map(|(_, course)| course.clone())
+        .collect()
+}
+
+fn leftover_search_tokens(query: &str, courses: &[Value]) -> Vec<String> {
+    search_tokens(query)
+        .into_iter()
+        .filter(|token| {
+            if is_filler_token(token) || is_subject_token(token) {
+                return false;
+            }
+            !courses.iter().any(|course| {
+                let short = course
+                    .get("shortname")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_ascii_lowercase();
+                short.contains(token) || normalize_tokens(&short).iter().any(|part| part == token)
+            })
+        })
+        .collect()
+}
+
+fn course_search_hit(course: &Value) -> Option<Value> {
+    let id = course.get("id").and_then(Value::as_i64)?;
+    let title = course
+        .get("fullname")
+        .or_else(|| course.get("shortname"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    Some(json!({
+        "title": title,
+        "course": title,
+        "courseid": id,
+        "area": "course",
+        "component": "core_course",
+    }))
+}
+
+fn search_course_modules(course: &Value, content: &Value, query: &str) -> Vec<Value> {
+    let course_name = course
+        .get("fullname")
+        .or_else(|| course.get("shortname"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let courseid = course.get("id").and_then(Value::as_i64);
+    let leftover = leftover_search_tokens(query, std::slice::from_ref(course));
+    let mut hits = Vec::new();
+    for section in content
+        .get("sections")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+    {
+        let section_name = section.get("name").and_then(Value::as_str).unwrap_or("");
+        for module in section
+            .get("modules")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+        {
+            let name = module.get("name").and_then(Value::as_str).unwrap_or("");
+            let files = module
+                .get("files")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            if leftover.is_empty() {
+                continue;
+            }
+            let name_hit = haystack_matches(name, &[], &leftover);
+            let mut file_hits = 0;
+            for file in &files {
+                let filename = file.get("filename").and_then(Value::as_str).unwrap_or("");
+                if !haystack_matches(filename, &[], &leftover) {
+                    continue;
+                }
+                file_hits += 1;
+                hits.push(json!({
+                    "title": name,
+                    "course": course_name,
+                    "courseid": courseid,
+                    "section": section_name,
+                    "area": "file",
+                    "component": module.get("modname"),
+                    "url": module.get("url"),
+                    "filename": file.get("filename"),
+                    "fileurl": file.get("fileurl"),
+                    "content": file.get("filename"),
+                }));
+            }
+            if file_hits == 0 && name_hit {
+                hits.push(json!({
+                    "title": name,
+                    "course": course_name,
+                    "courseid": courseid,
+                    "section": section_name,
+                    "area": "activity",
+                    "component": module.get("modname"),
+                    "url": module.get("url"),
+                }));
+            }
+        }
+    }
+    hits
+}
+
+fn map_global_search_results(raw: &Value) -> Vec<Value> {
+    raw.get("results")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|item| {
+            json!({
+                "title": plain_text(item.get("title").and_then(Value::as_str).unwrap_or("")),
+                "course": item.get("coursefullname"),
+                "component": item.get("componentname"),
+                "area": item.get("areaname"),
+                "url": item.get("docurl").or_else(|| item.get("courseurl")),
+                "timemodified": item.get("timemodified"),
+                "content": truncate(
+                    &plain_text(item.get("content").and_then(Value::as_str).unwrap_or("")),
+                    500,
+                ),
+            })
+        })
+        .collect()
+}
+
+fn haystack_matches(name: &str, files: &[Value], leftover: &[String]) -> bool {
+    if leftover.is_empty() {
+        return false;
+    }
+    let mut haystack = name.to_string();
+    for file in files {
+        if let Some(filename) = file.get("filename").and_then(Value::as_str) {
+            haystack.push(' ');
+            haystack.push_str(filename);
+        }
+    }
+    let hay = normalize_tokens(&haystack);
+    if hay.is_empty() {
+        return false;
+    }
+    let digits = leftover
+        .iter()
+        .filter(|token| token.chars().all(|ch| ch.is_ascii_digit()))
+        .cloned()
+        .collect::<Vec<_>>();
+    let words = leftover
+        .iter()
+        .filter(|token| !token.chars().all(|ch| ch.is_ascii_digit()))
+        .cloned()
+        .collect::<Vec<_>>();
+    if words.iter().any(|word| word == "td") && !digits.is_empty() {
+        return digits.iter().all(|digit| td_number_in(&hay, digit));
+    }
+    leftover.iter().all(|token| hay.iter().any(|part| part == token))
+}
+
+fn td_number_in(hay: &[String], number: &str) -> bool {
+    let mut index = 0;
+    while index < hay.len() {
+        if hay[index] == "td" {
+            let mut look = index + 1;
+            while look < hay.len() && hay[look] != "td" {
+                if hay[look].chars().all(|ch| ch.is_ascii_digit()) {
+                    if hay[look] == number {
+                        return true;
+                    }
+                    break;
+                }
+                look += 1;
+            }
+        }
+        index += 1;
+    }
+    false
+}
+
+fn search_tokens(text: &str) -> Vec<String> {
+    normalize_tokens(text)
+        .into_iter()
+        .filter(|token| !is_stopword(token))
+        .collect()
+}
+
+fn normalize_tokens(text: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let flush = |current: &mut String, tokens: &mut Vec<String>| {
+        if current.is_empty() {
+            return;
+        }
+        let chunk = std::mem::take(current);
+        let mut piece = String::new();
+        let mut digit = None;
+        for ch in chunk.chars() {
+            let is_digit = ch.is_ascii_digit();
+            if let Some(was_digit) = digit {
+                if was_digit != is_digit && !piece.is_empty() {
+                    tokens.push(std::mem::take(&mut piece));
+                }
+            }
+            digit = Some(is_digit);
+            piece.push(ch);
+        }
+        if !piece.is_empty() {
+            tokens.push(piece);
+        }
+    };
+    for ch in text.chars() {
+        if ch.is_ascii_alphanumeric() || ch == 'é' || ch == 'è' || ch == 'ê' || ch == 'à' {
+            current.extend(ch.to_lowercase());
+        } else {
+            flush(&mut current, &mut tokens);
+        }
+    }
+    flush(&mut current, &mut tokens);
+    tokens
+}
+
+fn is_stopword(token: &str) -> bool {
+    matches!(
+        token,
+        "le" | "la"
+            | "les"
+            | "du"
+            | "de"
+            | "des"
+            | "un"
+            | "une"
+            | "et"
+            | "ou"
+            | "a"
+            | "au"
+            | "aux"
+            | "en"
+            | "d"
+            | "l"
+            | "the"
+            | "of"
+            | "for"
+            | "to"
+            | "my"
+            | "mes"
+            | "mon"
+            | "ma"
+            | "nos"
+            | "fait"
+            | "faire"
+            | "moi"
+            | "me"
+            | "donne"
+            | "trouve"
+    )
+}
+
+fn is_filler_token(token: &str) -> bool {
+    matches!(
+        token,
+        "exo"
+            | "exos"
+            | "exercice"
+            | "exercices"
+            | "devoir"
+            | "devoirs"
+            | "fichier"
+            | "file"
+            | "cours"
+            | "course"
+            | "moodle"
+    )
+}
+
+fn is_subject_token(token: &str) -> bool {
+    token == "physique"
+        || token == "chimie"
+        || token == "calcul"
+        || token == "algebre"
+        || token == "algèbre"
+        || token.starts_with("math")
 }
 
 fn unix_now() -> i64 {
@@ -2899,5 +3452,254 @@ pub(crate) mod tests {
         assert_eq!(content[3]["mimeType"], "application/pdf");
         assert_eq!(content[4]["type"], "resource_link");
         assert_eq!(content[4]["uri"], "https://example.test/s/1/text");
+    }
+
+    fn td5_contents() -> Value {
+        json!([{
+            "id": 80,
+            "section": 5,
+            "name": "Exercices TD",
+            "summary": "<p>Liste des&nbsp;exercices</p>",
+            "hidden": "noise",
+            "modules": [
+                {
+                    "id": 10,
+                    "modname": "resource",
+                    "name": "TD Chapitre 5",
+                    "url": "https://moodle.example/mod/resource/view.php?id=10",
+                    "contents": [{
+                        "type": "file",
+                        "filename": "TD_Chapitre_5.doc",
+                        "fileurl": "https://moodle.example/pluginfile.php/1/mod_resource/content/0/TD_Chapitre_5.doc",
+                        "filesize": 281600,
+                        "mimetype": "application/msword"
+                    }],
+                    "description": "x".repeat(4000)
+                },
+                {
+                    "id": 11,
+                    "modname": "resource",
+                    "name": "TD Chapitre 6",
+                    "contents": [{
+                        "type": "file",
+                        "filename": "TD_Chapitre_6.doc",
+                        "fileurl": "https://moodle.example/pluginfile.php/1/mod_resource/content/0/TD_Chapitre_6.doc"
+                    }]
+                }
+            ]
+        }])
+    }
+
+    #[test]
+    fn course_content_is_compact_and_query_keeps_td5() {
+        let payload = td5_contents();
+        let (url, worker) = server(vec![payload.clone(), payload]);
+        let client = MoodleClient::new(&MoodleConfig {
+            base_url: url,
+            token: "token".into(),
+            allow_write: false,
+        });
+        let all = client.course_content(5476, None).unwrap();
+        assert_eq!(all["courseid"], 5476);
+        assert_eq!(all["count"], 1);
+        assert_eq!(all["sections"][0]["name"], "Exercices TD");
+        assert_eq!(all["sections"][0]["summary"], "Liste des exercices");
+        assert_eq!(all["sections"][0]["modules"].as_array().unwrap().len(), 2);
+        assert!(all["sections"][0]["modules"][0]["files"][0]["fileurl"]
+            .as_str()
+            .unwrap()
+            .contains("TD_Chapitre_5.doc"));
+        let dumped = all.to_string();
+        assert!(!dumped.contains("description"));
+        assert!(!dumped.contains("xxxx"));
+        let filtered = client.course_content(5476, Some("TD5")).unwrap();
+        assert_eq!(filtered["sections"][0]["modules"].as_array().unwrap().len(), 1);
+        assert_eq!(filtered["sections"][0]["modules"][0]["name"], "TD Chapitre 5");
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn search_resolves_phs0102_td5_to_the_chapter_file() {
+        let now = unix_now();
+        let (url, worker) = server(vec![
+            json!({"userid": 7, "functions": []}),
+            json!([{
+                "id": 5476,
+                "shortname": "PHS0102 (20263)",
+                "fullname": "PHS0102 (A2026) - Électricité et magnétisme",
+                "visible": 1,
+                "startdate": now - 10,
+                "enddate": now + 86_400,
+                "lastaccess": now,
+                "isfavourite": true
+            }]),
+            td5_contents(),
+        ]);
+        let client = MoodleClient::new(&MoodleConfig {
+            base_url: url,
+            token: "token".into(),
+            allow_write: false,
+        });
+        let found = client
+            .search("Les exos du TD5 de physique 0102", 0, None)
+            .unwrap();
+        assert_eq!(found["total"], 1);
+        assert_eq!(found["results"][0]["title"], "TD Chapitre 5");
+        assert_eq!(found["results"][0]["courseid"], 5476);
+        assert!(found["results"][0]["fileurl"]
+            .as_str()
+            .unwrap()
+            .contains("TD_Chapitre_5.doc"));
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn grades_for_course_flatten_moodle_usergrades() {
+        let (url, worker) = server(vec![
+            json!({"userid": 42, "functions": []}),
+            json!({
+                "usergrades": [{
+                    "courseid": 15,
+                    "gradeitems": [
+                        {
+                            "itemname": "Quiz 1",
+                            "itemtype": "mod",
+                            "itemmodule": "quiz",
+                            "gradeformatted": "12,00",
+                            "graderaw": 12.0,
+                            "grademax": 20.0,
+                            "percentageformatted": "60 %",
+                            "gradedategraded": 1_700_000_000
+                        },
+                        {
+                            "itemname": null,
+                            "itemtype": "category",
+                            "gradeformatted": "-"
+                        },
+                        {
+                            "itemname": "",
+                            "itemtype": "course",
+                            "gradeformatted": "12,00",
+                            "graderaw": 12.0,
+                            "grademax": 20.0
+                        }
+                    ]
+                }]
+            }),
+        ]);
+        let client = MoodleClient::new(&MoodleConfig {
+            base_url: url,
+            token: "token".into(),
+            allow_write: false,
+        });
+        let grades = client.grades_for_course(15).unwrap();
+        assert_eq!(grades["courseid"], 15);
+        assert_eq!(grades["count"], 2);
+        assert_eq!(grades["grades"][0]["name"], "Quiz 1");
+        assert_eq!(grades["grades"][1]["name"], "Course total");
+        assert!(grades.get("usergrades").is_none());
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn grades_overview_keeps_current_courses_with_a_grade() {
+        let now = unix_now();
+        let (url, worker) = server(vec![
+            json!({"userid": 42, "functions": []}),
+            json!({"grades": [
+                {"courseid": 1, "grade": "A", "rawgrade": "90"},
+                {"courseid": 2, "grade": "-", "rawgrade": null},
+                {"courseid": 9, "grade": "F", "rawgrade": "0"}
+            ]}),
+            json!({"userid": 42, "functions": []}),
+            json!([{
+                "id": 1,
+                "shortname": "PHS0102",
+                "fullname": "Physique",
+                "visible": 1,
+                "startdate": now - 10,
+                "enddate": now + 86_400,
+                "lastaccess": now,
+                "isfavourite": true
+            }]),
+        ]);
+        let client = MoodleClient::new(&MoodleConfig {
+            base_url: url,
+            token: "token".into(),
+            allow_write: false,
+        });
+        let grades = client.grades_overview().unwrap();
+        assert_eq!(grades["count"], 1);
+        assert_eq!(grades["grades"][0]["courseid"], 1);
+        assert_eq!(grades["grades"][0]["grade"], "A");
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn deadlines_skip_calendar_duplicates_and_outages() {
+        let now = unix_now();
+        let due = now + 86_400;
+        let (url, worker) = server(vec![
+            json!({"courses": [{
+                "id": 1,
+                "shortname": "PHS",
+                "assignments": [{
+                    "id": 99,
+                    "name": "Devoir",
+                    "duedate": due,
+                    "cmid": 50
+                }]
+            }]}),
+            json!({"quizzes": []}),
+            json!({"events": [
+                {
+                    "id": 1,
+                    "name": "Devoir doit être rendu",
+                    "modulename": "assign",
+                    "instance": 99,
+                    "eventtype": "due",
+                    "timesort": due
+                },
+                {
+                    "id": 2,
+                    "name": "Maintenance",
+                    "modulename": "",
+                    "eventtype": "auth_outage",
+                    "timesort": due
+                }
+            ]}),
+            json!({"events": []}),
+        ]);
+        let client = MoodleClient::new(&MoodleConfig {
+            base_url: url,
+            token: "token".into(),
+            allow_write: false,
+        });
+        let deadlines = client.deadlines(7, None).unwrap();
+        assert_eq!(deadlines["count"], 1);
+        assert_eq!(deadlines["deadlines"][0]["kind"], "assignment");
+        assert_eq!(deadlines["deadlines"][0]["id"], 99);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn td5_token_split_matches_chapitre_five() {
+        assert_eq!(normalize_tokens("TD5"), vec!["td", "5"]);
+        assert_eq!(normalize_tokens("TD Chapitre 5"), vec!["td", "chapitre", "5"]);
+        assert!(haystack_matches(
+            "TD Chapitre 5",
+            &[json!({"filename": "TD_Chapitre_5.doc"})],
+            &["td".into(), "5".into()]
+        ));
+        assert!(!haystack_matches(
+            "TD Chapitre 6",
+            &[],
+            &["td".into(), "5".into()]
+        ));
+        assert!(!haystack_matches(
+            "TD Chapitre 6 (Le chap. 6 est enseignée avant le chap. 5)",
+            &[],
+            &["td".into(), "5".into()]
+        ));
     }
 }

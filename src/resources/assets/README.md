@@ -1,4 +1,7 @@
-# Service icons
+# Icons
+
+`app-icon.png` / `app-icon-64.png` (and `app-icon-64.rgba` for the tray) are the
+student-mcp mark: a flat yellow graduation smiley. Original art for this project.
 
 `moodle-icon.png` is the square app symbol from
 [Simple Icons](https://simpleicons.org/) (CC0), downloaded on 2026-10-18:

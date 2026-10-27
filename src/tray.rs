@@ -42,27 +42,13 @@ impl Tray {
     }
 }
 
-/// Small transparent S monogram, independent of theme fonts.
+/// Graduation smiley (flat emoji style), 64×64 RGBA.
+const ICON_SIZE: u32 = 64;
+const ICON_RGBA: &[u8] = include_bytes!("resources/assets/app-icon-64.rgba");
+
 fn icon_rgba() -> Vec<u8> {
-    let mut pixels = vec![0; 32 * 32 * 4];
-    for (y, row) in [
-        "01111", "10000", "10000", "01110", "00001", "00001", "11110",
-    ]
-    .iter()
-    .enumerate()
-    {
-        for (x, value) in row.bytes().enumerate() {
-            if value == b'1' {
-                for dy in 0..3 {
-                    for dx in 0..3 {
-                        let offset = ((5 + y * 3 + dy) * 32 + 8 + x * 3 + dx) * 4;
-                        pixels[offset..offset + 4].copy_from_slice(&[0, 102, 204, 255]);
-                    }
-                }
-            }
-        }
-    }
-    pixels
+    debug_assert_eq!(ICON_RGBA.len(), (ICON_SIZE * ICON_SIZE * 4) as usize);
+    ICON_RGBA.to_vec()
 }
 
 struct Events(Sender<Command>);
@@ -116,8 +102,8 @@ mod linux {
                 pixel.rotate_right(1);
             }
             vec![ksni::Icon {
-                width: 32,
-                height: 32,
+                width: ICON_SIZE as i32,
+                height: ICON_SIZE as i32,
                 data: argb,
             }]
         }
@@ -171,7 +157,8 @@ mod desktop {
             let quit = MenuItem::new("Quit student-mcp", true, None);
             menu.append_items(&[&open, &quit])
                 .map_err(|error| error.to_string())?;
-            let icon = Icon::from_rgba(icon_rgba(), 32, 32).map_err(|error| error.to_string())?;
+            let icon = Icon::from_rgba(icon_rgba(), ICON_SIZE, ICON_SIZE)
+                .map_err(|error| error.to_string())?;
             let mut builder = TrayIconBuilder::new()
                 .with_icon(icon)
                 .with_tooltip("student-mcp — running")
@@ -234,8 +221,10 @@ mod tests {
     #[test]
     fn bundled_icon_is_nonempty_rgba_with_transparent_background() {
         let pixels = icon_rgba();
-        assert_eq!(pixels.len(), 32 * 32 * 4);
+        assert_eq!(pixels.len(), (ICON_SIZE * ICON_SIZE * 4) as usize);
         assert!(pixels.chunks_exact(4).any(|p| p[3] == 255));
         assert!(pixels.chunks_exact(4).any(|p| p[3] == 0));
+        // Yellow face present (graduation smiley).
+        assert!(pixels.chunks_exact(4).any(|p| p[0] > 200 && p[1] > 150 && p[2] < 40 && p[3] == 255));
     }
 }

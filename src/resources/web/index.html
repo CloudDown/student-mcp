@@ -91,6 +91,7 @@ body{background:var(--canvas)}
 .manage-card .manage-actions .secondary{color:var(--blue)}
 .manage-card .manage-actions .danger{color:var(--red)}
 .manage-card .hint{margin:0 1.25rem 1rem}
+.icon-button.copy-confirmed{color:#257a42;background:#e8f5eb}
 @media(hover:hover) and (pointer:fine){.account-row:hover:not(.active){background:#f7f7f9}.manage-card .manage-actions .secondary:hover{background:#f0f5fb}.manage-card .manage-actions .danger:hover{background:var(--red-soft)}}
 @media(max-width:360px){.manage-card .manage-actions{flex-direction:row}.manage-card .manage-actions button{flex:1}}
 button,input,select,summary{touch-action:manipulation}button{-webkit-tap-highlight-color:transparent}
@@ -116,7 +117,7 @@ const names={moodle:'Moodle',omnivox:'Omnivox',brightspace:'Brightspace'};const 
 function selected(){return state.accounts.find(a=>a.service===state.service&&a.id===state.accountId)}
 function notice(){return state.notice?.error?`<div class="notice error" role="alert">${esc(state.notice.text)}</div>`:''}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function icon(name){const paths={copy:'<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 5V4a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h1"/>',back:'<path d="m12 5-7 7 7 7M5 12h14"/>',refresh:'<path d="M19 8a8 8 0 1 0 1 7M19 3v5h-5"/>'};return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name]||paths.back}</svg>`}
+function icon(name){const paths={copy:'<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 5V4a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h1"/>',check:'<path d="m5 12 4 4L19 6"/>',back:'<path d="m12 5-7 7 7 7M5 12h14"/>',refresh:'<path d="M19 8a8 8 0 1 0 1 7M19 3v5h-5"/>'};return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name]||paths.back}</svg>`}
 function home(){const tiles=['moodle','omnivox','brightspace'].map(s=>{const connected=state.accounts.some(a=>a.service===s);return `<button class="tile ${connected?'connected':''}" data-open="${s}" aria-label="${names[s]} ${connected?'manage connection':'connect'}"><img src="/assets/${s}.png" alt=""><span>${names[s]}</span>${connected?'<i class="dot"></i>':''}</button>`}).join('');const ready=state.tunnel.startsWith('Ready(');let value=ready?state.link:state.tunnel.startsWith('Starting')?'Creating your public link…':state.tunnel.startsWith('Reconnecting')?'Reconnecting your public link…':state.tunnel.startsWith('Failed')?'Public link unavailable — click to retry':state.tunnel==='Stopped'?'Public link off — click to enable':'Connect a service to create your link';return `<section class="home"><div class="tiles">${tiles}</div><div class="link-card"><button class="link-open" data-screen="links"><span class="link-title">AI connection</span><span class="link-value">${esc(value)}</span></button><button class="icon-button copy-home" data-copy="home" aria-label="Copy link" ${ready?'':'disabled'}>${icon('copy')}</button></div>${notice()}</section>`}
 function header(service){return `<header class="service-head"><button class="back" data-screen="home" aria-label="Back to services">${icon('back')}</button><div class="logo-frame"><img src="/assets/${service}.png" alt=""></div><h1>${names[service]}</h1><div class="subtitle">${service==='moodle'&&state.otherSchool?'Your Moodle account':subtitles[service]}</div></header>`}
 function accountPicker(){const accounts=state.accounts.filter(a=>a.service===state.service);if(!accounts.length||state.verification||state.editing)return '';return `<div class="account-heading">Accounts</div><div class="account-list">${accounts.map(a=>{const active=a.id===state.accountId;let host;try{host=new URL(a.url).host}catch{host=a.url||names[state.service]}return `<button class="account-row ${active?'active':''}" data-account="${esc(a.id)}" aria-current="${active?'true':'false'}" aria-label="${esc(host)}${active?', selected':''}"><span class="account-row-main"><span class="account-row-title">${esc(host)}</span></span>${active?'<span class="account-mark" aria-hidden="true">✓</span>':''}</button>`}).join('')}<button class="account-row add-account ${selected()?'':'active'}" data-add><span class="plus" aria-hidden="true">+</span><span>Add account</span></button></div>`}
@@ -177,9 +178,15 @@ document.addEventListener('click',async e=>{
  if(copy){
   e.stopPropagation();const local=copy.dataset.copy==='local',url=local?state.localLink:state.link;
   if(!url||(local?!state.local:!state.tunnel.startsWith('Ready(')))return;
-   try{await navigator.clipboard.writeText(url);state.notice={text:'Copied'};$('live').textContent='Copied'}
+   try{
+    await navigator.clipboard.writeText(url);$('live').textContent='Copied';
+    const original=copy.innerHTML,aria=copy.getAttribute('aria-label');
+    copy.innerHTML=icon('check');copy.classList.add('copy-confirmed');copy.setAttribute('aria-label','Copied');
+    if(!matchMedia('(prefers-reduced-motion: reduce)').matches)copy.querySelector('svg').animate([{opacity:0,transform:'scale(.8)'},{opacity:1,transform:'scale(1)'}],{duration:180,easing:'cubic-bezier(0.23, 1, 0.32, 1)'});
+    setTimeout(()=>{if(!copy.isConnected)return;copy.innerHTML=original;copy.classList.remove('copy-confirmed');copy.setAttribute('aria-label',aria)},1300);
+   }
   catch{state.notice={text:'Could not copy the link. Open connection settings and select the link to copy it manually.',error:true}}
-  render();return;
+   if(state.notice?.error)render();return;
  }
  const screen=e.target.closest('[data-screen]');
  if(screen){if(screen.dataset.screen==='home'&&state.verification){send({action:'cancel'});state.verification=null;}state.screen=screen.dataset.screen;state.notice=null;render();return}
