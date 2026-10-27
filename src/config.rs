@@ -255,7 +255,10 @@ impl Settings {
         if let Some((service, id)) = &self.account_scope {
             let mut root = Self::load();
             if let Some(message) = root.config_error {
-                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, message));
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    message,
+                ));
             }
             root.scale = self.scale;
             if id == service {
@@ -309,12 +312,7 @@ impl Settings {
                 token: String::new(),
             };
         }
-        if let Some(token) = self
-            .gateway
-            .token
-            .clone()
-            .filter(|token| !token.is_empty())
-        {
+        if let Some(token) = self.gateway.token.clone().filter(|token| !token.is_empty()) {
             return Gateway { port, token };
         }
         let mut root = Self::load();
@@ -326,12 +324,7 @@ impl Settings {
                 token: String::new(),
             };
         }
-        if let Some(token) = root
-            .gateway
-            .token
-            .clone()
-            .filter(|token| !token.is_empty())
-        {
+        if let Some(token) = root.gateway.token.clone().filter(|token| !token.is_empty()) {
             return Gateway { port, token };
         }
         let generated = random_hex(24);
@@ -342,11 +335,7 @@ impl Settings {
                 token: generated,
             };
         }
-        if let Some(token) = Self::load()
-            .gateway
-            .token
-            .filter(|token| !token.is_empty())
-        {
+        if let Some(token) = Self::load().gateway.token.filter(|token| !token.is_empty()) {
             return Gateway { port, token };
         }
         Gateway {
@@ -518,9 +507,7 @@ fn parse_site_url(input: &str) -> Result<Url, String> {
     {
         return Err("The address must not contain credentials, a query or a fragment.".to_string());
     }
-    let localhost = parsed
-        .host_str()
-        .is_some_and(is_loopback_host);
+    let localhost = parsed.host_str().is_some_and(is_loopback_host);
     if parsed.scheme() != "https" && !(parsed.scheme() == "http" && localhost) {
         return Err("The address must use HTTPS (HTTP is only allowed for localhost).".to_string());
     }
@@ -920,11 +907,19 @@ pub(crate) mod tests {
             moodle.save().unwrap();
             let loaded = Settings::load();
             assert_eq!(
-                loaded.for_account("omnivox", "shared").omnivox().unwrap().token,
+                loaded
+                    .for_account("omnivox", "shared")
+                    .omnivox()
+                    .unwrap()
+                    .token,
                 "ox-token"
             );
             assert_eq!(
-                loaded.for_account("moodle", "shared").moodle().unwrap().token,
+                loaded
+                    .for_account("moodle", "shared")
+                    .moodle()
+                    .unwrap()
+                    .token,
                 "md-token"
             );
             assert_eq!(loaded.account_list("omnivox").len(), 1);

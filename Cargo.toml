@@ -2,6 +2,7 @@
 name = "student-mcp"
 version = "0.3.0"
 edition = "2021"
+default-run = "student-mcp"
 description = "Local MCP popup for student services with an automatic stable HTTPS link."
 license = "MIT"
 

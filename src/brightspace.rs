@@ -38,8 +38,8 @@ impl BrightspaceClient {
     }
 
     fn get(&self, path: &str, bookmark: Option<&str>) -> Result<Value, String> {
-        let mut request = self
-            .authorize(self.agent.get(&format!("{}{path}", self.config.base_url)));
+        let mut request =
+            self.authorize(self.agent.get(&format!("{}{path}", self.config.base_url)));
         if let Some(bookmark) = bookmark {
             request = request.query("bookmark", bookmark);
         }
@@ -280,14 +280,18 @@ fn mfa_message() -> String {
 fn send(request: ureq::Request) -> Result<ureq::Response, String> {
     match request.call() {
         Ok(response) | Err(ureq::Error::Status(_, response)) => Ok(response),
-        Err(_) => Err("Cannot reach Brightspace. Check the site address and your Internet connection.".into()),
+        Err(_) => Err(
+            "Cannot reach Brightspace. Check the site address and your Internet connection.".into(),
+        ),
     }
 }
 
 fn send_form(request: ureq::Request, body: &str) -> Result<ureq::Response, String> {
     match request.send_string(body) {
         Ok(response) | Err(ureq::Error::Status(_, response)) => Ok(response),
-        Err(_) => Err("Cannot reach Brightspace. Check the site address and your Internet connection.".into()),
+        Err(_) => Err(
+            "Cannot reach Brightspace. Check the site address and your Internet connection.".into(),
+        ),
     }
 }
 

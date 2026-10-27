@@ -223,7 +223,10 @@ impl OmnivoxClient {
                     "LeaEtudiant/GetTravauxListeModel",
                     json!({ "AnSession": "", "idClasse": course_id }),
                 ),
-                None => self.mobl("LeaEtudiant/GetTravauxSommaireModel", json!({ "AnSession": "" })),
+                None => self.mobl(
+                    "LeaEtudiant/GetTravauxSommaireModel",
+                    json!({ "AnSession": "" }),
+                ),
             };
         }
         match course_id {
@@ -248,7 +251,10 @@ impl OmnivoxClient {
                         }),
                     )
                 }
-                None => self.mobl("LeaEtudiant/GetNotesSommaireModel", json!({ "AnSession": "" })),
+                None => self.mobl(
+                    "LeaEtudiant/GetNotesSommaireModel",
+                    json!({ "AnSession": "" }),
+                ),
             };
         }
         match course_id {
@@ -259,7 +265,10 @@ impl OmnivoxClient {
 
     pub fn schedule(&self) -> Result<Value, String> {
         if self.is_college() {
-            return self.mobl("Horaire/GetHoraireModel", json!({ "AnSession": Value::Null }));
+            return self.mobl(
+                "Horaire/GetHoraireModel",
+                json!({ "AnSession": Value::Null }),
+            );
         }
         self.call("get-schedule", json!({}))
     }
@@ -312,7 +321,9 @@ fn split_class_id(course_id: &str) -> Result<(String, String), String> {
         "Provide course_id as returned by omnivox_my_courses, e.g. 2434K5EM.1011.".to_string()
     })?;
     if course.is_empty() || group.is_empty() {
-        return Err("Provide course_id as returned by omnivox_my_courses, e.g. 2434K5EM.1011.".into());
+        return Err(
+            "Provide course_id as returned by omnivox_my_courses, e.g. 2434K5EM.1011.".into(),
+        );
     }
     Ok((course.to_string(), group.to_string()))
 }
@@ -411,10 +422,14 @@ impl PendingLogin {
         }
         let page_url = url::Url::parse(&self.session.current)
             .map_err(|_| "Invalid Omnivox verification address.")?;
-        let tksm_cookie = self.session.jar.get_request_values(&page_url)
+        let tksm_cookie = self
+            .session
+            .jar
+            .get_request_values(&page_url)
             .find(|(name, _)| name.starts_with("TKSM"))
             .map(|(name, value)| (name.to_string(), decode_cookie(value)));
-        let tksm = tksm_cookie.as_ref()
+        let tksm = tksm_cookie
+            .as_ref()
             .map(|(_, value)| value.as_str())
             .unwrap_or_default();
         let reply = self.api(
@@ -591,7 +606,8 @@ impl LoginSession {
         let target = self.resolve(target)?;
         let user_agent = self.user_agent();
         send(
-            self.agent.get(&target)
+            self.agent
+                .get(&target)
                 .set("Accept", "text/html,application/xhtml+xml")
                 .set("User-Agent", &user_agent)
                 .set("X-User-Agent-Ovx", &user_agent)
@@ -611,7 +627,9 @@ impl LoginSession {
 
     fn cookies_for(&self, target: &str) -> Result<String, String> {
         let url = url::Url::parse(target).map_err(|_| "Invalid Omnivox cookie address.")?;
-        Ok(self.jar.get_request_values(&url)
+        Ok(self
+            .jar
+            .get_request_values(&url)
             .map(|(name, value)| format!("{name}={value}"))
             .collect::<Vec<_>>()
             .join("; "))
@@ -624,7 +642,10 @@ impl LoginSession {
         let url = url::Url::parse(target).map_err(|_| "Invalid Omnivox login address.")?;
         self.jar
             .parse(
-                &format!("LoginTokenAuthentification={}; Path=/", encode_cookie(token)),
+                &format!(
+                    "LoginTokenAuthentification={}; Path=/",
+                    encode_cookie(token)
+                ),
                 &url,
             )
             .map_err(|_| "Omnivox returned an invalid login cookie. Sign in again.".to_string())?;
@@ -635,7 +656,10 @@ impl LoginSession {
     /// (`#...Token=...`) and writes it as a cookie in JavaScript. Fragments are
     /// never sent to the server, so the HTTP client must do that write itself.
     fn remember_fragment_token(&mut self, target: &str) -> Result<(), String> {
-        let Some(fragment) = url::Url::parse(target).ok().and_then(|url| url.fragment().map(str::to_string)) else {
+        let Some(fragment) = url::Url::parse(target)
+            .ok()
+            .and_then(|url| url.fragment().map(str::to_string))
+        else {
             return Ok(());
         };
         let token = url::form_urlencoded::parse(fragment.as_bytes())
@@ -674,13 +698,17 @@ impl LoginSession {
             .filter(|hash| hash.bytes().all(|byte| byte.is_ascii_graphic()));
         let connected = hash.is_some()
             || model.get("Utilisateur").is_some_and(|user| !user.is_null())
-            || model.get("OffreService").is_some_and(|offer| !offer.is_null())
+            || model
+                .get("OffreService")
+                .is_some_and(|offer| !offer.is_null())
             || model
                 .get("Username")
                 .and_then(Value::as_str)
                 .is_some_and(|name| !name.trim().is_empty());
         if !connected {
-            return Err("Omnivox did not confirm the mobile session. Sign in again in the app.".into());
+            return Err(
+                "Omnivox did not confirm the mobile session. Sign in again in the app.".into(),
+            );
         }
         if let Some(hash) = hash {
             self.auth_hash = hash.to_string();
@@ -698,13 +726,15 @@ impl LoginSession {
             self.merge_cookies(&response, &current)?;
             self.current = current;
             if (300..400).contains(&response.status()) {
-                let location = response.header("location")
+                let location = response
+                    .header("location")
                     .ok_or("Omnivox returned an incomplete redirect.")?;
                 current = self.resolve(location)?;
                 // Never replay a password or a code, including on 307/308.
                 response = self.get(&current)?;
             } else if response.status() == 200 {
-                return response.into_string()
+                return response
+                    .into_string()
                     .map_err(|_| "Omnivox returned an unreadable login page.".into());
             } else {
                 return Err(format!(
@@ -730,10 +760,17 @@ impl LoginSession {
         .set("User-Agent", &user_agent)
         .set("X-User-Agent-Ovx", &user_agent)
         .set("X-Requested-With", "XMLHttpRequest")
-        .set("Cookie", &self.cookies_for(&target).map_err(|message| (false, message))?);
+        .set(
+            "Cookie",
+            &self
+                .cookies_for(&target)
+                .map_err(|message| (false, message))?,
+        );
         let page_url = url::Url::parse(&self.current)
             .map_err(|_| (false, "Invalid Omnivox verification address.".into()))?;
-        if let Some((_, token)) = self.jar.get_request_values(&page_url)
+        if let Some((_, token)) = self
+            .jar
+            .get_request_values(&page_url)
             .find(|(name, _)| *name == "XSRF-REQUEST-TOKEN")
         {
             request = request.set("X-XSRF-TOKEN", &decode_cookie(token));
@@ -744,41 +781,60 @@ impl LoginSession {
         };
         let response = match response {
             Ok(response) | Err(ureq::Error::Status(_, response)) => response,
-            Err(_) => return Err((
-                false,
-                "Cannot reach Omnivox. Check your Internet connection and try again.".into(),
-            )),
+            Err(_) => {
+                return Err((
+                    false,
+                    "Cannot reach Omnivox. Check your Internet connection and try again.".into(),
+                ))
+            }
         };
-        self.merge_cookies(&response, &target).map_err(|message| (false, message))?;
+        self.merge_cookies(&response, &target)
+            .map_err(|message| (false, message))?;
         if matches!(response.status(), 401 | 403) {
             return Err((
                 true,
-                format!("Omnivox refused the sign-in request (HTTP {}). Sign in again.", response.status()),
+                format!(
+                    "Omnivox refused the sign-in request (HTTP {}). Sign in again.",
+                    response.status()
+                ),
             ));
         }
         if (300..400).contains(&response.status()) {
-            return Err((true, "Omnivox redirected the sign-in request. Sign in again.".into()));
+            return Err((
+                true,
+                "Omnivox redirected the sign-in request. Sign in again.".into(),
+            ));
         }
         if response.status() != 200 {
-            return Err((false, format!(
-                "Omnivox returned HTTP {} during verification. Try again.",
-                response.status()
-            )));
+            return Err((
+                false,
+                format!(
+                    "Omnivox returned HTTP {} during verification. Try again.",
+                    response.status()
+                ),
+            ));
         }
-        response.into_json().map_err(|_| (
-            false,
-            "Omnivox did not return a verification response. Try again.".into(),
-        ))
+        response.into_json().map_err(|_| {
+            (
+                false,
+                "Omnivox did not return a verification response. Try again.".into(),
+            )
+        })
     }
 
     fn check_authenticated_page(&self, html: &str) -> Result<(), String> {
         if omnivox_mfa_page(&self.current, html) {
-            return Err("Omnivox still requires identity validation. Sign in again to request a new code.".into());
+            return Err(
+                "Omnivox still requires identity validation. Sign in again to request a new code."
+                    .into(),
+            );
         }
         // Only a login page means the credentials were refused. Portal pages
         // can embed harmless password inputs (account settings, hidden modals).
         if omnivox_login_page(&self.current) && session::html_has_password_field(html) {
-            return Err("Omnivox refused the login. Check your student number and password.".into());
+            return Err(
+                "Omnivox refused the login. Check your student number and password.".into(),
+            );
         }
         Ok(())
     }
@@ -819,7 +875,10 @@ fn login_session(
     let response = session.get(&session.current)?;
     let html = session.follow(response, session.current.clone())?;
     if !session::html_has_password_field(&html) {
-        return Err("This Omnivox site did not show a student password form. Check the college address.".into());
+        return Err(
+            "This Omnivox site did not show a student password form. Check the college address."
+                .into(),
+        );
     }
     let (action, body) = omnivox_login_form(&html, username, password)?;
     let post_url = session.resolve(&action)?;
@@ -827,10 +886,14 @@ fn login_session(
     // tell Omnivox to open a mobile session instead of a web session.
     let page_url = url::Url::parse(&post_url).map_err(|_| "Invalid Omnivox login address.")?;
     let _ = session.jar.parse("ForceWeb=false; Path=/", &page_url);
-    let _ = session.jar.parse("IndicateurNouveauLogin=true; Path=/", &page_url);
+    let _ = session
+        .jar
+        .parse("IndicateurNouveauLogin=true; Path=/", &page_url);
     let user_agent = session.user_agent();
     let posted = send_form(
-        session.agent.post(&post_url)
+        session
+            .agent
+            .post(&post_url)
             .set("Content-Type", "application/x-www-form-urlencoded")
             .set("Cookie", &session.cookies_for(&post_url)?)
             .set("Origin", base_url)
@@ -844,17 +907,28 @@ fn login_session(
         let model = session
             .json(&format!("/api/mfa/login/validate-method/{method_id}"), None)
             .map_err(|(_, message)| message)?;
-        let method_type = model.get("methodType").and_then(Value::as_str).unwrap_or("");
+        let method_type = model
+            .get("methodType")
+            .and_then(Value::as_str)
+            .unwrap_or("");
         let destination = model.get("data").and_then(Value::as_str).unwrap_or("");
         let prompt = match method_type {
             "E" | "E2" => format!(
                 "Enter the 6-digit security code sent by email{}.",
-                if destination.is_empty() { String::new() } else { format!(" to {destination}") }
+                if destination.is_empty() {
+                    String::new()
+                } else {
+                    format!(" to {destination}")
+                }
             ),
             "M" => "Enter the 6-digit security code sent to your Omnivox Mobile app.".into(),
             "T" | "J" => "Enter the 6-digit code from your authenticator or security token.".into(),
             "CT" => "Enter the 6-digit security code provided by your college.".into(),
-            _ => return Err("This Omnivox identity verification method is not supported by the app.".into()),
+            _ => {
+                return Err(
+                    "This Omnivox identity verification method is not supported by the app.".into(),
+                )
+            }
         };
         return Ok(LoginOutcome::VerificationRequired(Box::new(PendingLogin {
             session,
@@ -878,11 +952,15 @@ fn login_session(
 
 fn verification_method_id(current: &str) -> Option<String> {
     let parsed = url::Url::parse(current).ok()?;
-    let id = parsed.path().strip_prefix("/apps/mfa/login/validate-method/")?;
+    let id = parsed
+        .path()
+        .strip_prefix("/apps/mfa/login/validate-method/")?;
     (!id.is_empty()
         && id.len() <= 256
-        && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'))
-        .then(|| id.to_string())
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'))
+    .then(|| id.to_string())
 }
 
 fn omnivox_login_page(current: &str) -> bool {
@@ -920,11 +998,18 @@ fn first_form(html: &str) -> &str {
         return html;
     };
     let rest = &html[start..];
-    let end = rest.to_ascii_lowercase().find("</form>").unwrap_or(rest.len());
+    let end = rest
+        .to_ascii_lowercase()
+        .find("</form>")
+        .unwrap_or(rest.len());
     &rest[..end]
 }
 
-fn omnivox_login_form(html: &str, username: &str, password: &str) -> Result<(String, String), String> {
+fn omnivox_login_form(
+    html: &str,
+    username: &str,
+    password: &str,
+) -> Result<(String, String), String> {
     let mut action = session::html_form_action(html)
         .filter(|action| !action.is_empty())
         .unwrap_or_else(|| "/intr/Module/Identification/Login/Login.aspx".into());
@@ -942,9 +1027,12 @@ fn omnivox_login_form(html: &str, username: &str, password: &str) -> Result<(Str
     let mut has_pass = false;
     // The current portal renames Identifiant/Password in RoleClick JavaScript.
     // Reproduce the student role instead of posting the uninitialized HTML names.
-    let student_role = html.split('<')
+    let student_role = html
+        .split('<')
         .filter_map(|part| part.split_once('>').map(|(tag, _)| tag))
-        .find(|tag| session::html_attr(tag, "data-type-utilisateur").as_deref() == Some("Etudiant"));
+        .find(|tag| {
+            session::html_attr(tag, "data-type-utilisateur").as_deref() == Some("Etudiant")
+        });
     let user_name = student_role.and_then(|tag| session::html_attr(tag, "data-name-identifiant"));
     let password_name = student_role.and_then(|tag| session::html_attr(tag, "data-name-password"));
     if student_role.is_some() {
@@ -1000,18 +1088,18 @@ fn omnivox_login_form(html: &str, username: &str, password: &str) -> Result<(Str
 fn send(request: ureq::Request) -> Result<ureq::Response, String> {
     match request.call() {
         Ok(response) | Err(ureq::Error::Status(_, response)) => Ok(response),
-        Err(_) => {
-            Err("Cannot reach Omnivox. Check the college address and your Internet connection.".into())
-        }
+        Err(_) => Err(
+            "Cannot reach Omnivox. Check the college address and your Internet connection.".into(),
+        ),
     }
 }
 
 fn send_form(request: ureq::Request, body: &str) -> Result<ureq::Response, String> {
     match request.send_string(body) {
         Ok(response) | Err(ureq::Error::Status(_, response)) => Ok(response),
-        Err(_) => {
-            Err("Cannot reach Omnivox. Check the college address and your Internet connection.".into())
-        }
+        Err(_) => Err(
+            "Cannot reach Omnivox. Check the college address and your Internet connection.".into(),
+        ),
     }
 }
 
@@ -1053,7 +1141,12 @@ pub(crate) mod tests {
     fn server(
         responses: Vec<(u16, String)>,
     ) -> (OmnivoxConfig, std::thread::JoinHandle<Vec<String>>) {
-        login_server(responses.into_iter().map(|(status, body)| (status, String::new(), body)).collect())
+        login_server(
+            responses
+                .into_iter()
+                .map(|(status, body)| (status, String::new(), body))
+                .collect(),
+        )
     }
 
     fn login_server(
@@ -1190,13 +1283,23 @@ pub(crate) mod tests {
             current: url.to_string(),
             device_id: new_device_id(),
             auth_hash: String::new(),
-            agent: ureq::AgentBuilder::new().user_agent(session::BROWSER_UA).build(),
+            agent: ureq::AgentBuilder::new()
+                .user_agent(session::BROWSER_UA)
+                .build(),
             jar: CookieStore::default(),
         };
-        login.jar.parse("k=parent; Domain=omnivox.ca; Path=/", &url).unwrap();
+        login
+            .jar
+            .parse("k=parent; Domain=omnivox.ca; Path=/", &url)
+            .unwrap();
         login.jar.parse("k=host; Path=/", &url).unwrap();
-        login.jar.parse("k=deleted; Path=/; Max-Age=0", &url).unwrap();
-        let header = login.cookies_for("https://college.omnivox.ca/api/mfa/login").unwrap();
+        login
+            .jar
+            .parse("k=deleted; Path=/; Max-Age=0", &url)
+            .unwrap();
+        let header = login
+            .cookies_for("https://college.omnivox.ca/api/mfa/login")
+            .unwrap();
         assert_eq!(header, "k=parent");
     }
 
@@ -1295,7 +1398,10 @@ pub(crate) mod tests {
             jar: CookieStore::default(),
         };
         let error = login.establish_mobile_session().unwrap_err();
-        assert!(error.contains("did not confirm the mobile session"), "{error}");
+        assert!(
+            error.contains("did not confirm the mobile session"),
+            "{error}"
+        );
         assert!(login.auth_hash.is_empty());
         worker.join().unwrap();
     }
@@ -1303,9 +1409,12 @@ pub(crate) mod tests {
     #[test]
     #[ignore = "Signs in to a real Omnivox account and can send an email security code"]
     fn live_omnivox_email_verification_form() {
-        let url = std::env::var("STUDENT_MCP_TEST_OMNIVOX_URL").expect("Set STUDENT_MCP_TEST_OMNIVOX_URL");
-        let username = std::env::var("STUDENT_MCP_TEST_OMNIVOX_USERNAME").expect("Set STUDENT_MCP_TEST_OMNIVOX_USERNAME");
-        let password = std::env::var("STUDENT_MCP_TEST_OMNIVOX_PASSWORD").expect("Set STUDENT_MCP_TEST_OMNIVOX_PASSWORD");
+        let url = std::env::var("STUDENT_MCP_TEST_OMNIVOX_URL")
+            .expect("Set STUDENT_MCP_TEST_OMNIVOX_URL");
+        let username = std::env::var("STUDENT_MCP_TEST_OMNIVOX_USERNAME")
+            .expect("Set STUDENT_MCP_TEST_OMNIVOX_USERNAME");
+        let password = std::env::var("STUDENT_MCP_TEST_OMNIVOX_PASSWORD")
+            .expect("Set STUDENT_MCP_TEST_OMNIVOX_PASSWORD");
         crate::config::tests::with_temp_config(|| {
             let mut settings = crate::config::Settings::default();
             let outcome = activate_login(&mut settings, &url, &username, &password).unwrap();
@@ -1327,7 +1436,8 @@ pub(crate) mod tests {
         crate::config::tests::with_temp_config(|| {
             let mut settings = crate::config::Settings {
                 omnivox: Some(crate::config::OmnivoxSettings {
-                    url: Some("https://old.omnivox.ca".into()), token: Some("old-session".into()),
+                    url: Some("https://old.omnivox.ca".into()),
+                    token: Some("old-session".into()),
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -1350,8 +1460,14 @@ pub(crate) mod tests {
             assert!(pending.can_resend);
             assert_eq!(std::fs::read(crate::config::config_path()).unwrap(), before);
             // Malformed input must not consume a server-side attempt.
-            assert!(pending.verify(&mut settings, "12345").unwrap_err().contains("6-digit"));
-            assert!(pending.verify(&mut settings, "000000").unwrap_err().contains("invalid"));
+            assert!(pending
+                .verify(&mut settings, "12345")
+                .unwrap_err()
+                .contains("6-digit"));
+            assert!(pending
+                .verify(&mut settings, "000000")
+                .unwrap_err()
+                .contains("invalid"));
             assert!(!pending.expired);
             pending.resend().unwrap();
             assert_eq!(std::fs::read(crate::config::config_path()).unwrap(), before);
@@ -1369,7 +1485,8 @@ pub(crate) mod tests {
             assert!(requests[0].starts_with(
                 "GET /intr/Module/Identification/Login/Mobile/LoginMobile.aspx?typeUtilisateur=Etudiant "
             ));
-            assert!(requests[1].starts_with("POST /intr/Module/Identification/Login/Login.aspx?t=Etudiant "));
+            assert!(requests[1]
+                .starts_with("POST /intr/Module/Identification/Login/Login.aspx?t=Etudiant "));
             let body = requests[1].lines().last().unwrap();
             assert!(body.contains("NoDA=1234567"));
             assert!(body.contains("PasswordEtu=secret-pass"));
@@ -1377,9 +1494,13 @@ pub(crate) mod tests {
             assert!(!body.contains("Password="));
             assert!(requests[3].starts_with("GET /api/mfa/login/validate-method/test-method "));
             assert!(requests[4].contains("\"tksm\":\"device+token\""));
-            assert!(requests[4].to_lowercase().contains("x-xsrf-token: csrf+value="));
+            assert!(requests[4]
+                .to_lowercase()
+                .contains("x-xsrf-token: csrf+value="));
             assert!(requests[5].starts_with("POST /api/mfa/login/resend-code "));
-            assert!(requests[6].to_lowercase().contains("x-xsrf-token: rotated+csrf"));
+            assert!(requests[6]
+                .to_lowercase()
+                .contains("x-xsrf-token: rotated+csrf"));
             assert!(requests[6].contains("\"code\":\"123456\""));
             assert!(requests[7].starts_with("GET /intr/continue "));
             assert!(requests[7].contains("olt=one%2Buse%2F%3D"));
@@ -1390,7 +1511,9 @@ pub(crate) mod tests {
             for (index, request) in requests.iter().enumerate() {
                 assert!(request.contains("OVX InfoDevice="));
                 assert!(request.contains(&format!("IdAppareil={device_id}")));
-                assert!(request.to_lowercase().contains("x-user-agent-ovx: ovx infodevice="));
+                assert!(request
+                    .to_lowercase()
+                    .contains("x-user-agent-ovx: ovx infodevice="));
                 if index > 1 {
                     assert!(request.contains("preauth=pending"));
                     assert!(!request.contains("secret-pass"));
@@ -1417,7 +1540,10 @@ pub(crate) mod tests {
                 let (config, worker) = login_server(responses);
                 let mut settings = crate::config::Settings::default();
                 let mut pending = pending_login(&mut settings, &config.base_url);
-                assert!(pending.verify(&mut settings, "123456").unwrap_err().contains(expected));
+                assert!(pending
+                    .verify(&mut settings, "123456")
+                    .unwrap_err()
+                    .contains(expected));
                 assert_eq!(pending.expired, expired);
                 assert!(settings.omnivox.is_none());
                 assert!(crate::config::Settings::load().omnivox.is_none());
@@ -1447,11 +1573,23 @@ pub(crate) mod tests {
     fn email_code_handoff_rejects_external_targets_and_unverified_sessions() {
         crate::config::tests::with_temp_config(|| {
             for (reply, continuation, expected) in [
-                (r#"{"result":"Valid","olt":"token","url":"https://elsewhere.invalid/"}"#, vec![], "away"),
-                (r#"{"result":"Valid","olt":"token","url":"/intr/"}"#, vec![
-                    (200, String::new(), "<html>portal</html>".into()),
-                    (200, String::new(), r#"{"NaviguerPage":"/apps/mfa/login"}"#.into()),
-                ], "confirm the mobile session"),
+                (
+                    r#"{"result":"Valid","olt":"token","url":"https://elsewhere.invalid/"}"#,
+                    vec![],
+                    "away",
+                ),
+                (
+                    r#"{"result":"Valid","olt":"token","url":"/intr/"}"#,
+                    vec![
+                        (200, String::new(), "<html>portal</html>".into()),
+                        (
+                            200,
+                            String::new(),
+                            r#"{"NaviguerPage":"/apps/mfa/login"}"#.into(),
+                        ),
+                    ],
+                    "confirm the mobile session",
+                ),
             ] {
                 let mut responses = challenge_responses();
                 responses.push((200, String::new(), reply.into()));
@@ -1459,7 +1597,10 @@ pub(crate) mod tests {
                 let (config, worker) = login_server(responses);
                 let mut settings = crate::config::Settings::default();
                 let mut pending = pending_login(&mut settings, &config.base_url);
-                assert!(pending.verify(&mut settings, "123456").unwrap_err().contains(expected));
+                assert!(pending
+                    .verify(&mut settings, "123456")
+                    .unwrap_err()
+                    .contains(expected));
                 assert!(pending.expired);
                 assert!(crate::config::Settings::load().omnivox.is_none());
                 worker.join().unwrap();
@@ -1655,7 +1796,10 @@ pub(crate) mod tests {
                 requests
             });
             let mut settings = crate::config::Settings::default();
-            assert!(matches!(login_session(&mut settings, &base, "1234567", "secret-pass").unwrap(), LoginOutcome::Connected(_)));
+            assert!(matches!(
+                login_session(&mut settings, &base, "1234567", "secret-pass").unwrap(),
+                LoginOutcome::Connected(_)
+            ));
             let saved = settings.omnivox.unwrap();
             assert_eq!(saved.auth_hash.as_deref(), Some("hash"));
             assert!(saved.device_id.as_deref().is_some_and(|id| id.len() == 40));

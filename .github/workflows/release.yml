@@ -37,6 +37,9 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -51,7 +54,7 @@ jobs:
             libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
             libfontconfig1-dev libgtk2.0-dev 2>/dev/null || true
       - run: cargo test --release --locked
-      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
+      - run: python -m unittest discover -s scripts -p 'test_*.py'
       - run: cargo build --release --locked --target ${{ matrix.target }}
       - name: Smoke the MCP over stdio (linux-x64 only)
         if: matrix.label == 'linux-x64'
@@ -63,7 +66,57 @@ jobs:
             | target/x86_64-unknown-linux-gnu/release/student-mcp | grep -q student_status
       - name: Package ZIP and checksum
         shell: bash
-        run: python3 scripts/archive-release.py --label ${{ matrix.label }} --binary target/${{ matrix.target }}/release/student-mcp${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: python scripts/archive-release.py --label ${{ matrix.label }} --binary target/${{ matrix.target }}/release/student-mcp${{ runner.os == 'Windows' && '.exe' || '' }}
+      - name: Install Inno Setup (pinned and checksum-verified)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'innosetup.exe'
+          Invoke-WebRequest 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe' -OutFile $installer
+          if ((Get-FileHash $installer -Algorithm SHA256).Hash -ne '9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732') {
+            throw 'Inno Setup checksum mismatch'
+          }
+          $process = Start-Process $installer -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Inno Setup installation failed: $($process.ExitCode)" }
+      - name: Package native desktop installer and checksum
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          python scripts/package-desktop.py --label ${{ matrix.label }} \
+            --binary target/${{ matrix.target }}/release/student-mcp${{ runner.os == 'Windows' && '.exe' || '' }} \
+            --launcher target/${{ matrix.target }}/release/student-mcp-desktop${{ runner.os == 'Windows' && '.exe' || '' }}
+      - name: Smoke Windows install and uninstall (no GUI)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $destination = Join-Path $env:RUNNER_TEMP 'student-mcp smoke'
+          $setup = (Resolve-Path 'release/student-mcp-${{ matrix.label }}-setup.exe').Path
+          $process = Start-Process $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$destination`"" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installation failed: $($process.ExitCode)" }
+          if (-not (Test-Path "$destination/student-mcp-desktop.exe")) { throw 'Desktop launcher missing' }
+          & "$destination/student-mcp.exe" --version
+          if ($LASTEXITCODE -ne 0) { throw 'Installed CLI failed' }
+          $process = Start-Process "$destination/unins000.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Uninstall failed: $($process.ExitCode)" }
+          if (Test-Path "$destination/student-mcp.exe") { throw 'Uninstall left the app behind' }
+      - name: Smoke macOS disk image, install and upgrade (no GUI)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          image="release/student-mcp-${{ matrix.label }}.dmg"
+          mount="$RUNNER_TEMP/student-mcp-volume"
+          hdiutil verify "$image"
+          hdiutil attach "$image" -mountpoint "$mount" -nobrowse -readonly
+          trap 'hdiutil detach "$mount"' EXIT
+          installer="$mount/Install student-mcp.app"
+          codesign --verify --deep --strict "$installer"
+          "$installer/Contents/Resources/student-mcp.app/Contents/MacOS/student-mcp" --version
+          test ! -e /Applications/student-mcp.app
+          for pass in install upgrade; do
+            /bin/bash "$installer/Contents/Resources/install-macos.sh" "$installer/Contents/Resources/student-mcp.app"
+            codesign --verify --deep --strict /Applications/student-mcp.app
+            /Applications/student-mcp.app/Contents/MacOS/student-mcp --version
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: installer-${{ matrix.label }}
@@ -85,4 +138,11 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          body: |
+            ## Desktop installation
+            - **Windows:** download `student-mcp-windows-<architecture>-setup.exe`, double-click it and keep **Open student-mcp** selected.
+            - **macOS:** download `student-mcp-macos-<architecture>.dmg`, open it and double-click **Install student-mcp**. Confirm **Install and open**.
+            - Choose **arm64** for Apple Silicon / Windows ARM, **x64** for Intel / AMD.
+            - These builds are not yet publisher-signed/notarized; Windows/macOS may warn or block them. Do not disable system security protections.
+            - Portable ZIPs and `install.sh` / `install.ps1` remain available for advanced use. SHA-256 files verify download integrity, not publisher identity.
           files: release/*

@@ -2,6 +2,26 @@
 
 A small window plus a local MCP server, with a built-in srv.us tunnel client.
 
+## Installation
+
+Download from the [latest release](https://github.com/CloudDown/student-mcp/releases/latest):
+
+- **Windows:** double-click `student-mcp-windows-<architecture>-setup.exe`,
+  install, and leave **Open student-mcp** selected. Reopen from the Start menu;
+  uninstall through Windows Settings → Apps.
+- **macOS:** open `student-mcp-macos-<architecture>.dmg`, double-click
+  **Install student-mcp**, then **Install and open**. Reopen from Applications.
+  To remove it, quit from its menu-bar icon and move the app to the Trash.
+- **arm64** is for Apple Silicon / Windows ARM; **x64** is for Intel / AMD.
+- Quit any running copy before upgrading. Removing/updating the application
+  does not delete saved accounts or tunnel identity files in your home folder.
+
+The installers are not yet publisher-signed/notarized; OS security checks may
+warn or block them. Do not disable those checks. See
+[distribution and signing](DISTRIBUTION.md) for the remaining release work.
+Linux and advanced users can still use `install.sh` / `install.ps1` or the
+portable ZIPs, as described in the [README](../README.md#install).
+
 ## 1. What you see when it opens
 
 ```
@@ -120,8 +140,11 @@ References: [D2L API authentication](https://docs.valence.desire2learn.com/basic
 
 - **Claude Desktop / OpenCode / many others**: point the assistant at the binary
   as a stdio command:
-  - macOS / Linux: `~/.student-mcp/bin/student-mcp`
+  - macOS native install: `/Applications/student-mcp.app/Contents/MacOS/student-mcp`
+  - Linux / terminal install on macOS: `~/.student-mcp/bin/student-mcp`
   - Windows: `%LOCALAPPDATA%\student-mcp\student-mcp.exe`
+- Use the main binary, not `student-mcp-desktop`: the desktop launcher always
+  opens the GUI, while the main binary starts MCP stdio without arguments.
 - The tool list follows the window: add or remove a service and the tools appear
   or disappear on the next call (the config is re-read every time).
 

@@ -48,11 +48,8 @@ mod tests {
         assert!(response_for_line("   ", &settings).is_none());
         let reply = response_for_line("{", &settings).unwrap();
         assert_eq!(reply["error"]["code"], -32700);
-        let reply = response_for_line(
-            r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#,
-            &settings,
-        )
-        .unwrap();
+        let reply =
+            response_for_line(r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#, &settings).unwrap();
         assert_eq!(reply["result"], serde_json::json!({}));
     }
 }

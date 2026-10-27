@@ -101,9 +101,9 @@ pub fn html_form_inputs(html: &str) -> Vec<(String, String)> {
 }
 
 pub fn html_has_password_field(html: &str) -> bool {
-    html_form_inputs(html)
-        .iter()
-        .any(|(name, _)| name.eq_ignore_ascii_case("password") || name.to_ascii_lowercase().contains("password"))
+    html_form_inputs(html).iter().any(|(name, _)| {
+        name.eq_ignore_ascii_case("password") || name.to_ascii_lowercase().contains("password")
+    })
 }
 
 pub(crate) fn html_attr(tag: &str, key: &str) -> Option<String> {
@@ -116,7 +116,9 @@ pub(crate) fn html_attr(tag: &str, key: &str) -> Option<String> {
         let end = inner.find(quote)?;
         return Some(inner[..end].to_string());
     }
-    let end = rest.find(|ch: char| ch.is_ascii_whitespace() || ch == '>').unwrap_or(rest.len());
+    let end = rest
+        .find(|ch: char| ch.is_ascii_whitespace() || ch == '>')
+        .unwrap_or(rest.len());
     Some(rest[..end].to_string())
 }
 
@@ -131,7 +133,8 @@ pub fn resolve_url(base: &str, location: &str) -> Result<String, String> {
 pub fn same_host(left: &str, right: &str) -> bool {
     match (Url::parse(left), Url::parse(right)) {
         (Ok(left), Ok(right)) => {
-            left.host_str().map(str::to_ascii_lowercase) == right.host_str().map(str::to_ascii_lowercase)
+            left.host_str().map(str::to_ascii_lowercase)
+                == right.host_str().map(str::to_ascii_lowercase)
                 && left.scheme() == right.scheme()
         }
         _ => false,
@@ -187,7 +190,9 @@ pub fn fill_login_form(
     let mut password_set = false;
     for (name, value) in &mut pairs {
         let lower = name.to_ascii_lowercase();
-        if username_names.iter().any(|candidate| lower == candidate.to_ascii_lowercase())
+        if username_names
+            .iter()
+            .any(|candidate| lower == candidate.to_ascii_lowercase())
             || lower.contains("identifiant")
             || lower == "noda"
             || lower == "username"

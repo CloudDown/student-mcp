@@ -526,8 +526,11 @@ fn post_mcp(
             return jsonrpc_error(400, "Unknown MCP session: initialize first.");
         }
     }
-    match crate::mcp::handle_message_versioned(settings, &message, request.protocol_version.as_deref())
-    {
+    match crate::mcp::handle_message_versioned(
+        settings,
+        &message,
+        request.protocol_version.as_deref(),
+    ) {
         Some(reply) => {
             let status = match reply.pointer("/error/code").and_then(Value::as_i64) {
                 Some(-32020 | -32022) => 400,
@@ -875,8 +878,12 @@ mod tests {
         let mut first = None;
         let mut last = None;
         for index in 0..=MAX_SESSIONS {
-            let (status, headers, _) =
-                route_with(&request("POST", "/mcp/test-token"), &sessions, &settings, TOKEN);
+            let (status, headers, _) = route_with(
+                &request("POST", "/mcp/test-token"),
+                &sessions,
+                &settings,
+                TOKEN,
+            );
             assert_eq!(status, 200, "{index}");
             let id = headers
                 .into_iter()
