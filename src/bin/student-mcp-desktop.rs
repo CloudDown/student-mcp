@@ -22,7 +22,7 @@ fn launch() -> std::io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        // Keep the app-bundle process alive for Dock/menu-bar lifecycle handling.
+        // Replace the launcher with the server; configuration opens in the browser.
         Err(command.exec())
     }
     #[cfg(not(unix))]

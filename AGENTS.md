@@ -1,6 +1,6 @@
 # student-mcp — guide agents
 
-Rust popup (egui) + MCP local pour Moodle, Omnivox et Brightspace.
+Backend Rust + interface web locale + MCP pour Moodle, Omnivox et Brightspace.
 Un dépôt = un commit. Secrets dans `~/.student-mcp.json`, jamais dans git.
 
 ## HTTP scolaire — ne pas refaire cette erreur
@@ -80,11 +80,15 @@ pour couvrir un handoff vers un autre sous-domaine.
 
 ## Layout
 
-- `src/gui.rs` — fenêtre
-- `src/moodle.rs` / `omnivox.rs` / `brightspace.rs` — connecteurs
+- `src/web.rs` / `src/resources/web/index.html` — configuration web locale (hors tunnel)
+- `src/services/{moodle,omnivox,brightspace}/mod.rs` — connecteurs par service
+- `src/services/moodle/download.rs` — cache de téléchargements Moodle
+- `src/services/moodle/catalog.rs` / `catalog/` — catalogue des fonctions Moodle et licences
 - `src/session.rs` — cookies, formulaires HTML, `BROWSER_UA`
 - `src/mcp.rs` / `http.rs` / `stdio.rs` — MCP
-- `docs/GUIDE.md` — doc utilisateur
+- `src/resources/` — interface et icônes embarquées
+- `tools/` — scripts, tests de distribution et modèles d’installation
+- `tools/GUIDE.md` — guide utilisateur et maintenance
 
 ```bash
 cargo test mobile_token

@@ -4,11 +4,17 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+    paths-ignore: ['tools/*.md', '*.md']
   pull_request:
+    paths-ignore: ['tools/*.md', '*.md']
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   build:
@@ -48,16 +54,27 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
-      - name: Linux GUI build dependencies
+      - name: PDF integration dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
-            libfontconfig1-dev
+            poppler-utils ghostscript
+      - name: Rust formatting and lint
+        if: matrix.label == 'linux-x64'
+        run: |
+          rustup component add rustfmt clippy
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --release --locked --target ${{ matrix.target }}
-      - run: python -m unittest discover -s scripts -p 'test_*.py'
+      - name: PDF integration tests (tools required)
+        if: runner.os == 'Linux'
+        run: cargo test --release --locked --target ${{ matrix.target }} --lib pdf_ -- --ignored
+      - run: python -m unittest discover -s tools -p 'test_*.py'
       - run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Browser API and lifecycle smoke
+        if: runner.os == 'Linux'
+        run: python tools/smoke-web.py target/${{ matrix.target }}/release/student-mcp
       - name: Smoke the MCP over stdio (both Linux architectures)
         if: runner.os == 'Linux'
         shell: bash
@@ -67,13 +84,14 @@ jobs:
             '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
             | target/${{ matrix.target }}/release/student-mcp | grep -q student_status
       - name: Stage release payload
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           mkdir -p release
           binary="target/${{ matrix.target }}/release/student-mcp"
           launcher="target/${{ matrix.target }}/release/student-mcp-desktop"
           if [ "${{ runner.os }}" = "Linux" ]; then
-            python scripts/stage-release.py --binary "$binary" --name "student-mcp-${{ matrix.label }}"
+            python tools/stage-release.py --binary "$binary" --name "student-mcp-${{ matrix.label }}"
           else
             ext=""
             if [ "${{ runner.os }}" = "Windows" ]; then ext=".exe"; fi
@@ -81,21 +99,24 @@ jobs:
             cp "$launcher$ext" "release/student-mcp-desktop-${{ matrix.label }}$ext"
           fi
       - name: Upload final Linux asset
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
         uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.label }}
+          retention-days: 7
           path: release/*
           if-no-files-found: error
       - name: Upload architecture payload (Windows/macOS)
-        if: runner.os != 'Linux'
+        if: runner.os != 'Linux' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
         uses: actions/upload-artifact@v4
         with:
           name: payload-${{ matrix.label }}
+          retention-days: 7
           path: release/*
           if-no-files-found: error
 
   package-windows:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: windows-2022
     steps:
@@ -121,7 +142,7 @@ jobs:
       - name: Build one universal Windows setup.exe
         shell: bash
         run: |
-          python scripts/package-desktop.py windows \
+          python tools/package-desktop.py windows \
             --x64-binary payload/student-mcp-windows-x64.exe \
             --x64-launcher payload/student-mcp-desktop-windows-x64.exe \
             --arm64-binary payload/student-mcp-windows-arm64.exe \
@@ -140,10 +161,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-windows
+          retention-days: 7
           path: release/*
           if-no-files-found: error
 
   package-macos:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: macos-15
     steps:
@@ -158,7 +181,7 @@ jobs:
           merge-multiple: true
       - name: Build one universal student-mcp.dmg
         run: |
-          python scripts/package-desktop.py macos \
+          python tools/package-desktop.py macos \
             --x64-binary payload/student-mcp-macos-x64 \
             --x64-launcher payload/student-mcp-desktop-macos-x64 \
             --arm64-binary payload/student-mcp-macos-arm64 \
@@ -166,6 +189,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-macos
+          retention-days: 7
           path: release/*
           if-no-files-found: error
 
@@ -273,7 +297,7 @@ jobs:
             - **Windows:** download `student-mcp-setup.exe`, double-click it and keep **Open student-mcp** selected.
             - **macOS:** download `student-mcp.dmg`, open it and double-click **Install student-mcp**. Confirm **Install and open**.
             - One file per OS. The same installer works on Intel/AMD and ARM (Apple Silicon / Windows on ARM).
-            - **Linux:** download `student-mcp-linux-x64` or `student-mcp-linux-arm64` (raw binary), or use `install.sh`.
+            - **Linux:** download `student-mcp-linux-x64` or `student-mcp-linux-arm64` (raw binary), or use `tools/packaging/install.sh`.
             - These builds are not yet publisher-signed/notarized; Windows/macOS may warn or block them. Do not disable system security protections.
             - SHA-256 files verify download integrity, not publisher identity.
           files: release/*

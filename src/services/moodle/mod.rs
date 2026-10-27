@@ -1,12 +1,17 @@
 use crate::config::MoodleConfig;
+use crate::pdf::{output as pdf_output, split_pages as split_pdf_pages, Workspace};
 use serde_json::{json, Value};
 use std::io::Read;
+use std::sync::Arc;
 use std::time::Duration;
 use url::Url;
+pub(crate) mod catalog;
+mod download;
 
 /// What to read from a Moodle file.
 #[derive(Default, Clone)]
 pub struct FileQuery {
+    pub format: FileFormat,
     /// First page (1-based). Defaults to the page matching `find`, else 1.
     pub page_from: Option<u32>,
     /// Last page (inclusive). Defaults to a window of `MAX_PDF_PAGES`.
@@ -15,10 +20,18 @@ pub struct FileQuery {
     pub find: Option<String>,
 }
 
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+pub enum FileFormat {
+    #[default]
+    File,
+    Text,
+    Images,
+}
+
 const MOBILE_SERVICE: &str = "moodle_mobile_app";
 const TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_FILE_BYTES: u64 = 12 * 1024 * 1024;
-const MAX_TEXT_CHARS: usize = 80_000;
+const MAX_TEXT_CHARS: usize = 20_000;
 /// Pages rendered/extracted per moodle_file call. Long PDFs use page_from/page_to.
 const MAX_PDF_PAGES: u32 = 24;
 /// If the rest of a PDF is short, include it instead of returning a truncated window.
@@ -28,7 +41,6 @@ const MAX_PAGE_BYTES: usize = 1_500_000;
 const MAX_IMAGES_TOTAL_BYTES: usize = 8_000_000;
 /// Above this size, a PDF is exposed through links instead of a giant base64 blob.
 const MAX_INLINE_BLOB_BYTES: usize = 6 * 1024 * 1024;
-const OCR_MAX_PAGES: usize = 24;
 const SENSITIVE_KEYS: [&str; 6] = [
     "wstoken",
     "token",
@@ -211,55 +223,72 @@ impl MoodleClient {
     /// For PDFs, `query` can target a page window or search the text layer (`find`).
     pub fn download_file(&self, fileurl: &str, query: &FileQuery) -> Result<Value, String> {
         let url = file_download_url(&self.base_url, &self.token, fileurl)?;
-        let response = download_agent()
-            .get(&url)
-            .call()
-            .map_err(|error| scrub_secret(error_for_file_transport(error), &self.token))?;
-        // redirects(0) returns the 3xx response instead of an error.
-        if (300..400).contains(&response.status()) {
-            return Err(
+        let file = match download::get(&url) {
+            Some(file) => file,
+            None => {
+                let response = download_agent()
+                    .get(&url)
+                    .call()
+                    .map_err(|error| scrub_secret(error_for_file_transport(error), &self.token))?;
+                // redirects(0) returns the 3xx response instead of an error.
+                if (300..400).contains(&response.status()) {
+                    return Err(
                 "Moodle redirected this file (login required). Use a fileurl from moodle_course_content."
                     .into(),
             );
-        }
-        let mime = response.content_type().to_string();
-        let filename = filename_from(response.header("Content-Disposition"), fileurl);
-        let mut bytes = Vec::new();
-        response
-            .into_reader()
-            .take(MAX_FILE_BYTES + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|_| "Cannot read this Moodle file.".to_string())?;
-        if bytes.len() as u64 > MAX_FILE_BYTES {
-            return Err("This Moodle file is larger than 12 MB. Open it in Moodle instead.".into());
-        }
-        if mime.contains("json") {
-            if let Ok(value) = serde_json::from_slice::<Value>(&bytes) {
-                if value.get("exception").is_some() || value.get("errorcode").is_some() {
-                    let code = value
-                        .get("errorcode")
-                        .and_then(Value::as_str)
-                        .unwrap_or("unknown");
-                    let message = value
-                        .get("message")
-                        .and_then(Value::as_str)
-                        .unwrap_or("Download refused.");
-                    return Err(scrub_secret(
-                        format!("Moodle error ({code}): {message}"),
-                        &self.token,
-                    ));
                 }
-            }
-        }
-        if looks_like_html(&mime, &bytes) {
-            return Err(
+                let mime = response.content_type().to_string();
+                let filename = filename_from(response.header("Content-Disposition"), fileurl);
+                let mut bytes = Vec::new();
+                response
+                    .into_reader()
+                    .take(MAX_FILE_BYTES + 1)
+                    .read_to_end(&mut bytes)
+                    .map_err(|_| "Cannot read this Moodle file.".to_string())?;
+                if bytes.len() as u64 > MAX_FILE_BYTES {
+                    return Err(
+                        "This Moodle file is larger than 12 MB. Open it in Moodle instead.".into(),
+                    );
+                }
+                if mime.contains("json") {
+                    if let Ok(value) = serde_json::from_slice::<Value>(&bytes) {
+                        if value.get("exception").is_some() || value.get("errorcode").is_some() {
+                            let code = value
+                                .get("errorcode")
+                                .and_then(Value::as_str)
+                                .unwrap_or("unknown");
+                            let message = value
+                                .get("message")
+                                .and_then(Value::as_str)
+                                .unwrap_or("Download refused.");
+                            return Err(scrub_secret(
+                                format!("Moodle error ({code}): {message}"),
+                                &self.token,
+                            ));
+                        }
+                    }
+                }
+                if looks_like_html(&mime, &bytes) {
+                    return Err(
                 "Moodle returned a login page instead of the file. Use a fileurl from moodle_course_content."
                     .into(),
             );
-        }
+                }
+                let file = Arc::new(download::File {
+                    filename,
+                    mime,
+                    bytes: Arc::new(bytes),
+                });
+                download::insert(&url, Arc::clone(&file));
+                file
+            }
+        };
+        let filename = &file.filename;
+        let mime = &file.mime;
+        let bytes = file.bytes.as_slice();
         let is_pdf = mime.to_ascii_lowercase().contains("pdf") || bytes.starts_with(b"%PDF");
         if !is_pdf {
-            let text = extract_text(&mime, &bytes).map(|text| scrub_secret(text, &self.token));
+            let text = extract_text(mime, bytes).map(|text| scrub_secret(text, &self.token));
             let mut result = json!({
                 "filename": filename,
                 "mimeType": mime,
@@ -276,12 +305,43 @@ impl MoodleClient {
             return Ok(result);
         }
 
-        let total_pages = pdf_page_count(&bytes).unwrap_or(0);
+        // Send one representation. A PDF-capable LLM does not need the same
+        // document duplicated as extracted text, OCR and dozens of JPEGs.
+        if query.format == FileFormat::File {
+            let mut result =
+                json!({ "filename": filename, "mimeType": "application/pdf", "size": bytes.len() });
+            if crate::share::enabled() {
+                if let Some(id) = crate::share::publish_bytes(
+                    filename,
+                    "application/pdf",
+                    Arc::clone(&file.bytes),
+                    "",
+                    0,
+                ) {
+                    if let Some(links) = crate::share::links_for(&id) {
+                        result["links"] =
+                            json!({ "download": links.download, "expiresInHours": 3 });
+                    }
+                }
+            }
+            if bytes.len() <= MAX_INLINE_BLOB_BYTES || result.get("links").is_none() {
+                use base64::Engine;
+                result["file"] = json!({ "filename": filename, "mimeType": "application/pdf",
+                    "data": base64::engine::general_purpose::STANDARD.encode(bytes) });
+            }
+            result["note"] = json!("Original PDF. If your client cannot read the attached resource, open links.download or request format=text for selected pages. For scans or diagrams, request format=images with page_from/page_to. No local OCR is performed.");
+            return Ok(result);
+        }
+
+        let total_pages = pdf_page_count(bytes).ok_or("Cannot inspect this PDF. Install Poppler, or request format=file to read the original without local processing.")?;
         // Extract the whole document once: the text layer doubles as a page index
-        // for `find` and as the complete text exposed by the shared reader link.
-        let full_text =
-            pdftotext_cli_range(&bytes, 1, if total_pages > 0 { total_pages } else { 2000 })
-                .unwrap_or_default();
+        // for `find` and as the complete text exposed by the optional text link.
+        let full_text = if query.find.is_some() {
+            pdftotext_cli_range(bytes, 1, if total_pages > 0 { total_pages } else { 2000 })
+                .ok_or("Cannot search this PDF's text layer. Request format=file instead.")?
+        } else {
+            String::new()
+        };
         let page_texts = split_pdf_pages(&full_text, total_pages);
         let matches = query
             .find
@@ -296,18 +356,36 @@ impl MoodleClient {
             .find(|page| *page > 2 && !looks_like_toc(*page, &page_texts))
             .or_else(|| matches.first().map(|(page, _)| *page));
         let start_page = query.page_from.or(matched_page).unwrap_or(1);
-        let range = resolve_pdf_range(Some(start_page), query.page_to, total_pages)?;
+        let page_to = if query.format == FileFormat::Images {
+            Some(
+                query
+                    .page_to
+                    .unwrap_or(start_page.saturating_add(1))
+                    .min(start_page.saturating_add(7)),
+            )
+        } else {
+            query.page_to
+        };
+        let range = resolve_pdf_range(Some(start_page), page_to, total_pages)?;
 
         // Extract the window directly: some PDFs have no form-feed markers, and a
         // padded page index must never leak another page's text.
-        let text = pdftotext_cli_range(&bytes, range.from, range.to)
-            .unwrap_or_else(|| page_slice_text(&page_texts, range.from, range.to));
-        let text_len = text.trim().chars().count();
+        let text = if query.format == FileFormat::Text {
+            pdftotext_cli_range(bytes, range.from, range.to).ok_or(
+                "PDF text extraction failed or timed out. Check Poppler, or request format=file.",
+            )?
+        } else {
+            String::new()
+        };
         let window_pages = (range.to.saturating_sub(range.from) + 1) as usize;
-        // A real text layer is usually far denser than this. Below the threshold,
-        // OCR the rendered pages so text-only clients still get the content.
-        let needs_ocr = text_len < (window_pages * 120).max(600);
-        let (pages, ocr) = render_pdf_pages(&bytes, range.from, range.to, needs_ocr);
+        let pages = if query.format == FileFormat::Images {
+            render_pdf_pages(bytes, range.from, range.to)
+        } else {
+            Vec::new()
+        };
+        if query.format == FileFormat::Images && pages.is_empty() {
+            return Err("PDF rendering failed, timed out or exceeded the image limit. Check Poppler, or request format=file.".into());
+        }
         let truncated = total_pages > 0 && range.to < total_pages;
         let next_page_from = if truncated { Some(range.to + 1) } else { None };
         let (text, text_truncated) = match usable_text(text) {
@@ -321,11 +399,11 @@ impl MoodleClient {
 
         // Capability links (public tunnel or localhost). Publishing is cheap and
         // lets browser AIs open/download the file instead of ignoring a blob.
-        let shared = if crate::share::enabled() {
-            crate::share::publish(
-                &filename,
+        let shared = if crate::share::enabled() && query.find.is_some() {
+            crate::share::publish_bytes(
+                filename,
                 "application/pdf",
-                &bytes,
+                Arc::clone(&file.bytes),
                 &scrub_secret(full_text, &self.token),
                 total_pages,
             )
@@ -374,38 +452,19 @@ impl MoodleClient {
             Some(text) if !text.trim().is_empty() => result["text"] = json!(text),
             _ if pages.is_empty() => {
                 result["note"] = json!(
-                    "The PDF downloaded, but no readable text or page images could be produced. Install Poppler (pdftoppm/pdftotext) on this computer."
+                    "This PDF has no usable text layer. Request format=images for selected pages, or format=file for the original PDF."
                 );
             }
             _ => {}
         }
-        if let Some(ocr) = ocr {
-            result["textSource"] = json!("ocr");
-            result["ocrText"] = json!(ocr);
-        } else if text.is_some() {
+        if text.is_some() {
             result["textSource"] = json!("pdf-text");
         }
         if let Some(links) = links {
             if let Some(url) = links.get("download").and_then(Value::as_str) {
                 result["downloadUrl"] = json!(url);
             }
-            if let Some(url) = links.get("reader").and_then(Value::as_str) {
-                result["readerUrl"] = json!(url);
-            }
             result["links"] = links;
-        }
-        if bytes.len() <= MAX_INLINE_BLOB_BYTES || result.get("links").is_none() {
-            use base64::Engine;
-            result["file"] = json!({
-                "filename": filename,
-                "mimeType": "application/pdf",
-                "data": base64::engine::general_purpose::STANDARD.encode(&bytes),
-            });
-        } else {
-            result["fileOmitted"] = json!(format!(
-                "This PDF is {:.1} MB, so it is not inlined as base64. Use links.download to open or attach it.",
-                bytes.len() as f64 / (1024.0 * 1024.0)
-            ));
         }
         let rendered_pages = pages.len();
         if !pages.is_empty() {
@@ -414,6 +473,9 @@ impl MoodleClient {
         }
         let mut note =
             pdf_result_note(truncated, range.from, range.to, total_pages, next_page_from);
+        if query.format == FileFormat::Text && text.is_none() {
+            note.push_str(" No usable text layer: request format=images for selected pages or format=file for the original PDF.");
+        }
         if let Some(needle) = query
             .find
             .as_deref()
@@ -430,18 +492,16 @@ impl MoodleClient {
         }
         if text_truncated {
             note.push_str(
-                " text was capped for this response; links.text has the full extracted text.",
+                " Text was capped at 20,000 characters; request a smaller page window for the omitted text.",
             );
         }
-        if rendered_pages < window_pages {
+        if query.format == FileFormat::Images && rendered_pages < window_pages {
             note.push_str(
-                " Some page images were too large to inline; links.reader still shows every page.",
+                " Some page images are unavailable or too large to inline; request a smaller window or the original file.",
             );
         }
         if result.get("links").is_some() {
-            note.push_str(
-                " links.reader shows every page in a browser, links.download opens the PDF, and links.parts covers the whole document when this window is not enough.",
-            );
+            note.push_str(" links.download opens the original PDF.");
         }
         result["note"] = json!(note);
         Ok(result)
@@ -1294,21 +1354,11 @@ impl MoodleClient {
     /// Pages, files, URLs, folders and books listed for a course (without full section tree).
     pub fn resources(&self, courseid: i64) -> Result<Value, String> {
         let ids = json!({ "courseids": [courseid] });
-        let pages = self
-            .call("mod_page_get_pages_by_courses", &ids)
-            .unwrap_or_else(|_| json!({}));
-        let files = self
-            .call("mod_resource_get_resources_by_courses", &ids)
-            .unwrap_or_else(|_| json!({}));
-        let urls = self
-            .call("mod_url_get_urls_by_courses", &ids)
-            .unwrap_or_else(|_| json!({}));
-        let folders = self
-            .call("mod_folder_get_folders_by_courses", &ids)
-            .unwrap_or_else(|_| json!({}));
-        let books = self
-            .call("mod_book_get_books_by_courses", &ids)
-            .unwrap_or_else(|_| json!({}));
+        let pages = self.call("mod_page_get_pages_by_courses", &ids)?;
+        let files = self.call("mod_resource_get_resources_by_courses", &ids)?;
+        let urls = self.call("mod_url_get_urls_by_courses", &ids)?;
+        let folders = self.call("mod_folder_get_folders_by_courses", &ids)?;
+        let books = self.call("mod_book_get_books_by_courses", &ids)?;
 
         let map_named = |raw: &Value, key: &str, kind: &str| {
             raw.get(key)
@@ -1432,23 +1482,24 @@ fn truncate(text: &str, max_chars: usize) -> String {
 
 /// MCP tool result: JSON summary, the original file, then rendered PDF pages.
 pub(crate) fn mcp_content_for_file(mut data: Value) -> Vec<Value> {
-    let file = data.get("file").cloned();
+    let file = data
+        .as_object_mut()
+        .and_then(|object| object.remove("file"));
     let links = data.get("links").cloned();
-    let pages = data
-        .get("pages")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    if let Some(object) = data.as_object_mut() {
-        object.remove("file");
-        object.remove("pages");
-    }
+    let pages = match data
+        .as_object_mut()
+        .and_then(|object| object.remove("pages"))
+    {
+        Some(Value::Array(pages)) => pages,
+        _ => Vec::new(),
+    };
     let mut content = vec![json!({
         "type": "text",
         "text": serde_json::to_string_pretty(&data).unwrap_or_default()
     })];
-    if let Some(file) = file {
-        if let Some(blob) = file.get("data").and_then(Value::as_str) {
+    if let Some(mut file) = file {
+        let blob = file.get_mut("data").map(Value::take);
+        if let Some(blob @ Value::String(_)) = blob {
             let filename = file
                 .get("filename")
                 .and_then(Value::as_str)
@@ -1477,8 +1528,8 @@ pub(crate) fn mcp_content_for_file(mut data: Value) -> Vec<Value> {
             }));
         }
     }
-    for page in pages {
-        let Some(image) = page.get("data").and_then(Value::as_str) else {
+    for mut page in pages {
+        let Some(image @ Value::String(_)) = page.get_mut("data").map(Value::take) else {
             continue;
         };
         let mime = page
@@ -1499,9 +1550,9 @@ pub(crate) fn mcp_content_for_file(mut data: Value) -> Vec<Value> {
                 "Direct link to the original PDF. Open or download it, then attach it to the chat if the client supports uploads.",
             ),
             (
-                "reader",
-                "PDF reader (all pages)",
-                "HTML reader with the full text and every page image. Open it to read pages outside the tool window.",
+                "text",
+                "PDF text",
+                "Extracted text, when requested.",
             ),
         ] {
             let Some(uri) = links.get(key).and_then(Value::as_str) else {
@@ -1512,7 +1563,7 @@ pub(crate) fn mcp_content_for_file(mut data: Value) -> Vec<Value> {
                 "uri": uri,
                 "name": name,
                 "description": description,
-                "mimeType": if key == "download" { "application/pdf" } else { "text/html" }
+                "mimeType": if key == "download" { "application/pdf" } else { "text/plain" }
             }));
         }
     }
@@ -1623,45 +1674,11 @@ fn extract_text(mime: &str, bytes: &[u8]) -> Option<String> {
     if mime.starts_with("text/") || mime.contains("json") || mime.contains("xml") {
         return usable_text(truncate_text(&String::from_utf8_lossy(bytes)));
     }
-    if mime.contains("pdf") || bytes.starts_with(b"%PDF") {
-        if let Some(text) = pdftotext_cli(bytes).and_then(usable_text) {
-            return Some(truncate_text(&text));
-        }
-        return extract_pdf_text(bytes).and_then(usable_text);
-    }
     None
 }
 
-fn temp_job_dir() -> Option<std::path::PathBuf> {
-    let mut id = [0u8; 8];
-    getrandom::getrandom(&mut id).ok()?;
-    let root = std::env::temp_dir().join("student-mcp");
-    create_private_dir(&root)?;
-    let dir = root.join(format!("{:x}", u64::from_le_bytes(id)));
-    create_private_dir(&dir)?;
-    Some(dir)
-}
-
-/// Course files are written here for Poppler. The directory must not be world-readable.
-fn create_private_dir(path: &std::path::Path) -> Option<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-        if !path.is_dir() {
-            let mut builder = std::fs::DirBuilder::new();
-            builder.mode(0o700);
-            if builder.create(path).is_err() && !path.is_dir() {
-                return None;
-            }
-        }
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).ok()?;
-        return Some(());
-    }
-    #[cfg(not(unix))]
-    {
-        std::fs::create_dir_all(path).ok()?;
-        Some(())
-    }
+fn temp_job_dir() -> Option<Workspace> {
+    Workspace::new()
 }
 
 #[derive(Clone, Copy)]
@@ -1701,42 +1718,6 @@ fn resolve_pdf_range(
         }
     }
     Ok(PdfRange { from, to })
-}
-
-fn split_pdf_pages(text: &str, total: u32) -> Vec<String> {
-    let mut pages: Vec<String> = text
-        .split('\u{0C}')
-        .map(|page| page.trim_matches('\n').to_string())
-        .collect();
-    if total > 0 {
-        pages.truncate(total as usize);
-        while pages.len() < total as usize {
-            pages.push(String::new());
-        }
-    } else if pages.last().is_some_and(|page| page.trim().is_empty()) {
-        pages.pop();
-    }
-    if pages.is_empty() {
-        pages.push(String::new());
-    }
-    pages
-}
-
-fn page_slice_text(pages: &[String], from: u32, to: u32) -> String {
-    let mut out = String::new();
-    for page in from..=to {
-        let Some(text) = pages.get(page.saturating_sub(1) as usize) else {
-            continue;
-        };
-        if text.trim().is_empty() {
-            continue;
-        }
-        if !out.is_empty() {
-            out.push_str("\n\n");
-        }
-        out.push_str(text);
-    }
-    out
 }
 
 fn fold_char(ch: char) -> char {
@@ -1849,7 +1830,7 @@ fn contains_section(haystack: &str, needle: &str) -> bool {
         if !digit_before && !digit_after {
             return true;
         }
-        start = at + 1;
+        start = at + haystack[at..].chars().next().map_or(1, char::len_utf8);
     }
     false
 }
@@ -1867,52 +1848,21 @@ fn looks_like_toc(page: u32, pages: &[String]) -> bool {
         || head.contains("contenu du cours")
 }
 
-fn truncate_chars(text: &str, max: usize) -> String {
-    if text.chars().count() <= max {
-        text.to_string()
-    } else {
-        let mut out: String = text.chars().take(max.saturating_sub(1)).collect();
-        out.push('…');
-        out
-    }
+pub(crate) fn truncate_chars(text: &str, max: usize) -> String {
+    truncate(text, max)
 }
 
 /// Links served by the local MCP endpoint / its tunnel. They expose the file,
-/// a full-page HTML reader, plain text, and a window per part of the document.
-fn share_links_json(id: &str, from: u32, to: u32) -> Option<Value> {
+/// the original document and optional plain text.
+fn share_links_json(id: &str, _from: u32, _to: u32) -> Option<Value> {
     let links = crate::share::links_for(id)?;
-    let local_only = links.reader.contains("://127.0.0.1")
-        || links.reader.contains("://localhost")
-        || links.reader.contains("://[::1]");
-    let mut value = json!({
+    let local_only = links.download.contains("://127.0.0.1");
+    Some(json!({
         "download": links.download,
-        "reader": links.reader,
         "text": links.text,
         "expiresInHours": 3,
         "localOnly": local_only,
-    });
-    if let Some(url) = crate::share::page_window_url(id, from, to) {
-        value["currentWindow"] = json!(url);
-    }
-    if links.pages > 0 {
-        let mut parts = Vec::new();
-        let mut start = 1u32;
-        while start <= links.pages {
-            if parts.len() >= 24 {
-                value["partsTruncated"] = json!(true);
-                break;
-            }
-            let end = (start + crate::share::PART_PAGES - 1).min(links.pages);
-            if let Some(url) = crate::share::page_window_url(id, start, end) {
-                parts.push(json!({ "pageFrom": start, "pageTo": end, "url": url }));
-            }
-            start = end + 1;
-        }
-        if !parts.is_empty() {
-            value["parts"] = json!(parts);
-        }
-    }
-    Some(value)
+    }))
 }
 
 fn pdf_result_note(
@@ -1943,30 +1893,26 @@ fn pdf_result_note(
     }
 }
 
-/// Poppler's pdftotext understands CID fonts / ToUnicode; the naive fallback does not.
-fn pdftotext_cli(bytes: &[u8]) -> Option<String> {
-    pdftotext_cli_range(bytes, 1, MAX_PDF_PAGES)
-}
-
 fn pdftotext_cli_range(bytes: &[u8], from: u32, to: u32) -> Option<String> {
     let dir = temp_job_dir()?;
     let path = dir.join("file.pdf");
     let written = std::fs::write(&path, bytes).is_ok();
     let output = if written {
-        std::process::Command::new("pdftotext")
-            .args([
-                "-layout",
-                "-enc",
-                "UTF-8",
-                "-f",
-                &from.to_string(),
-                "-l",
-                &to.to_string(),
-            ])
-            .arg(&path)
-            .arg("-")
-            .output()
-            .ok()
+        pdf_output(
+            std::process::Command::new("pdftotext")
+                .args([
+                    "-layout",
+                    "-enc",
+                    "UTF-8",
+                    "-f",
+                    &from.to_string(),
+                    "-l",
+                    &to.to_string(),
+                ])
+                .arg(&path)
+                .arg("-"),
+        )
+        .ok()
     } else {
         None
     };
@@ -1976,11 +1922,7 @@ fn pdftotext_cli_range(bytes: &[u8], from: u32, to: u32) -> Option<String> {
         return None;
     }
     let text = String::from_utf8_lossy(&output.stdout).into_owned();
-    if text.trim().is_empty() {
-        None
-    } else {
-        Some(text)
-    }
+    Some(text)
 }
 
 pub(crate) fn pdf_page_count(bytes: &[u8]) -> Option<u32> {
@@ -1990,10 +1932,7 @@ pub(crate) fn pdf_page_count(bytes: &[u8]) -> Option<u32> {
         let _ = std::fs::remove_dir_all(&dir);
         return None;
     }
-    let output = std::process::Command::new("pdfinfo")
-        .arg(&path)
-        .output()
-        .ok();
+    let output = pdf_output(std::process::Command::new("pdfinfo").arg(&path)).ok();
     let _ = std::fs::remove_dir_all(&dir);
     let output = output?;
     if !output.status.success() {
@@ -2007,42 +1946,43 @@ pub(crate) fn pdf_page_count(bytes: &[u8]) -> Option<u32> {
             .or_else(|| line.strip_prefix("pages:"))
         {
             if let Ok(count) = rest.trim().parse::<u32>() {
-                return Some(count);
+                return (count <= 10_000).then_some(count);
             }
         }
     }
     None
 }
 
-fn render_pdf_pages(bytes: &[u8], from: u32, to: u32, ocr: bool) -> (Vec<Value>, Option<String>) {
+fn render_pdf_pages(bytes: &[u8], from: u32, to: u32) -> Vec<Value> {
     let Some(dir) = temp_job_dir() else {
-        return (Vec::new(), None);
+        return Vec::new();
     };
     let pdf_path = dir.join("file.pdf");
     let prefix = dir.join("page");
     if std::fs::write(&pdf_path, bytes).is_err()
-        || !std::process::Command::new("pdftoppm")
-            .args([
-                "-jpeg",
-                "-jpegopt",
-                "quality=78",
-                "-r",
-                "128",
-                "-scale-to",
-                "1600",
-                "-f",
-                &from.to_string(),
-                "-l",
-                &to.to_string(),
-            ])
-            .arg(&pdf_path)
-            .arg(&prefix)
-            .status()
-            .map(|status| status.success())
-            .unwrap_or(false)
+        || !pdf_output(
+            std::process::Command::new("pdftoppm")
+                .args([
+                    "-jpeg",
+                    "-jpegopt",
+                    "quality=78",
+                    "-r",
+                    "128",
+                    "-scale-to",
+                    "1600",
+                    "-f",
+                    &from.to_string(),
+                    "-l",
+                    &to.to_string(),
+                ])
+                .arg(&pdf_path)
+                .arg(&prefix),
+        )
+        .map(|output| output.status.success())
+        .unwrap_or(false)
     {
         let _ = std::fs::remove_dir_all(&dir);
-        return (Vec::new(), None);
+        return Vec::new();
     }
     let mut files: Vec<_> = std::fs::read_dir(&dir)
         .ok()
@@ -2063,7 +2003,6 @@ fn render_pdf_pages(bytes: &[u8], from: u32, to: u32, ocr: bool) -> (Vec<Value>,
     let engine = base64::engine::general_purpose::STANDARD;
     let mut pages = Vec::new();
     let mut total_image_bytes = 0usize;
-    let mut ocr_targets: Vec<(u32, std::path::PathBuf)> = Vec::new();
     for (index, path) in files.into_iter().enumerate() {
         let Ok(image) = std::fs::read(&path) else {
             continue;
@@ -2072,9 +2011,6 @@ fn render_pdf_pages(bytes: &[u8], from: u32, to: u32, ocr: bool) -> (Vec<Value>,
             continue;
         }
         let page_number = from.saturating_add(index as u32);
-        if ocr && ocr_targets.len() < OCR_MAX_PAGES {
-            ocr_targets.push((page_number, path.clone()));
-        }
         if total_image_bytes.saturating_add(image.len()) > MAX_IMAGES_TOTAL_BYTES {
             continue;
         }
@@ -2086,79 +2022,7 @@ fn render_pdf_pages(bytes: &[u8], from: u32, to: u32, ocr: bool) -> (Vec<Value>,
         }));
     }
     let _ = std::fs::remove_dir_all(&dir);
-    let ocr_text = if ocr { ocr_images(&ocr_targets) } else { None };
-    (pages, ocr_text)
-}
-
-/// OCR pages in parallel. Tesseract handles one page at a time, so a few
-/// workers turn a 20-page scan from ~20 s into a few seconds.
-fn ocr_images(targets: &[(u32, std::path::PathBuf)]) -> Option<String> {
-    if targets.is_empty() {
-        return None;
-    }
-    let results = std::sync::Mutex::new(Vec::new());
-    std::thread::scope(|scope| {
-        for chunk in targets.chunks(3) {
-            let results = &results;
-            scope.spawn(move || {
-                for (page, path) in chunk {
-                    if let Some(text) = ocr_image(path) {
-                        if let Ok(mut guard) = results.lock() {
-                            guard.push((*page, text));
-                        }
-                    }
-                }
-            });
-        }
-    });
-    let mut guard = results.into_inner().ok()?;
-    guard.sort_by_key(|(page, _)| *page);
-    let joined = guard
-        .iter()
-        .map(|(page, text)| format!("--- page {page} ---\n{text}"))
-        .collect::<Vec<_>>()
-        .join("\n\n");
-    usable_text(truncate_text(&joined))
-}
-
-fn ocr_language() -> &'static str {
-    static LANGUAGE: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
-    LANGUAGE.get_or_init(|| {
-        let output = std::process::Command::new("tesseract")
-            .arg("--list-langs")
-            .output()
-            .ok();
-        let has_french = output
-            .map(|output| {
-                String::from_utf8_lossy(&output.stdout)
-                    .lines()
-                    .any(|line| line.trim() == "fra")
-            })
-            .unwrap_or(false);
-        if has_french {
-            "fra"
-        } else {
-            "eng"
-        }
-    })
-}
-
-fn ocr_image(path: &std::path::Path) -> Option<String> {
-    let output = std::process::Command::new("tesseract")
-        .arg(path)
-        .arg("stdout")
-        .args(["-l", ocr_language(), "--psm", "6"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let text = String::from_utf8_lossy(&output.stdout).into_owned();
-    if text.trim().is_empty() {
-        None
-    } else {
-        Some(text)
-    }
+    pages
 }
 
 fn usable_text(text: String) -> Option<String> {
@@ -2179,133 +2043,6 @@ fn usable_text(text: String) -> Option<String> {
         return None;
     }
     Some(text)
-}
-
-fn extract_pdf_text(bytes: &[u8]) -> Option<String> {
-    if !bytes.starts_with(b"%PDF") {
-        return None;
-    }
-    let mut texts = Vec::new();
-    let mut cursor = 0;
-    while let Some(offset) = find_bytes(&bytes[cursor..], b"stream") {
-        let keyword = cursor + offset;
-        let dict_start = bytes[..keyword]
-            .iter()
-            .rposition(|&byte| byte == b'<')
-            .unwrap_or(keyword);
-        let dict = &bytes[dict_start..keyword];
-        if contains_bytes(dict, b"/FontFile")
-            || contains_bytes(dict, b"/Type1C")
-            || contains_bytes(dict, b"/CIDFontType0C")
-            || contains_bytes(dict, b"/ToUnicode")
-        {
-            cursor = keyword + b"stream".len();
-            continue;
-        }
-        let compressed = contains_bytes(dict, b"/FlateDecode");
-        let mut data_start = keyword + b"stream".len();
-        if bytes.get(data_start) == Some(&b'\r') {
-            data_start += 1;
-        }
-        if bytes.get(data_start) == Some(&b'\n') {
-            data_start += 1;
-        }
-        let Some(end) = find_bytes(&bytes[data_start..], b"endstream") else {
-            break;
-        };
-        let mut data = &bytes[data_start..data_start + end];
-        if let Some(stripped) = data.strip_suffix(b"\r\n") {
-            data = stripped;
-        } else if let Some(stripped) = data
-            .strip_suffix(b"\n")
-            .or_else(|| data.strip_suffix(b"\r"))
-        {
-            data = stripped;
-        }
-        let decoded = if compressed {
-            inflate(data)
-        } else {
-            data.to_vec()
-        };
-        if contains_bytes(&decoded, b"BT") || contains_bytes(&decoded, b"Tj") {
-            collect_pdf_strings(&decoded, &mut texts);
-        }
-        cursor = data_start + end + b"endstream".len();
-    }
-    let text = texts.join("\n");
-    if text.trim().is_empty() {
-        None
-    } else {
-        Some(truncate_text(&text))
-    }
-}
-
-fn inflate(data: &[u8]) -> Vec<u8> {
-    use flate2::read::ZlibDecoder;
-    let decoder = ZlibDecoder::new(data);
-    let mut out = Vec::new();
-    if decoder.take(MAX_FILE_BYTES).read_to_end(&mut out).is_err() {
-        out.clear();
-    }
-    out
-}
-
-fn collect_pdf_strings(data: &[u8], texts: &mut Vec<String>) {
-    let mut i = 0;
-    while i < data.len() {
-        if data[i] == b'(' {
-            let (string, next) = read_pdf_literal(data, i + 1);
-            if string.chars().any(|ch| ch.is_alphanumeric()) {
-                texts.push(string);
-            }
-            i = next;
-            continue;
-        }
-        i += 1;
-    }
-}
-
-fn read_pdf_literal(data: &[u8], mut i: usize) -> (String, usize) {
-    let mut out = Vec::new();
-    let mut depth = 1;
-    while i < data.len() {
-        match data[i] {
-            b'\\' if i + 1 < data.len() => {
-                i += 1;
-                out.push(match data[i] {
-                    b'n' => b'\n',
-                    b'r' => b'\r',
-                    b't' => b'\t',
-                    other => other,
-                });
-            }
-            b'(' => {
-                depth += 1;
-                out.push(b'(');
-            }
-            b')' => {
-                depth -= 1;
-                if depth == 0 {
-                    i += 1;
-                    break;
-                }
-                out.push(b')');
-            }
-            byte => out.push(byte),
-        }
-        i += 1;
-    }
-    (String::from_utf8_lossy(&out).into_owned(), i)
-}
-
-fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .position(|window| window == needle)
-}
-
-fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
-    find_bytes(haystack, needle).is_some()
 }
 
 fn truncate_text(text: &str) -> String {
@@ -2488,8 +2225,9 @@ pub(crate) mod tests {
         )
     }
 
+    type RawResponse = (u16, String, Vec<(String, String)>, Vec<u8>);
     pub(crate) fn raw_server(
-        responses: Vec<(u16, String, Vec<(String, String)>, Vec<u8>)>,
+        responses: Vec<RawResponse>,
     ) -> (String, std::thread::JoinHandle<Vec<String>>) {
         use std::io::{BufRead, BufReader, Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -2771,6 +2509,8 @@ pub(crate) mod tests {
 
     #[test]
     fn pdf_search_skips_the_toc_and_finds_the_real_section() {
+        assert!(!contains_section("1œuvre", "œuvre"));
+        assert!(contains_section("1œuvre puis œuvre", "œuvre"));
         let mut pages: Vec<String> = (1..=30)
             .map(|page| format!("Page {page}\nExercices du chapitre 3"))
             .collect();
@@ -2801,20 +2541,22 @@ pub(crate) mod tests {
     }
 
     #[test]
+    #[ignore = "requires Ghostscript and Poppler; run explicitly in PDF integration CI"]
     fn pdf_section_search_targets_the_matching_page() {
-        if std::process::Command::new("gs")
-            .arg("--version")
-            .output()
-            .is_err()
-        {
-            return; // Ghostscript is only needed to build this fixture.
-        }
-        let Some(dir) = temp_job_dir() else {
-            return;
-        };
-        let postscript = dir.join("fixture.ps");
-        let pdf_path = dir.join("fixture.pdf");
-        let source = r#"%!PS
+        crate::config::tests::with_temp_config(|| {
+            if std::process::Command::new("gs")
+                .arg("--version")
+                .output()
+                .is_err()
+            {
+                panic!("Ghostscript is required for this integration test");
+            }
+            let Some(dir) = temp_job_dir() else {
+                panic!("Cannot create PDF workspace");
+            };
+            let postscript = dir.join("fixture.ps");
+            let pdf_path = dir.join("fixture.pdf");
+            let source = r#"%!PS
 /Helvetica findfont 14 scalefont setfont
 1 1 30 {
   /p exch def
@@ -2829,92 +2571,107 @@ pub(crate) mod tests {
   showpage
 } for
 "#;
-        let built = std::fs::write(&postscript, source).is_ok()
-            && std::process::Command::new("gs")
-                .args(["-q", "-dNOPAUSE", "-dBATCH", "-sDEVICE=pdfwrite"])
-                .arg(format!("-sOutputFile={}", pdf_path.display()))
-                .arg(&postscript)
-                .status()
-                .map(|status| status.success())
-                .unwrap_or(false);
-        if !built {
+            let built = std::fs::write(&postscript, source).is_ok()
+                && std::process::Command::new("gs")
+                    .args(["-q", "-dNOPAUSE", "-dBATCH", "-sDEVICE=pdfwrite"])
+                    .arg(format!("-sOutputFile={}", pdf_path.display()))
+                    .arg(&postscript)
+                    .status()
+                    .map(|status| status.success())
+                    .unwrap_or(false);
+            if !built {
+                let _ = std::fs::remove_dir_all(&dir);
+                panic!("Cannot build PDF fixture");
+            }
+            let pdf = std::fs::read(&pdf_path).unwrap();
+            let (url, worker) = raw_server(vec![(200, "application/pdf".into(), Vec::new(), pdf)]);
+            let client = MoodleClient::new(&MoodleConfig {
+                base_url: url.clone(),
+                token: "private-token".into(),
+                allow_write: false,
+            });
+            let fileurl = format!("{url}/pluginfile.php/1/mod_resource/content/0/ch3.pdf");
+            let listener = crate::http::bind(0).unwrap();
+            let share_port = listener.local_addr().unwrap().port();
+            std::thread::spawn(move || {
+                let _ = crate::http::serve_controlled(
+                    listener,
+                    std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
+                );
+            });
+            let link_guard = crate::share::LINK_LOCK.lock().unwrap();
+            crate::share::set_port(share_port);
+            let data = client
+                .download_file(
+                    &fileurl,
+                    &FileQuery {
+                        format: FileFormat::Text,
+                        find: Some("3.3".into()),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            let links = &data["links"];
+            assert_eq!(links["localOnly"], true, "{data}");
+            let reader_url = links["text"].as_str().unwrap();
+            let reader = ureq::get(reader_url).call().unwrap().into_string().unwrap();
+            assert!(reader.contains("Taux de variation"), "{reader}");
+            let mut part = Vec::new();
+            ureq::get(links["download"].as_str().unwrap())
+                .call()
+                .unwrap()
+                .into_reader()
+                .read_to_end(&mut part)
+                .unwrap();
+            assert_eq!(pdf_page_count(&part), Some(30));
+            drop(link_guard);
+            let _ = worker.join();
             let _ = std::fs::remove_dir_all(&dir);
-            return;
-        }
-        let pdf = std::fs::read(&pdf_path).unwrap();
-        let (url, worker) = raw_server(vec![(200, "application/pdf".into(), Vec::new(), pdf)]);
-        let client = MoodleClient::new(&MoodleConfig {
-            base_url: url.clone(),
-            token: "private-token".into(),
-            allow_write: false,
-        });
-        let fileurl = format!("{url}/pluginfile.php/1/mod_resource/content/0/ch3.pdf");
-        let listener = crate::http::bind(0).unwrap();
-        let share_port = listener.local_addr().unwrap().port();
-        std::thread::spawn(move || {
-            let _ = crate::http::serve_controlled(
-                listener,
-                std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            assert_eq!(data["totalPages"], 30);
+            assert_eq!(data["matchedPage"], 26, "{data}");
+            assert_eq!(data["pageFrom"], 26);
+            assert_eq!(data["pageTo"], 30);
+            assert_eq!(data["truncated"], false);
+            assert!(
+                data["text"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("Taux de variation"),
+                "{data}"
+            );
+            assert!(data.get("pages").is_none());
+            assert!(data.get("file").is_none());
+            let images = client
+                .download_file(
+                    &fileurl,
+                    &FileQuery {
+                        format: FileFormat::Images,
+                        page_from: Some(26),
+                        page_to: Some(27),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            assert_eq!(images["pages"].as_array().unwrap().len(), 2);
+            assert!(images.get("file").is_none());
+            assert!(images.get("text").is_none());
+            assert!(
+                data["outline"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|entry| entry["page"] == 26
+                        && entry["title"].as_str().unwrap_or_default().contains("3.3")),
+                "{data}"
+            );
+            assert!(
+                data["note"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("page 26"),
+                "{data}"
             );
         });
-        let link_guard = crate::share::LINK_LOCK.lock().unwrap();
-        crate::share::set_port(share_port);
-        let data = client
-            .download_file(
-                &fileurl,
-                &FileQuery {
-                    find: Some("3.3".into()),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-        let links = &data["links"];
-        assert_eq!(links["localOnly"], true, "{data}");
-        let reader_url = links["reader"].as_str().unwrap();
-        let reader = ureq::get(reader_url).call().unwrap().into_string().unwrap();
-        assert!(reader.contains("Taux de variation"), "{reader}");
-        let parts = links["parts"].as_array().unwrap();
-        assert_eq!(parts.len(), 2, "{links}");
-        let mut part = Vec::new();
-        ureq::get(parts[1]["url"].as_str().unwrap())
-            .call()
-            .unwrap()
-            .into_reader()
-            .read_to_end(&mut part)
-            .unwrap();
-        assert_eq!(pdf_page_count(&part), Some(6));
-        drop(link_guard);
-        let _ = worker.join();
-        let _ = std::fs::remove_dir_all(&dir);
-        assert_eq!(data["totalPages"], 30);
-        assert_eq!(data["matchedPage"], 26, "{data}");
-        assert_eq!(data["pageFrom"], 26);
-        assert_eq!(data["pageTo"], 30);
-        assert_eq!(data["truncated"], false);
-        assert!(
-            data["text"]
-                .as_str()
-                .unwrap_or_default()
-                .contains("Taux de variation"),
-            "{data}"
-        );
-        assert_eq!(data["pages"].as_array().unwrap().len(), 5);
-        assert!(
-            data["outline"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|entry| entry["page"] == 26
-                    && entry["title"].as_str().unwrap_or_default().contains("3.3")),
-            "{data}"
-        );
-        assert!(
-            data["note"]
-                .as_str()
-                .unwrap_or_default()
-                .contains("page 26"),
-            "{data}"
-        );
     }
 
     #[test]
@@ -3067,17 +2824,48 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn pdf_text_extracts_uncompressed_literals() {
-        let pdf = b"%PDF-1.1\n1 0 obj<<>>endobj\n2 0 obj<</Length 44>>stream\nBT (Hello TD 5) Tj ET\nendstream\nendobj\n%%EOF\n";
-        let text = extract_pdf_text(pdf).unwrap();
-        assert!(text.contains("Hello TD 5"), "{text}");
-    }
-
-    #[test]
     fn usable_text_rejects_embedded_font_noise() {
         let noise = "001\u{0004}\u{0004}\\u0008\\LZdnx\u{0001}\u{0004}".repeat(20);
         assert!(usable_text(noise).is_none());
         assert!(usable_text("TD 5 — Calcul différentiel\nExercice 1".into()).is_some());
+    }
+
+    #[test]
+    fn default_pdf_delivery_needs_no_pdf_tools_or_duplicate_representations() {
+        let pdf = b"%PDF-1.4 original-file";
+        let (url, worker) = raw_server(vec![(200, "application/pdf".into(), vec![], pdf.to_vec())]);
+        let client = MoodleClient::new(&MoodleConfig {
+            base_url: url.clone(),
+            token: "private-token".into(),
+            allow_write: false,
+        });
+        let fileurl = format!("{url}/pluginfile.php/1/mod_resource/content/0/notes.pdf");
+        let data = client
+            .download_file(&fileurl, &FileQuery::default())
+            .unwrap();
+        assert!(data.get("file").is_some());
+        for key in ["text", "ocrText", "pages", "outline", "matches"] {
+            assert!(data.get(key).is_none(), "unexpected {key}");
+        }
+        assert_eq!(worker.join().unwrap().len(), 1);
+        let again = client
+            .download_file(&fileurl, &FileQuery::default())
+            .unwrap();
+        assert_eq!(again["file"], data["file"]);
+    }
+
+    #[test]
+    fn resources_do_not_report_an_expired_token_as_an_empty_course() {
+        let (url, worker) = server(vec![
+            json!({"exception":"moodle_exception","errorcode":"invalidtoken","message":"Expired"}),
+        ]);
+        let client = MoodleClient::new(&MoodleConfig {
+            base_url: url,
+            token: "private-token".into(),
+            allow_write: false,
+        });
+        assert!(client.resources(1).unwrap_err().contains("invalidtoken"));
+        assert_eq!(worker.join().unwrap().len(), 1);
     }
 
     #[test]
@@ -3090,7 +2878,7 @@ pub(crate) mod tests {
             "pages": [{ "mimeType": "image/jpeg", "data": "QUJDRA==" }],
             "links": {
                 "download": "https://example.test/s/1/TD5.pdf",
-                "reader": "https://example.test/s/1/read"
+                "text": "https://example.test/s/1/text"
             }
         });
         let content = mcp_content_for_file(data);
@@ -3110,6 +2898,6 @@ pub(crate) mod tests {
         assert_eq!(content[3]["uri"], "https://example.test/s/1/TD5.pdf");
         assert_eq!(content[3]["mimeType"], "application/pdf");
         assert_eq!(content[4]["type"], "resource_link");
-        assert_eq!(content[4]["uri"], "https://example.test/s/1/read");
+        assert_eq!(content[4]["uri"], "https://example.test/s/1/text");
     }
 }

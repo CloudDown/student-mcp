@@ -1,6 +1,6 @@
 # student-mcp guide
 
-A small window plus a local MCP server, with a built-in srv.us tunnel client.
+A local browser page plus a Rust MCP server, with a built-in srv.us tunnel client.
 
 ## Installation
 
@@ -11,54 +11,34 @@ Download from the [latest release](https://github.com/CloudDown/student-mcp/rele
   uninstall through Windows Settings → Apps.
 - **macOS:** open `student-mcp.dmg`, double-click
   **Install student-mcp**, then **Install and open**. Reopen from Applications.
-  To remove it, quit from its menu-bar icon and move the app to the Trash.
+  To remove it, stop it from its browser page and move the app to the Trash.
 - One download per desktop OS: Intel/AMD and ARM are handled automatically.
 - Quit any running copy before upgrading. Removing/updating the application
   does not delete saved accounts or tunnel identity files in your home folder.
 
 The installers are not yet publisher-signed/notarized; OS security checks may
 warn or block them. Do not disable those checks. See
-[distribution and signing](DISTRIBUTION.md) for the remaining release work.
-Linux and advanced users can still use `install.sh` / `install.ps1`, as described
+[release maintenance](#release-maintenance) for build and signing requirements.
+Linux and advanced users can still use `tools/packaging/install.sh` / `tools/packaging/install.ps1`, as described
 in the [README](../README.md#install). No ZIPs are published.
 
 ## 1. What you see when it opens
 
-```
-         [ Moodle ]  [ Omnivox ]  [ Brightspace ]
+Your browser opens a local page with accounts, login, verification, and MCP link
+settings. Its separate loopback listener is never forwarded through the tunnel.
+For Claude web, wait for a public HTTPS link; a localhost link only works locally.
 
-              <complete link>          [copy]
-```
+### Close the tab, keep the app running
 
-Only logos appear on the home screen (names and states are in tooltips). Click
-an unconnected service to enter credentials; after a successful connection you
-return home and its logo has a green outline. No unavailable-service tiles are
-shown.
-After you connect a service, the app automatically creates a public HTTPS link.
-Click it for link settings, or use the adjacent button to copy the complete URL.
-While the tunnel is starting or unavailable, copying is disabled so a local URL
-cannot accidentally be used in a web AI. Local access is still in link settings.
-
-### Close the window, keep the app running
-
-On Windows/Linux, the app has an icon in the notification area; on macOS it is
-in the menu bar. Closing the window hides it without stopping the local MCP
-server, connected services or current public link. Use **Open student-mcp** in
-the icon's menu to restore the window, and **Quit student-mcp** to stop the app
-and tunnel completely. No additional startup/login service is installed.
-
-Linux needs a StatusNotifier-compatible tray host (e.g. Plasma or a tray-enabled
-panel; some GNOME setups require an AppIndicator extension). If none is
-available, closing the window quits normally. If the tray service disappears
-while the window is hidden, the app restores its window rather than stranding
-you without controls. Link settings describe the currently available behavior.
-Linux uses X11/XWayland for hide/restore because the windowing backend cannot
-hide Wayland windows. On a pure Wayland session without `DISPLAY`, background
-mode is disabled and closing the window quits normally.
+Closing the tab leaves the connector running. A small tray icon (notification
+area / status bar) stays visible while the app is up: click it or use
+**Open student-mcp** to reopen the page, and **Quit student-mcp** to stop the
+server and tunnel. You can also stop from the page with **Arrêter student-mcp**.
+Launch student-mcp again if the tray is gone and you need the page.
 
 ## 2. Connecting a service
 
-**Moodle.** Two visible modes.
+**Moodle.** Two authentication options.
 
 1. *School login*: firstname.lastname + password → the binary calls
    `/login/token.php` with the `moodle_mobile_app` service; only the **token**
@@ -97,12 +77,9 @@ in your browser, sign in, then under **Advanced options** paste the
 OAuth token, without `Bearer`). Sessions expire and must be replaced via
 **Change login**. The connector uses LP API 1.49 and LE API 1.82.
 
-Once configured, clicking its logo opens a **manage** screen. A live check
-runs automatically and can be retried with **Retry**. The saved connection
-remains manageable even if the remote service is offline: you can still change
-credentials or disconnect. The screen also shows an **Allow changes** switch —
-no need to re-enter credentials to change permissions. Omnivox and Brightspace
-are always read-only and have no write switch.
+Saved accounts have check, reconnect and disconnect actions. Moodle permissions
+can be changed without re-entering credentials. Omnivox and Brightspace remain
+read-only.
 
 ### Quebec integration targets
 
@@ -111,7 +88,7 @@ Only implemented connectors are displayed, without empty slots.
 
 - **Moodle** also covers installations such as StudiUM; it is not a separate
   platform. Each institution must enable the required mobile/Web Service access.
-- **Omnivox (including Léa/Mio)** signs in with the student's college login
+- **Omnivox (Léa; Mio messaging is not implemented)** signs in with the student's college login
   through Omnivox's mobile login page and reads the `/Mobl/` JSON endpoints.
   A web session from `/Login/Account/Login` is rejected by `/Mobl/`, so the
   connector keeps the same mobile identity (user agent, device id, AuthHash)
@@ -144,7 +121,7 @@ References: [D2L API authentication](https://docs.valence.desire2learn.com/basic
   - Linux / terminal install on macOS: `~/.student-mcp/bin/student-mcp`
   - Windows: `%LOCALAPPDATA%\student-mcp\student-mcp.exe`
 - Use the main binary, not `student-mcp-desktop`: the desktop launcher always
-  opens the GUI, while the main binary starts MCP stdio without arguments.
+   opens the browser page, while the main binary starts MCP stdio without arguments.
 - The tool list follows the window: add or remove a service and the tools appear
   or disappear on the next call (the config is re-read every time).
 
@@ -157,8 +134,8 @@ References: [D2L API authentication](https://docs.valence.desire2learn.com/basic
    into your AI's **MCP connector settings**, not a chat message. In Claude,
    choose "Continue anyway" if it warns about OAuth.
 4. Keep the app running and the computer awake and online; you can close its
-   window into the tray. To stop this public tunnel, turn off **Public link** in
-   link settings, or use **Quit student-mcp** in the tray menu.
+   browser tab. To stop this public tunnel, turn off the public link and apply
+   settings, or use **Arrêter student-mcp** on the page.
    Existing Tailscale configuration and other apps are left untouched.
 
 The tunnel exposes only the app's current loopback HTTP port. The app reconnects
@@ -184,7 +161,11 @@ outbound TCP port 22 prevent the tunnel from connecting. The current MCP server
 answers with JSON rather than SSE. Compatibility with your actual AI client and
 its connector/subscription rules must still be checked.
 
-See [srv.us](https://docs.srv.us/) and [security and validation](SRVUS-EXPERIMENT.md).
+SSH host verification is trust on first use: the first key is accepted without
+independent authentication, and later changes are refused. The tunnel key does
+not authenticate visitors; the secret MCP token does. School credentials must
+remain local, but tool results are disclosed to the AI provider and the relay.
+See [srv.us documentation](https://docs.srv.us/).
 
 The token protects the URL: without it you get a 401. You can rotate the token
 by quitting the app, deleting `gateway.token` in `~/.student-mcp.json`, then
@@ -194,18 +175,18 @@ restarting. Copy the new full connector URL; its hostname stays the same.
 
 ```
 student-mcp            # MCP stdio (local AI assistant)
-student-mcp up         # window + local HTTP server
+student-mcp up         # browser page + local HTTP server
 student-mcp up --port=9000
-student-mcp install    # reopens the window (used by the installer)
+student-mcp install    # reopens the page (used by the installer)
 student-mcp version
 ```
 
 ## 6. Troubleshooting
 
-- **The window does not open (SSH)**: the window needs a display; on a headless
-  server use the stdio mode only.
-- **Port already taken**: `up` tries 8420→8429 automatically; force one with
-  `--port=`.
+- **The browser does not open**: use the local URL printed on launch, or use stdio
+  on a headless machine.
+- **Port already taken**: an existing instance is reopened; for another process
+  occupying that port, choose a different port with `--port=`.
 - **Moodle rejects the school login**: SSO or 2FA blocks `/login/token.php` →
   switch to the **Mobile token** mode.
 - **Moodle did not return / provide a token**: school WAFs (AWS on
@@ -221,26 +202,25 @@ student-mcp version
 - **The assistant cannot open a Moodle PDF / stops mid-chapter**: Moodle file
   URLs need the web service token, which is never given to the model. Use
   `moodle_file` with the `fileurl` from `moodle_course_content`; do not fetch
-  that URL with a generic HTTP tool. `moodle_file` now returns:
-  - `find` results (`matchedPage`, `matches`) when you pass a section such as
-    `"3.3"` or a phrase;
-  - extracted text, page images, and `totalPages` / `truncated` /
-    `nextPageFrom` for the requested window (up to 24 pages, plus a short tail,
-    so a 30-page chapter arrives whole);
-  - `links.reader` (full HTML reader with every page), `links.download` (direct
-    PDF), `links.text` (plain text), and `links.parts` (one URL per page window).
+  that URL with a generic HTTP tool. The default `format=file` returns the original
+  PDF resource and a download link when HTTP sharing is available, without running
+  local PDF tools or duplicating the document as text/images. Above 6 MB, HTTP
+  clients receive the download link; stdio still receives the original file.
 
-  Links exist in `student-mcp up` mode (local link and/or public tunnel); stdio
-  clients receive the inline blob, text and images instead. PDFs larger than
-  6 MB are not inlined as base64 when links exist: use `links.download`. Open `links.reader`
-  when a chapter is long, or call `moodle_file` again with
-  `page_from=nextPageFrom`. Do not invent missing pages. `links.localOnly` is
-  true when no public tunnel is active: a browser AI cannot reach that address,
-  so rely on the inline text/images or turn the public link on. Install Poppler
-  (`pdftotext`, `pdftoppm`, `pdfinfo`, `pdftocairo`) for PDF rendering/slicing,
-  and Tesseract for scanned PDFs without a text layer.
+  If your client cannot consume PDF resources, use `format=text` with
+  `page_from`/`page_to` (20,000 characters maximum), or `format=images` for scans
+  and diagrams (2 pages by default, at most 8). There is no local OCR: the LLM
+  interprets the PDF or the requested images. `find` searches a section/phrase
+  in the text layer. Page/search arguments without a format default to text.
+  Follow `nextPageFrom` when `truncated` is true, or reduce the page range when
+  `textTruncated` is true. Downloads are cached for 60 seconds per account.
+
+  Poppler (`pdftotext`, `pdftoppm`, `pdfinfo`, `pdftocairo`) is needed only for
+  requested extraction/rendering. Search results also offer original-file and
+  text links. Localhost links cannot be opened by a remote browser
+  AI; use inline resources or enable the public link.
 - **The shared file link says it expired**: links are capability URLs valid for
-  three hours. Call `moodle_file` again to mint a fresh one. Anyone with the
+  up to three hours (4 files / 24 MiB maximum). Call `moodle_file` again to mint a fresh one. Anyone with the
   link can read that one file until it expires; the Moodle token is never in
   the link.
 - **Claude cannot register with the sign-in service** (`ofid_…` reference):
@@ -259,4 +239,49 @@ student-mcp version
   generated hostname may take time to resolve: first wait and retry the same
   link. The app reconnects automatically, keeping that address. Firewalls or
   srv.us outages can also block it. A stable URL does not make an offline app
-  reachable.
+   reachable.
+
+## Release maintenance
+
+Run checks from the repository root:
+
+```sh
+cargo test --locked
+python3 -B -m unittest discover -s tools -p 'test_*.py'
+```
+
+The optional tunnel test opens real public tunnels with synthetic requests and
+isolated credentials; it never uses saved school accounts:
+
+```sh
+cargo test --locked public_mcp_smoke -- --ignored --nocapture
+```
+
+`.github/workflows/release.yml` builds x64/ARM64 binaries, checks native installers
+and publishes tags beginning with `v`. `tools/stage-release.py` stages Linux
+binaries with SHA-256 sidecars; `tools/package-desktop.py` creates the universal
+Windows installer and macOS disk image from both architecture payloads.
+Installer sources and terminal install scripts are in `tools/packaging/`.
+
+Packaging requires Python 3.11+, Inno Setup on Windows, or Xcode Command Line
+Tools on macOS. For example:
+
+```sh
+python3 tools/package-desktop.py macos \
+  --x64-binary target/x86_64-apple-darwin/release/student-mcp \
+  --x64-launcher target/x86_64-apple-darwin/release/student-mcp-desktop \
+  --arm64-binary target/aarch64-apple-darwin/release/student-mcp \
+  --arm64-launcher target/aarch64-apple-darwin/release/student-mcp-desktop
+```
+
+For Windows, use the `windows` subcommand and corresponding MSVC `.exe` paths.
+Output goes to `release/`. The Windows C runtime is statically linked; macOS
+uses system libraries. No compiler or extra runtime is installed on users' PCs.
+
+SHA-256 sidecars check integrity, not publisher identity. Public releases still
+need Authenticode signatures on Windows and Developer ID signing, notarization
+and stapling on macOS; current macOS ad-hoc signatures do not provide these.
+Keep signing credentials outside the repository and generate checksums after
+signing. Test browser-downloaded artifacts on clean native Windows/macOS systems
+for first launch, upgrades, account preservation and uninstall. Automated checks
+do not prove institutional login or actual AI-client interoperability.

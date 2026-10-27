@@ -43,7 +43,7 @@ class InstallTests(unittest.TestCase):
             environment = dict(os.environ, HOME=str(home), FIXTURE_ROOT=str(root),
                                MOODLE_INSTALL_CHECK_ONLY="1",
                                PATH=f"{tools}{os.pathsep}{os.environ['PATH']}")
-            result = subprocess.run(["bash", str(ROOT / "install.sh")], env=environment,
+            result = subprocess.run(["bash", str(ROOT / "tools/packaging/install.sh")], env=environment,
                                     capture_output=True, timeout=10)
             self.assertEqual((root / "downloads").read_text().splitlines(),
                              [asset.name, asset.name + ".sha256"])

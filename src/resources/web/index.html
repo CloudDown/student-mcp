@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="light"><title>student-mcp</title>
+<style>
+:root{font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Arial,sans-serif;color:#1d1d1f;background:#f5f5f7;font-synthesis:none;text-rendering:optimizeLegibility;--canvas:#f5f5f7;--ink:#1d1d1f;--subtle:#696970;--muted:#86868b;--border:#dedee3;--hover:#efeff2;--pressed:#e6e6eb;--blue:#06c;--green:#247d3d;--green-soft:#e8f5eb;--red:#c12a32;--red-soft:#fdedee;--amber:#895f0a;--white:#fff;--shadow:0 3px 14px #0000000c;--zoom:1}
+*{box-sizing:border-box}body{margin:0;min-width:320px;min-height:100vh;background:var(--canvas);color:var(--ink)}button,input,select{font:inherit}button{color:inherit;cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid #06c7;border-offset:3px}button:disabled{cursor:default;opacity:.55}.app{width:min(100%,440px);min-height:100vh;margin:auto;padding:24px;display:flex;align-items:center;position:relative}.screen{width:100%;transform:scale(var(--zoom));transform-origin:center;max-height:calc(100vh / var(--zoom) - 48px);overflow-y:auto;scrollbar-width:none}.screen::-webkit-scrollbar{display:none}.home{display:flex;flex-direction:column;gap:0}.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;width:min(100%,440px);margin:0 auto}.tile{aspect-ratio:1;border:1px solid var(--border);border-radius:22px;background:var(--white);box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;flex-direction:column;position:relative;gap:14px;transition:transform 140ms ease-out,background 140ms ease-out,border-color 140ms ease-out;min-width:0}.tile:active{transform:scale(.98)}.tile:hover{background:var(--hover);border-color:var(--muted)}.tile.connected{border:1px solid var(--green)}.tile img{width:46%;height:46%;object-fit:contain}.tile span{font-size:16px;white-space:nowrap}.dot{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--green);right:15px;top:15px}.link-card,.card{background:var(--white);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:16px}.link-card{margin:clamp(48px,14vh,120px) auto 0;width:min(calc(100% + 32px),440px);min-height:110px;position:relative;display:flex;flex-direction:column;justify-content:center;padding-right:54px}.link-title{font-size:16px}.link-value{color:var(--subtle);font:14px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere;margin-top:4px}.icon-button{border:0;background:transparent;color:var(--subtle);width:30px;height:30px;border-radius:50%;display:grid;place-items:center}.icon-button:hover{background:var(--hover);color:var(--ink)}.copy-home{position:absolute;right:14px;top:14px}.icon-button svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.service-head{position:relative;text-align:center;padding-top:34px;margin-bottom:42px}.back{position:absolute;top:0;left:0;width:48px;height:48px;border:1px solid var(--border);background:white;border-radius:50%;box-shadow:var(--shadow);display:grid;place-items:center}.back svg{width:25px;height:25px;stroke:var(--ink);stroke-width:2;fill:none}.logo-frame{width:66px;height:66px;margin:0 auto 26px;border:1px solid var(--border);border-radius:18px;background:white;box-shadow:var(--shadow);display:grid;place-items:center}.logo-frame img{width:42px;height:42px;object-fit:contain}.service-head h1{font-size:34px;line-height:1.12;letter-spacing:-.8px;font-weight:500;margin:0}.subtitle{font-size:18px;color:var(--muted);margin-top:12px}.connected-badge{color:var(--green);font-size:13px;margin-top:10px}.form-screen{width:100%;max-width:372px;margin:auto}.field{margin:0 0 12px}.field-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}.field label,.field-title{font-size:16px;color:#3b3b40}.input{width:100%;height:64px;border:1px solid var(--border);border-radius:15px;background:#fff;color:var(--ink);padding:0 23px;font-size:18px;box-shadow:inset 0 1px 1px #00000004}.input::placeholder{color:#85858c}.input:focus{outline:0;border-color:#8ab8e9;box-shadow:0 0 0 3px #06c2}.input-wrap{position:relative}.input-wrap .input{padding-right:60px}.eye{position:absolute;right:6px;top:6px;width:48px;height:52px;border:0;background:none;color:var(--subtle);display:grid;place-items:center}.eye svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.8}.advanced{margin:26px 0 18px}.advanced summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;padding:8px 4px;color:var(--subtle);font-size:16px}.advanced summary::-webkit-details-marker{display:none}.chevron{width:18px;height:18px;transition:transform 150ms ease-out}.advanced[open] .chevron{transform:rotate(180deg)}.advanced-body{padding:8px 4px}.check-row,.switch-row{display:flex;align-items:center;gap:9px;margin:12px 0;color:var(--subtle)}.check-row input{accent-color:var(--blue);width:16px;height:16px}.switch-row{justify-content:space-between;color:var(--ink);font-size:15px}.switch{appearance:none;border:0;width:36px;height:20px;border-radius:11px;background:#c9c9cf;position:relative;cursor:pointer;transition:background 140ms ease-out}.switch::after{content:"";position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0003;transition:transform 140ms ease-out}.switch:checked{background:#30a84e}.switch:checked::after{transform:translateX(16px)}.full-button{width:100%;min-height:52px;border:0;border-radius:14px;font-size:17px;font-weight:500;margin:8px 0 4px;transition:transform 120ms ease-out,background 120ms ease-out}.full-button:active{transform:scale(.985)}.primary{background:var(--blue);color:#fff}.primary:disabled{background:#e6e6eb;color:#aaa}.secondary{background:#fff;color:var(--blue);border:1px solid var(--border)}.danger{background:var(--red-soft);color:var(--red)}.notice{white-space:pre-wrap;padding:12px;border-radius:12px;margin:10px 0;color:var(--green);background:var(--green-soft)}.notice.error{color:var(--red);background:var(--red-soft)}.busy{color:var(--subtle);padding:8px 0}.account-select{width:100%;height:46px;border:1px solid var(--border);border-radius:11px;padding:0 12px;background:white;color:var(--ink);margin-bottom:10px}.small-button{border:1px solid var(--border);border-radius:10px;background:#fff;padding:9px 12px;color:var(--blue);width:100%;margin:4px 0}.status-row{display:flex;align-items:center;justify-content:space-between;color:var(--subtle);font-size:14px}.status-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--green);margin-right:8px}.status-dot.offline{background:var(--red)}.hint{background:var(--red-soft);color:var(--red);padding:12px;border-radius:12px;margin-top:12px;overflow-wrap:anywhere}.section-label{font-size:11px;font-weight:650;letter-spacing:.12em;color:var(--subtle);margin:14px 0 8px}.link-detail{overflow-wrap:anywhere;font:13px/1.45 ui-monospace,monospace;margin-top:10px}.manage-actions{margin-top:12px}.zoom{position:fixed;right:max(10px,env(safe-area-inset-right));bottom:max(10px,env(safe-area-inset-bottom));display:flex;gap:9px}.zoom button{width:40px;height:40px;border-radius:50%;border:1px solid #e3e3e7;background:white;box-shadow:0 3px 12px #0002;font-size:19px;color:var(--subtle)}.zoom button:active{transform:scale(.96)}.footnote{color:var(--muted);font-size:12px;margin-top:16px;text-align:center}.hidden{display:none!important}
+/* A quiet, system-native surface with document scrolling at every text size. */
+:root{font-size:100%;line-height:1.5;--subtle:#62626a;--muted:#6e6e76;--border:#dedee5;--shadow:0 2px 4px #20203403,0 12px 32px #20203406}
+body{min-width:0;background:radial-gradient(ellipse at 50% 0%,#fff 0%,transparent 65%),var(--canvas)}
+.app{width:min(100%,34rem);min-height:100svh;padding:max(2rem,env(safe-area-inset-top)) max(1.5rem,env(safe-area-inset-right)) max(2rem,env(safe-area-inset-bottom)) max(1.5rem,env(safe-area-inset-left))}
+.screen{transform:none;max-height:none;overflow:visible}
+h1{font-size:clamp(2rem,6vw,2.75rem);line-height:1.1;letter-spacing:-.035em;font-weight:650;margin:0}
+.tiles{width:100%;gap:.75rem}.tile{aspect-ratio:1;min-height:0;border-radius:1.5rem;padding:1.25rem .375rem;gap:.75rem;background:#ffffffd9}
+.tile img{width:2.75rem;height:2.75rem}.tile span{font-size:.875rem;font-weight:600;letter-spacing:-.01em}.tile.connected{border-color:#b7d9bf}.dot{width:7px;height:7px;right:13px;top:13px}
+.link-card{margin:clamp(3rem,10vh,5rem) 0 0;width:100%;padding:0;min-height:0;display:flex;flex-direction:row;align-items:center;border-radius:1.25rem;background:#ffffffbf;backdrop-filter:blur(20px) saturate(150%);text-align:left;color:inherit}
+.link-open{flex:1;min-width:0;text-align:left;border:0;background:transparent;padding:1.25rem;color:inherit;border-radius:1.25rem;display:flex;flex-direction:column;gap:.35rem}
+.link-title{font-size:.9375rem;font-weight:600}.link-value{font: .8125rem/1.5 system-ui,sans-serif;margin:0;color:var(--subtle)}
+.copy-home{position:static;flex-shrink:0;margin-right:.75rem}
+.icon-button,.field-head .eye{position:static;width:44px;height:44px;flex-shrink:0;padding:0}.icon-button{border-radius:.75rem}
+.eye-slash[hidden]{display:none}
+.service-head{padding-top:1rem;margin-bottom:2rem}.service-head h1{font-size:2.125rem;font-weight:650;letter-spacing:-.03em}.logo-frame{width:4.5rem;height:4.5rem;border-radius:1.25rem;margin-bottom:1.25rem}
+.subtitle{font-size:1rem;line-height:1.5;color:var(--subtle);margin-top:.75rem}.back{position:static;width:44px;height:44px;border:0;background:#e9e9ee;box-shadow:none;margin-bottom:1rem}.service-head .back{position:absolute;top:0;left:0}
+.back{padding:0;flex-shrink:0}.back svg{display:block;width:22px;height:22px;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.form-screen{max-width:none}.field{margin-bottom:1rem}.field-head{min-height:2.75rem;margin-bottom:.25rem}.field label,.field-title{font-size:.875rem;font-weight:550;color:var(--ink)}
+.input{height:3.5rem;padding:0 1rem;font-size:1rem;border-radius:.875rem}.input::placeholder{color:var(--muted)}
+.advanced{margin:1.25rem 0}.advanced summary{font-size:.875rem;min-height:44px}.advanced-body{padding:.5rem 0}.check-row,.switch-row{font-size:.875rem;min-height:44px}.check-row input{flex-shrink:0;width:20px;height:20px}
+.switch{flex-shrink:0;width:44px;height:28px;border:1px solid #97979f;border-radius:20px;margin:8px 0}.switch::after{width:22px;height:22px;left:2px;top:2px}.switch:checked{background:var(--green);border-color:var(--green)}.switch:checked::after{transform:translateX(16px)}
+.full-button{font-size:1rem;font-weight:600;min-height:3.25rem;border-radius:.875rem}.primary:disabled{background:#e4e4e9;color:#696970;opacity:1}
+.card{padding:1.25rem;border-radius:1.25rem}.account-select{font-size:1rem;height:3rem;margin-top:.5rem}.small-button{min-height:44px;font-size:.875rem}.status-row{font-size:.875rem;gap:.5rem}.status-row>span{min-width:0;overflow-wrap:anywhere}
+.account-head{display:flex;align-items:center;justify-content:space-between;gap:1rem}.account-head .small-button{width:auto;margin:0;padding:.5rem .25rem;border:0;background:transparent;font-weight:550}.account-select{margin:.25rem 0 1rem}
+.manage-card{padding:0;overflow:hidden}.manage-card .status-row{padding:.875rem 1.25rem}.manage-card .switch-row{margin:0;padding:.75rem 1.25rem;border-top:1px solid var(--border)}.manage-card .hint{margin:.25rem 1.25rem 1rem}.manage-actions{display:flex;gap:.75rem;margin-top:1rem}.manage-actions .full-button{flex:1;min-width:0;margin:0;font-size:.875rem}.form-screen>.notice{margin-top:1rem}
+@media(max-width:360px){.manage-actions{flex-direction:column}.manage-actions .full-button{flex:auto}}
+/* Native selection and keyboard behavior, with a matching popup where supported. */
+@supports (appearance:base-select){
+ .account-select,.account-select::picker(select){appearance:base-select}
+ .account-select{display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;height:auto;min-height:3rem;border-radius:.875rem}
+ .account-select::picker-icon{width:.5rem;height:.5rem;flex-shrink:0;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;rotate:45deg;content:"";color:var(--subtle);margin-right:.125rem;translate:0 -.125rem}
+ .account-select::picker(select){margin-top:.5rem;padding:.375rem;border:1px solid var(--border);border-radius:1rem;background:var(--white);color:var(--ink);box-shadow:0 8px 32px #20203418;max-height:18rem;overflow:auto}
+ .account-select option{min-height:2.75rem;padding:.625rem .75rem;border-radius:.625rem;gap:.75rem;font-size:.875rem;overflow-wrap:anywhere;white-space:normal}
+ .account-select option:checked{background:#0066cc0d;color:var(--blue);font-weight:550}
+ .account-select option:hover,.account-select option:focus{background:var(--hover);outline:none}
+ .account-select option::checkmark{color:var(--blue)}
+}
+.section-label{display:flex;align-items:center;justify-content:space-between;font-size:.75rem;letter-spacing:.06em;margin:1.5rem 0 .5rem}.link-detail{font-size:.8125rem}.footnote{font-size:.8125rem;line-height:1.6;color:var(--subtle)}.manage-actions{margin-top:1rem}.notice{font-size:.875rem;overflow-wrap:anywhere}
+/* Shared visual language for fields, controls and feedback. */
+:root{--canvas:#f5f5f7;--ink:#1d1d1f;--subtle:#606068;--muted:#71717a;--border:#d9d9df;--hover:#eeeeF2;--blue:#0066cc;--green:#257a42;--red:#b4232c;--red-soft:#faedef}
+body{background:var(--canvas)}
+.tile,.card,.logo-frame,.link-card{background:#fff;border-color:var(--border);box-shadow:0 1px 2px #1d1d1f08,0 8px 24px #1d1d1f05}
+.tile.connected{border-color:#b6d5bf}
+.link-card{backdrop-filter:none}
+.input,.account-select{background:#fff;border:1px solid var(--border);border-radius:.875rem;color:var(--ink);box-shadow:none}
+.input::placeholder{color:#76767e;opacity:1}
+.input:focus{border-color:var(--blue);box-shadow:0 0 0 3px #0066cc26}
+.field-head{min-height:2rem;margin-bottom:.375rem}.field-head .eye{width:44px;height:44px;margin:-.375rem 0}
+.back{background:#e9e9ed;color:var(--ink)}
+.primary{background:var(--blue);color:#fff}.primary:disabled{background:#e6e6eb;color:#62626a;opacity:1}
+.secondary{background:#fff;border:1px solid var(--border);color:var(--blue)}
+.danger{background:var(--red-soft);border:1px solid transparent;color:var(--red)}
+.switch{background:#c9c9ce;border-color:#aaaab1}.switch:checked{background:var(--green);border-color:var(--green)}
+.switch{width:50px;height:30px;border:0;background:#d1d1d6;border-radius:999px}
+.switch::after{width:24px;height:24px;left:3px;top:3px;box-shadow:0 1px 3px #0003,0 1px 1px #0002}
+.switch:checked{background:#36a36c}.switch:checked::after{transform:translateX(20px)}
+.manage-card .status-row{display:grid;grid-template-columns:minmax(0,1fr) 44px;align-items:center;gap:.75rem;padding:1rem 1.25rem}
+.manage-status{display:flex;align-items:flex-start;gap:.625rem;min-width:0;line-height:1.5}
+.manage-status .status-dot{flex:none;margin:.4em 0 0}
+.manage-status-text{min-width:0;overflow-wrap:anywhere}
+.manage-card .icon-button{align-self:center;color:var(--subtle)}
+.account-head{flex-wrap:wrap}.account-head .field-title{flex:1 1 auto}.account-head .small-button{flex:none}
+.manage-actions .full-button{min-height:3rem;font-weight:600;line-height:1.25;padding:.75rem 1rem}
+.advanced summary{color:var(--subtle);border-radius:.625rem}
+@media(hover:hover) and (pointer:fine){.secondary:hover,.account-head .small-button:hover{background:#f0f5fb}.danger:hover{background:#f6dfe2}.icon-button:hover,.advanced summary:hover{background:var(--hover);color:var(--ink)}}
+/* Account management: choose an account first, then act on it in one place. */
+.account-heading{font-size:.8125rem;font-weight:600;color:var(--subtle);margin:0 0 .625rem .25rem}
+.account-list{background:#fff;border:1px solid var(--border);border-radius:1.25rem;box-shadow:var(--shadow);overflow:hidden}
+.account-row{display:flex;align-items:center;gap:.875rem;width:100%;min-height:4.25rem;text-align:left;background:#fff;border:0;padding:.75rem 1rem}
+.account-row+.account-row{border-top:1px solid var(--border)}
+.account-row.active{background:#f1f7f4}
+.account-row-main{display:flex;flex:1;flex-direction:column;min-width:0;gap:.125rem}
+.account-row-title{font-size:.9375rem;font-weight:600;line-height:1.3;overflow-wrap:anywhere}
+.account-row-detail{font-size:.75rem;color:var(--subtle);line-height:1.35;overflow-wrap:anywhere}
+.account-row .account-mark{display:grid;place-items:center;width:20px;height:20px;flex:none;border-radius:50%;background:#36a36c;color:#fff;font-size:.75rem;line-height:1}
+.account-row.add-account{min-height:3.25rem;color:var(--blue);font-size:.875rem;font-weight:550}
+.account-row.add-account.active{background:#f0f5fb}
+.account-row.add-account .plus{display:grid;place-items:center;width:20px;height:20px;font-size:1.375rem;font-weight:400;line-height:1}
+.manage-card{margin-top:1rem}
+.manage-card .status-row{min-height:4rem}
+.manage-card .manage-actions{display:flex;gap:0;margin:0;border-top:1px solid var(--border)}
+.manage-card .manage-actions button{flex:1;min-width:0;min-height:3.25rem;padding:.75rem .375rem;margin:0;border:0;border-radius:0;background:#fff;font-size:.875rem;font-weight:550;line-height:1.25}
+.manage-card .manage-actions button+button{border-left:1px solid var(--border)}
+.manage-card .manage-actions .secondary{color:var(--blue)}
+.manage-card .manage-actions .danger{color:var(--red)}
+.manage-card .hint{margin:0 1.25rem 1rem}
+@media(hover:hover) and (pointer:fine){.account-row:hover:not(.active){background:#f7f7f9}.manage-card .manage-actions .secondary:hover{background:#f0f5fb}.manage-card .manage-actions .danger:hover{background:var(--red-soft)}}
+@media(max-width:360px){.manage-card .manage-actions{flex-direction:row}.manage-card .manage-actions button{flex:1}}
+button,input,select,summary{touch-action:manipulation}button{-webkit-tap-highlight-color:transparent}
+:where(button,input,select,summary):focus-visible{outline:3px solid var(--blue);outline-offset:4px}
+button{transition:background 140ms ease-out,transform 140ms ease-out}button:active:not(:disabled){transform:scale(.98);transition-duration:70ms}
+@media(hover:hover) and (pointer:fine){.tile:hover{background:#fff;border-color:#b8b8c2;box-shadow:0 8px 24px #2020340c}.primary:hover:not(:disabled){background:#005bb5}.link-open:hover,.back:hover{background:var(--hover)}}
+@media(hover:none){.tile:hover{background:var(--white);border-color:var(--border)}.tile.connected:hover{border-color:#b7d9bf}.icon-button:hover{background:transparent}}
+@media(max-width:380px){.app{padding-left:1rem;padding-right:1rem}.tiles{gap:.5rem}.tile{border-radius:1.125rem}.tile span{font-size:.75rem}}
+@media(max-width:280px){.tiles{grid-template-columns:1fr}.tile{min-height:7rem}}
+@media(prefers-reduced-transparency:reduce){.link-card,.tile{background:#fff;backdrop-filter:none}}
+@media(prefers-contrast:more){:root{--subtle:#38383d;--muted:#484850;--border:#777780}.link-card,.tile{background:#fff;backdrop-filter:none}.tile.connected{border-color:var(--green)}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important;scroll-behavior:auto!important}button:active:not(:disabled){transform:none}}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+</style></head>
+<body>
+<main class="app"><div id="screen" class="screen"></div></main>
+<div id="live" class="sr-only" role="status" aria-live="polite"></div>
+<script>
+const $=id=>document.getElementById(id);let key=location.hash.slice(1)||sessionStorage.getItem('admin');if(key)sessionStorage.setItem('admin',key);history.replaceState(null,'',location.pathname);
+const state={screen:'home',service:'',accountId:'',editing:false,accounts:[],draft:{},visible:{},tunnel:'Idle',link:'',localLink:'',public:false,local:true,notice:null,busy:false,verification:null,advanced:false,useToken:false,otherSchool:false,copied:false,health:null};
+async function api(path,data){const response=await fetch(path,{method:data?'POST':'GET',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:data?JSON.stringify(data):undefined});const value=await response.json();if(!response.ok)throw Error(value.error||'Request failed');return value;}
+const names={moodle:'Moodle',omnivox:'Omnivox',brightspace:'Brightspace'};const subtitles={moodle:'Polytechnique Montréal',omnivox:'Léa / Mio · Read only',brightspace:'myCourses · Read only'};
+function selected(){return state.accounts.find(a=>a.service===state.service&&a.id===state.accountId)}
+function notice(){return state.notice?.error?`<div class="notice error" role="alert">${esc(state.notice.text)}</div>`:''}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function icon(name){const paths={copy:'<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 5V4a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h1"/>',back:'<path d="m12 5-7 7 7 7M5 12h14"/>',refresh:'<path d="M19 8a8 8 0 1 0 1 7M19 3v5h-5"/>'};return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name]||paths.back}</svg>`}
+function home(){const tiles=['moodle','omnivox','brightspace'].map(s=>{const connected=state.accounts.some(a=>a.service===s);return `<button class="tile ${connected?'connected':''}" data-open="${s}" aria-label="${names[s]} ${connected?'manage connection':'connect'}"><img src="/assets/${s}.png" alt=""><span>${names[s]}</span>${connected?'<i class="dot"></i>':''}</button>`}).join('');const ready=state.tunnel.startsWith('Ready(');let value=ready?state.link:state.tunnel.startsWith('Starting')?'Creating your public link…':state.tunnel.startsWith('Reconnecting')?'Reconnecting your public link…':state.tunnel.startsWith('Failed')?'Public link unavailable — click to retry':state.tunnel==='Stopped'?'Public link off — click to enable':'Connect a service to create your link';return `<section class="home"><div class="tiles">${tiles}</div><div class="link-card"><button class="link-open" data-screen="links"><span class="link-title">AI connection</span><span class="link-value">${esc(value)}</span></button><button class="icon-button copy-home" data-copy="home" aria-label="Copy link" ${ready?'':'disabled'}>${icon('copy')}</button></div>${notice()}</section>`}
+function header(service){return `<header class="service-head"><button class="back" data-screen="home" aria-label="Back to services">${icon('back')}</button><div class="logo-frame"><img src="/assets/${service}.png" alt=""></div><h1>${names[service]}</h1><div class="subtitle">${service==='moodle'&&state.otherSchool?'Your Moodle account':subtitles[service]}</div></header>`}
+function accountPicker(){const accounts=state.accounts.filter(a=>a.service===state.service);if(!accounts.length||state.verification||state.editing)return '';return `<div class="account-heading">Accounts</div><div class="account-list">${accounts.map(a=>{const active=a.id===state.accountId;let host;try{host=new URL(a.url).host}catch{host=a.url||names[state.service]}return `<button class="account-row ${active?'active':''}" data-account="${esc(a.id)}" aria-current="${active?'true':'false'}" aria-label="${esc(host)}${active?', selected':''}"><span class="account-row-main"><span class="account-row-title">${esc(host)}</span></span>${active?'<span class="account-mark" aria-hidden="true">✓</span>':''}</button>`}).join('')}<button class="account-row add-account ${selected()?'':'active'}" data-add><span class="plus" aria-hidden="true">+</span><span>Add account</span></button></div>`}
+function input(name,label,placeholder,type='text',value='',autofill=''){value=state.draft[name]??value;const secret=type==='password';return `<div class="field"><div class="field-head"><label for="f-${name}">${label}</label>${secret?`<button type="button" class="icon-button eye" data-eye="${name}" aria-label="${state.visible[name]?'Hide':'Show'} ${label}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/><path class="eye-slash" d="M4 4 20 20" ${state.visible[name]?'hidden':''}/></svg></button>`:''}</div><input id="f-${name}" class="input" name="${name}" type="${secret&&state.visible[name]?'text':type}" placeholder="${esc(placeholder)}" value="${esc(value)}" autocomplete="${autofill||'off'}" ${name==='code'?'inputmode="numeric" maxlength="6"':''}></div>`}
+function advanced(){return `<details class="advanced" ${state.advanced?'open':''}><summary>Advanced options<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></summary><div class="advanced-body">${advancedFields()}</div></details>`}
+function advancedFields(){const a=selected();if(state.service==='moodle')return input('url','Moodle address','https://moodle.polymtl.ca','url',a?.url||'')+input('token','Token','Moodle mobile token','password','','off');
+if(state.service==='omnivox')return input('gateway_url','Omnivox MCP address','http://127.0.0.1:3000','url')+input('token','Access key','accessKey.txt','password','','off')+'<p class="footnote">Run Beat-YT/omnivox-mcp, log in there, then paste its address and access key.</p>';
+return input('token','Token or session cookies','Access token or d2lSessionVal=…','password','','off')}
+function loginScreenContent(){const a=selected(),s=state.service;let fields='',ready=false;if(s==='moodle'){fields=input('username','Username','firstname.lastname','text','','username')+input('password','Password','Moodle password','password','','current-password');ready=!!state.draft.token||!!state.draft.username&&!!state.draft.password}
+if(s==='omnivox'){fields=input('url','College address','https://cegepxxx.omnivox.ca','url',a?.url||'')+input('username','Student number','0000000','text','','username')+input('password','Password','Omnivox password','password','','current-password');ready=state.draft.token?!!state.draft.gateway_url:!!(state.draft.url||a?.url)&&!!state.draft.username&&!!state.draft.password}
+if(s==='brightspace'){fields=input('url','Site address','https://mycourses.mcgill.ca','url',a?.url||'')+input('username','Username','School username','text','','username')+input('password','Password','Brightspace password','password','','current-password');ready=!!(state.draft.url||a?.url)&&(!!state.draft.token||!!state.draft.username&&!!state.draft.password)}
+return `<form id="connect-form">${fields}${advanced()}${notice()}${state.busy?'<p class="busy">Checking the connection…</p>':''}<button class="full-button primary" ${!ready||state.busy?'disabled':''}>${state.busy?'Connecting…':a?'Save changes':`Connect to ${names[s]}`}</button></form>`}
+function connectionSummary(){if(state.health?.error)return 'Connection failed';if(!state.health)return 'Checking connection…';const text=state.health.text;if(state.service==='moodle'){const user=text.match(/signed in as ([^(]+?)(?:\s*\(Moodle|\.$)/i)?.[1]?.trim();return user?`Connected · ${user}`:'Connected'}return state.service==='omnivox'?'Connected':state.service==='brightspace'?'Connected':esc(text)}
+function manageScreenContent(){return `<div class="card manage-card"><div class="status-row"><span class="manage-status"><i class="status-dot ${state.health?.error?'offline':''}"></i><span class="manage-status-text">${esc(connectionSummary())}</span></span><button class="icon-button" data-action="check" aria-label="Retry">${icon('refresh')}</button></div>${state.health?.error?`<p class="hint">${esc(state.health.text)}</p>`:''}<div class="manage-actions"><button class="secondary" data-action="edit">Change login</button><button class="danger" data-action="disconnect">Disconnect</button></div></div>${notice()}`}
+function serviceScreen(){const a=selected();return `${header(state.service)}<section class="form-screen">${accountPicker()}${state.verification?verifyScreenContent():a&&!state.editing?manageScreenContent():loginScreenContent()}</section>`}
+function verifyScreenContent(){return `<h2>Identity verification</h2><p class="subtitle">${esc(state.verification)}</p><form id="verify-form">${input('code','Security code (6 digits)','000000','text','','one-time-code')}${notice()}<button class="full-button primary" ${state.busy?'disabled':''}>${state.busy?'Verifying…':'Verify and connect'}</button></form><button class="full-button secondary" data-action="resend" ${state.busy?'disabled':''}>Send a new code</button><button class="full-button secondary" data-action="cancel" ${state.busy?'disabled':''}>Cancel verification</button>`}
+function linkScreen(){const publicReady=state.tunnel.startsWith('Ready(');return `
+ <button class="back" data-screen="home" aria-label="Back to services">${icon('back')}</button>
+ <label class="section-label">LOCAL LINK <input class="switch" type="checkbox" name="local" ${state.local?'checked':''}></label>
+  <div class="card"><div class="status-row"><span>${state.local?'<i class="status-dot"></i>Local link active':'Local link off'}</span><button class="icon-button" data-copy="local" aria-label="Copy local link" ${state.local&&state.localLink?'':'disabled'}>${icon('copy')}</button></div>${state.local?`<div class="link-detail">${esc(state.localLink)}</div>`:''}</div>
+ <label class="section-label">PUBLIC LINK <input class="switch" type="checkbox" name="public" ${state.public?'checked':''}></label>
+ <div class="card">${publicReady?`<div class="status-row"><span><i class="status-dot"></i>Public link active</span><button class="icon-button" data-copy="public" aria-label="Copy public link">${icon('copy')}</button></div><div class="link-detail">${esc(state.link)}</div>`:`<p class="subtitle">${esc(publicMessage())}</p>${state.tunnel.startsWith('Failed(')?`<div class="hint">${esc(state.tunnel)}</div>`:''}${state.tunnel.startsWith('Starting')||state.tunnel.startsWith('Reconnecting')?'<p class="busy">This can take a few seconds.</p>':''}`}</div>
+ ${notice()}`}
+function publicMessage(){if(!state.public||state.tunnel==='Stopped')return 'Public link is off. Turn the switch on to restore your stable HTTPS link through srv.us. No account needed.';if(state.tunnel.startsWith('Starting'))return 'Opening your stable HTTPS link through srv.us.';if(state.tunnel.startsWith('Reconnecting'))return 'Reconnecting to srv.us. Your saved link stays the same.';if(state.tunnel.startsWith('Failed'))return 'The public link was not created. Turn the switch on to try again.';return 'No service is connected yet. Turn the switch on to create the HTTPS link anyway.'}
+let renderedScreen='',refreshing=false;
+function render(){
+ const screen=$('screen'),route=state.screen+':'+state.service;
+ const active=document.activeElement;
+ const focus=active&&screen.contains(active)?{id:active.id,attr:['data-screen','data-copy','data-action','data-eye','data-open','name'].find(a=>active.hasAttribute(a)),value:null}:null;
+ if(focus?.attr)focus.value=active.getAttribute(focus.attr);
+ screen.innerHTML=state.screen==='home'?home():state.screen==='links'?linkScreen():serviceScreen();
+ if(route!==renderedScreen){const heading=screen.querySelector('h1');if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true})}window.scrollTo(0,0)}
+ else if(focus){const target=focus.id?document.getElementById(focus.id):focus.attr?[...screen.querySelectorAll('['+focus.attr+']')].find(el=>el.getAttribute(focus.attr)===focus.value):null;target?.focus({preventScroll:true})}
+ renderedScreen=route;
+}
+async function refresh(background=false){
+ if(refreshing)return;refreshing=true;
+ try{
+  const d=await api('/state');
+  // Polling may update status, but must never replace an active form or pending settings.
+  const changed=JSON.stringify([state.accounts,state.link,state.localLink,state.tunnel,state.local,state.public])!==JSON.stringify([d.accounts,d.link,d.local_link,d.tunnel,d.local,d.public]);
+  state.accounts=d.accounts;state.link=d.link;state.localLink=d.local_link;state.tunnel=d.tunnel;
+  if(!background||state.screen!=='links'){state.local=d.local;state.public=d.public}
+  if(!background){state.verification=d.verification;render()}
+  else if(changed&&(state.screen==='home'||state.screen==='links'))render();
+ }catch(e){if(!background){state.notice={text:e.message,error:true};render()}else $('live').textContent='Connection status unavailable. Retrying…'}
+ finally{refreshing=false}
+}
+async function checkSelected(){
+ const service=state.service,id=state.accountId;
+ try{const r=await api('/action',{action:'check',service,id});if(state.service===service&&state.accountId===id){state.health={text:r.message};if(state.screen==='service'&&!state.editing)render()}}
+ catch(e){if(state.service===service&&state.accountId===id){state.health={text:e.message,error:true};if(state.screen==='service'&&!state.editing)render()}}
+}
+function openService(service){state.service=service;state.screen='service';state.advanced=false;state.useToken=false;state.otherSchool=false;state.editing=false;state.draft={};state.visible={};state.notice=null;state.health=null;const a=state.accounts.find(x=>x.service===service);state.accountId=a?.id||'';if(service==='moodle'&&a&&a.url!=='https://moodle.polymtl.ca')state.otherSchool=true;if(a)checkSelected();render()}
+async function send(data){if(state.busy)return;state.busy=true;render();try{const r=await api('/action',data);state.notice=r.message?{text:r.message}:null;if(r.verification){state.verification=r.verification;state.screen='service'}else if(['connect','verify','cancel','disconnect'].includes(data.action)){state.verification=null;if(data.action==='verify'){state.screen='home';state.editing=false}else if(data.action==='cancel'){state.screen='service'}else state.screen='home'}if(data.action==='connect')state.editing=false;if(r.stop)state.notice={text:'student-mcp stopped'};if(data.action==='permissions'){const a=selected();if(a)a.allow_write=data.allow_write}await refresh()}catch(e){state.notice={text:e.message,error:true}}finally{state.busy=false;render()}}
+document.addEventListener('click',async e=>{
+ const copy=e.target.closest('[data-copy]');
+ if(copy){
+  e.stopPropagation();const local=copy.dataset.copy==='local',url=local?state.localLink:state.link;
+  if(!url||(local?!state.local:!state.tunnel.startsWith('Ready(')))return;
+   try{await navigator.clipboard.writeText(url);state.notice={text:'Copied'};$('live').textContent='Copied'}
+  catch{state.notice={text:'Could not copy the link. Open connection settings and select the link to copy it manually.',error:true}}
+  render();return;
+ }
+ const screen=e.target.closest('[data-screen]');
+ if(screen){if(screen.dataset.screen==='home'&&state.verification){send({action:'cancel'});state.verification=null;}state.screen=screen.dataset.screen;state.notice=null;render();return}
+ const opener=e.target.closest('[data-open]');if(opener){openService(opener.dataset.open);return}
+ const account=e.target.closest('[data-account]');if(account){if(account.dataset.account===state.accountId&&!state.editing)return;state.accountId=account.dataset.account;state.editing=false;state.draft={};state.visible={};state.health=null;state.notice=null;state.advanced=false;state.otherSchool=state.service==='moodle'&&!!selected()&&selected().url!=='https://moodle.polymtl.ca';checkSelected();render();return}
+ if(e.target.closest('[data-add]')){state.accountId='';state.editing=true;state.draft={};state.visible={};state.health=null;state.advanced=false;state.useToken=false;state.otherSchool=false;render();return}
+ const eye=e.target.closest('[data-eye]');
+ if(eye){const name=eye.dataset.eye;state.visible[name]=!state.visible[name];const field=$('f-'+name);field.type=state.visible[name]?'text':'password';eye.querySelector('.eye-slash').toggleAttribute('hidden',state.visible[name]);eye.setAttribute('aria-label',(state.visible[name]?'Hide ':'Show ')+field.labels[0].textContent);return}
+ const action=e.target.closest('[data-action]')?.dataset.action;
+ if(action==='edit'){state.editing=true;state.advanced=false;state.draft={};state.visible={};render()}
+ else if(action==='check'){if(selected())checkSelected()}
+ else if(action==='disconnect'){const a=selected();if(a)send({action,service:state.service,id:a.id})}
+ else if(action==='resend'||action==='cancel'){send({action})}
+ else if(action==='apply-links'){const local=document.querySelector('[name=local]').checked,publicOn=document.querySelector('[name=public]').checked;send({action:'links',local:local||publicOn,public:publicOn})}
+ else if(action==='stop')send({action:'stop'});
+});
+function connectReady(form){const v=Object.fromEntries(new FormData(form)),a=selected();if(state.service==='moodle')return !!v.token||!!v.username&&!!v.password;if(state.service==='omnivox')return v.token?!!v.gateway_url:!!(v.url||a?.url)&&!!v.username&&!!v.password;return !!(v.url||a?.url)&&(!!v.token||!!v.username&&!!v.password)}
+document.addEventListener('change',e=>{if(e.target.name==='local'||e.target.name==='public'){const local=e.target.name==='local'?e.target.checked:state.local,publicOn=e.target.name==='public'?e.target.checked:state.public;state.local=local;state.public=publicOn;send({action:'links',local,public:publicOn})}});
+document.addEventListener('input',e=>{if(e.target.name)state.draft[e.target.name]=e.target.value;if(e.target.form?.id==='connect-form')e.target.form.querySelector('button[type="submit"],button:not([type])').disabled=!connectReady(e.target.form)});
+document.addEventListener('toggle',e=>{if(e.target.matches('.advanced'))state.advanced=e.target.open},true);
+document.addEventListener('change',e=>{if(e.target.id==='account-picker'){state.accountId=e.target.value==='__new__'?'':e.target.value;state.editing=e.target.value==='__new__';state.draft={};state.visible={};state.health=null;state.verification=null;state.advanced=false;state.useToken=false;state.otherSchool=state.service==='moodle'&&!!selected()&&selected().url!=='https://moodle.polymtl.ca';if(selected())checkSelected();render()}if(e.target.name==='use_token'){state.useToken=e.target.checked;render()}if(e.target.name==='other_school'){state.otherSchool=e.target.checked;render()}if(e.target.name==='allow_write'){const a=selected();if(a)send({action:'permissions',service:state.service,id:a.id,allow_write:e.target.checked})}});
+document.addEventListener('submit',e=>{if(e.target.id==='connect-form'){e.preventDefault();const form=e.target,d=Object.fromEntries(new FormData(form)),a=selected();if(!connectReady(form))return;d.service=state.service;d.action='connect';d.id=state.accountId||'';d.allow_write=true;if(state.service==='moodle')d.url=d.url||a?.url||'https://moodle.polymtl.ca';if(state.service==='omnivox'&&d.token)d.url=d.gateway_url;delete d.gateway_url;for(const name of ['password','token'])state.draft[name]='';send(d)}else if(e.target.id==='verify-form'){e.preventDefault();const code=e.target.elements.code.value;state.draft.code='';send({action:'verify',code})}});
+refresh();const timer=setInterval(()=>{if(!document.hidden&&!state.busy)refresh(true)},1500);
+</script></body></html>

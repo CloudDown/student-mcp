@@ -96,7 +96,7 @@ pub fn tool_definitions(settings: &Settings) -> Vec<Value> {
             { "name": "moodle_search", "description": "Search Moodle courses and materials the student can access.", "inputSchema": { "type": "object", "properties": { "query": { "type": "string" }, "page": { "type": "integer", "minimum": 0 } }, "required": ["query"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_course_content", "description": "Get the sections, activities and resources in a course. To read a PDF or other file, pass its fileurl to moodle_file; do not fetch fileurl with a generic HTTP tool.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_resources", "description": "List pages, files, URLs, folders and books in a course without the full section tree.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_file", "description": "Read a Moodle course file with the connected account. For PDFs: pass find=(\"3.3\" or a phrase) to jump to a section, or page_from/page_to for an exact window. Returns extracted text (OCR when the scan has no text layer), page images, matches, totalPages/truncated/nextPageFrom, and a links object with download/reader/text URLs. Short PDFs come back whole (a small tail is never dropped). If truncated is true, call again with page_from=nextPageFrom OR tell the user to open links.reader; never invent missing pages. Pass fileurl from moodle_course_content. Never send the Moodle token to another tool.", "inputSchema": { "type": "object", "properties": { "fileurl": { "type": "string" }, "find": { "type": "string", "description": "Section number or phrase to locate in the PDF text layer, e.g. \"3.3\" or \"taux de variation instantané\". The matching page becomes the default page_from." }, "page_from": { "type": "integer", "minimum": 1, "description": "First PDF page to render/extract (1-based). Use nextPageFrom from a previous call to continue a long PDF." }, "page_to": { "type": "integer", "minimum": 1, "description": "Last PDF page to render/extract (inclusive). Window size is capped per call." } }, "required": ["fileurl"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_file", "description": "Fetch a course file using its fileurl from moodle_course_content. Default: original PDF resource/download link, without duplicate text or images. If your client cannot read the PDF, request format=text for selected pages, or format=images for scans/diagrams (2 pages by default, max 8). find searches the text layer. Page/find arguments default to text mode. Follow nextPageFrom when truncated; never invent missing content. Never send the Moodle token to another tool.", "inputSchema": { "type": "object", "properties": { "fileurl": { "type": "string" }, "format": { "type": "string", "enum": ["file", "text", "images"], "description": "Return one representation only. File by default; text or images are explicit fallbacks." }, "find": { "type": "string", "description": "Section number or phrase to locate in the PDF text layer." }, "page_from": { "type": "integer", "minimum": 1 }, "page_to": { "type": "integer", "minimum": 1 } }, "required": ["fileurl"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_assignments", "description": "List visible assignments; optionally filter to specific course IDs.", "inputSchema": { "type": "object", "properties": { "courseids": { "type": "array", "items": { "type": "integer" } } } }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_assignment_status", "description": "Submission and grading status for one assignment, including uploaded files.", "inputSchema": { "type": "object", "properties": { "assignid": { "type": "integer", "minimum": 1 } }, "required": ["assignid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_quizzes", "description": "List visible quizzes; optionally filter to specific course IDs.", "inputSchema": { "type": "object", "properties": { "courseids": { "type": "array", "items": { "type": "integer" } } } }, "annotations": { "readOnlyHint": true } },
@@ -374,7 +374,8 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                 "name": entry.name,
                 "description": entry.description,
                 "type": if entry.write { "write" } else { "read" },
-                "note": "See the Moodle documentation for every parameter; writes require allowing changes in the app.",
+                "parameters": entry.parameters,
+                "note": "Bundled parameter metadata may differ from your site's Moodle version. Optional/nullable flags are included; unresolved structures have a note. Writes require allowing changes in the app.",
                 "catalogRelease": catalog.release()
             }))
         }),
@@ -383,6 +384,12 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                 .get("name")
                 .and_then(Value::as_str)
                 .ok_or("Provide name.")?;
+            if Catalog::load().get(name).is_some_and(|entry| entry.write) && !config.allow_write {
+                return Err(
+                    "This Moodle function changes data. Allow writes for this account in the student-mcp window first."
+                        .into(),
+                );
+            }
             let client = MoodleClient::new(config);
             let payload = args.get("args").cloned().unwrap_or_else(|| json!({}));
             let info = client.site_info()?;
@@ -400,10 +407,6 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                 .collect();
             if !authorized.contains(name) {
                 return Err(format!("Function {name} is not available for this token."));
-            }
-            let catalog = Catalog::load();
-            if catalog.get(name).map(|entry| entry.write).unwrap_or(true) && !config.allow_write {
-                return Err("This call can change Moodle. Turn on \"Allow changes\" in the student-mcp window.".into());
             }
             client.call(name, &payload)
         }),
@@ -457,7 +460,33 @@ fn require_integer(args: &Value, key: &str) -> Result<i64, String> {
 }
 
 fn file_query(args: &Value) -> Result<crate::moodle::FileQuery, String> {
+    use crate::moodle::FileFormat;
+    let format = match args.get("format") {
+        Some(Value::String(value)) => match value.as_str() {
+            "file" => FileFormat::File,
+            "text" => FileFormat::Text,
+            "images" => FileFormat::Images,
+            _ => return Err("format must be file, text or images.".into()),
+        },
+        None | Some(Value::Null)
+            if ["find", "page_from", "page_to"]
+                .iter()
+                .any(|key| args.get(key).is_some_and(|value| !value.is_null())) =>
+        {
+            FileFormat::Text
+        }
+        None | Some(Value::Null) => FileFormat::File,
+        _ => return Err("format must be file, text or images.".into()),
+    };
+    if format == FileFormat::File
+        && ["find", "page_from", "page_to"]
+            .iter()
+            .any(|key| args.get(key).is_some_and(|value| !value.is_null()))
+    {
+        return Err("Use format=text or images when selecting pages or searching.".into());
+    }
     Ok(crate::moodle::FileQuery {
+        format,
         page_from: optional_page_number(args.get("page_from"))?,
         page_to: optional_page_number(args.get("page_to"))?,
         find: args
@@ -506,18 +535,29 @@ fn optional_i64_list(value: Option<&Value>) -> Result<Option<Vec<i64>>, String> 
 }
 
 fn student_status(settings: &Settings) -> ToolResult {
-    let accounts: Vec<Value> = ["moodle", "omnivox", "brightspace"].into_iter().flat_map(|service| {
-        settings.account_list(service).into_iter().map(move |(id, url)| {
-            let selected = settings.for_account(service, &id);
-            json!({"account_id": id, "service": service, "url": url,
-                "allowWrite": selected.moodle().is_some_and(|c| service == "moodle" && c.allow_write)})
+    let accounts: Vec<Value> = ["moodle", "omnivox", "brightspace"]
+        .into_iter()
+        .flat_map(|service| {
+            settings
+                .account_list(service)
+                .into_iter()
+                .map(move |(id, url)| {
+                    let selected = settings.for_account(service, &id);
+                    json!({
+                        "account_id": id,
+                        "service": service,
+                        "url": url,
+                        "allowWrite": service == "moodle"
+                            && selected.moodle().is_some_and(|config| config.allow_write)
+                    })
+                })
         })
-    }).collect();
+        .collect();
     Ok(json!({
         "version": VERSION,
         "services": settings.services_active(),
         "accounts": accounts,
-        "moodleAllowWrite": settings.moodle().map(|m| m.allow_write).unwrap_or(false)
+        "moodleAllowWrite": settings.moodle().is_some_and(|config| config.allow_write)
     }))
 }
 
@@ -657,7 +697,7 @@ pub fn handle_message_versioned(
     Some(response)
 }
 
-/// GUI form flow: activate Moodle credentials, persisting only the token.
+/// Configuration form flow: activate Moodle credentials, persisting only the token.
 pub fn activate_moodle(
     settings: &mut Settings,
     url: &str,
@@ -684,7 +724,7 @@ pub fn activate_moodle(
         token: Some(token),
         allow_write: Some(allow_write),
     });
-    updated.save().map_err(|error| {
+    updated.save_service("moodle").map_err(|error| {
         format!("Cannot save Moodle credentials to the private config file: {error}")
     })?;
     *settings = updated;
@@ -700,7 +740,7 @@ pub fn activate_moodle(
 pub fn disable_service(settings: &mut Settings, id: &str) -> Result<(), String> {
     let mut updated = settings.clone();
     updated.disable(id);
-    updated.save().map_err(|error| {
+    updated.save_service(id).map_err(|error| {
         format!("Cannot save the disconnection. The service is still connected. {error}")
     })?;
     *settings = updated;
@@ -714,7 +754,7 @@ pub fn set_moodle_write(settings: &mut Settings, allow: bool) -> Result<(), Stri
         .as_mut()
         .ok_or("Moodle is not connected anymore.")?;
     moodle.allow_write = Some(allow);
-    updated.save().map_err(|error| {
+    updated.save_service("moodle").map_err(|error| {
         format!(
             "Cannot save Moodle permissions. The previous permissions are still active. {error}"
         )
@@ -820,27 +860,39 @@ mod protocol_tests {
     }
 
     #[test]
-    fn ws_call_enforces_read_only_and_preserves_valid_calls() {
+    fn ws_call_gates_writes_and_preserves_valid_calls() {
         let info = json!({"userid": 1, "functions": [
             {"name": "core_course_get_contents"}, {"name": "core_course_delete_courses"}
         ]});
-        let (url, worker) =
-            crate::moodle::tests::server(vec![info.clone(), info.clone(), info, json!([])]);
-        let settings = Settings {
+        let (url, worker) = crate::moodle::tests::server(vec![
+            info.clone(),
+            json!([]),
+            info.clone(),
+            info,
+            json!([]),
+        ]);
+        let mut settings = Settings {
             moodle: Some(MoodleSettings {
-                url: Some(url),
+                url: Some(url.clone()),
                 token: Some("fake-token".into()),
                 allow_write: Some(false),
             }),
             ..Default::default()
         };
+        let denied = dispatch_tool(
+            &settings,
+            "ws_call",
+            &json!({"name": "core_course_delete_courses", "args": {"courseids": [1]}}),
+        );
+        assert_eq!(denied["isError"], true);
+        assert!(denied.to_string().contains("Allow writes"));
+        settings.moodle.as_mut().unwrap().allow_write = Some(true);
         let write = dispatch_tool(
             &settings,
             "ws_call",
             &json!({"name": "core_course_delete_courses", "args": {"courseids": [1]}}),
         );
-        assert_eq!(write["isError"], true);
-        assert!(write.to_string().contains("Allow changes"));
+        assert_eq!(write["isError"], false);
         let injection = dispatch_tool(
             &settings,
             "ws_call",
@@ -855,11 +907,11 @@ mod protocol_tests {
         );
         assert_eq!(read["isError"], false);
         let requests = worker.join().unwrap();
-        assert_eq!(requests.len(), 4);
-        assert!(!requests
+        assert_eq!(requests.len(), 5);
+        assert!(requests
             .iter()
             .any(|request| request.contains("wsfunction=core_course_delete_courses")));
-        assert!(requests[3].contains("options%5B0%5D%5Bname%5D=excludemodules"));
+        assert!(requests[4].contains("options%5B0%5D%5Bname%5D=excludemodules"));
     }
 
     #[test]

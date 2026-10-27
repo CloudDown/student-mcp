@@ -1,4 +1,4 @@
-; Built by scripts/package-desktop.py with Inno Setup 6.3 or newer.
+; Built by tools/package-desktop.py with Inno Setup 6.3 or newer.
 ; One installer carries both x64 and ARM64 payloads and picks at install time.
 [Setup]
 AppId={{89E21526-82CC-4EC9-AEB9-C789AA5A90AB}

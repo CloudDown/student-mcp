@@ -3,8 +3,8 @@
 //! https://docs.valence.desire2learn.com/
 use crate::config::BrightspaceConfig;
 use crate::session;
+use cookie_store::CookieStore;
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
 use std::time::Duration;
 
 pub struct BrightspaceClient {
@@ -20,6 +20,7 @@ impl BrightspaceClient {
             agent: ureq::AgentBuilder::new()
                 .timeout(Duration::from_secs(30))
                 .redirects(0)
+                .user_agent(session::BROWSER_UA)
                 .build(),
         }
     }
@@ -155,7 +156,7 @@ fn persist(
         url: Some(base_url),
         token: Some(token.into()),
     });
-    updated.save().map_err(|error| {
+    updated.save_service("brightspace").map_err(|error| {
         format!("Cannot save Brightspace credentials to the private config file: {error}")
     })?;
     *settings = updated;
@@ -168,16 +169,16 @@ fn login_session(base_url: &str, username: &str, password: &str) -> Result<Strin
         .redirects(0)
         .user_agent(session::BROWSER_UA)
         .build();
-    let mut jar = BTreeMap::new();
+    let mut jar = CookieStore::default();
     let mut current = format!("{base_url}/d2l/login");
     let mut html = String::new();
     for _ in 0..8 {
         let request = agent
             .get(&current)
             .set("Accept", "text/html,application/xhtml+xml")
-            .set("Cookie", &session::cookie_header(&jar));
+            .set("Cookie", &session::cookie_header(&jar, &current)?);
         let response = send(request)?;
-        session::merge_set_cookie(&mut jar, &response);
+        session::merge_set_cookie(&mut jar, &response, &current)?;
         let status = response.status();
         if let Some(location) = response.header("location").map(str::to_string) {
             let next = session::resolve_url(&current, &location)?;
@@ -227,11 +228,11 @@ fn login_session(base_url: &str, username: &str, password: &str) -> Result<Strin
     let request = agent
         .post(&current)
         .set("Content-Type", "application/x-www-form-urlencoded")
-        .set("Cookie", &session::cookie_header(&jar))
+        .set("Cookie", &session::cookie_header(&jar, &current)?)
         .set("Origin", base_url)
         .set("Referer", &format!("{base_url}/d2l/login"));
     let response = send_form(request, &body)?;
-    session::merge_set_cookie(&mut jar, &response);
+    session::merge_set_cookie(&mut jar, &response, &current)?;
     let mut location = response.header("location").map(str::to_string);
     let mut body_html = response.into_string().unwrap_or_default();
     for _ in 0..8 {
@@ -250,9 +251,9 @@ fn login_session(base_url: &str, username: &str, password: &str) -> Result<Strin
             agent
                 .get(&current)
                 .set("Accept", "text/html,application/xhtml+xml")
-                .set("Cookie", &session::cookie_header(&jar)),
+                .set("Cookie", &session::cookie_header(&jar, &current)?),
         )?;
-        session::merge_set_cookie(&mut jar, &follow);
+        session::merge_set_cookie(&mut jar, &follow, &current)?;
         location = follow.header("location").map(str::to_string);
         body_html = follow.into_string().unwrap_or_default();
     }
@@ -262,7 +263,7 @@ fn login_session(base_url: &str, username: &str, password: &str) -> Result<Strin
     if session::html_has_password_field(&body_html) {
         return Err("Brightspace refused the login. Check your credentials; with single sign-on or two-factor authentication, paste session cookies in advanced options.".into());
     }
-    let header = session::cookie_header(&jar);
+    let header = session::cookie_header(&jar, &format!("{base_url}/d2l/api/lp/1.49/users/whoami"))?;
     if session::csrf_from_cookies(&header).is_none() {
         return Err("Brightspace did not return a session cookie. Try advanced options with cookies copied from your browser.".into());
     }
@@ -377,6 +378,7 @@ mod tests {
         client.grades(42).unwrap();
         let requests = worker.join().unwrap();
         for request in &requests {
+            assert!(request.contains(session::BROWSER_UA));
             assert!(request
                 .to_lowercase()
                 .contains("authorization: bearer test-private-token"));

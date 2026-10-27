@@ -69,11 +69,11 @@ def package_macos(args, version, output):
         installer = image_root / "Install student-mcp.app"
         subprocess.run([
             "osacompile", "-o", str(installer),
-            str(ROOT / "packaging/install-macos.applescript"),
+            str(ROOT / "tools/packaging/install-macos.applescript"),
         ], check=True)
         resources = installer / "Contents/Resources"
         shutil.copytree(payload, resources / payload.name)
-        shutil.copy2(ROOT / "packaging/install-macos.sh", resources)
+        shutil.copy2(ROOT / "tools/packaging/install-macos.sh", resources)
         # osacompile supplies a generic applet ID; give the installer its own ID.
         plist_path = installer / "Contents/Info.plist"
         with plist_path.open("rb") as source:
@@ -112,7 +112,7 @@ def package_windows(args, version, output):
         f"/DAppVersion={version}", f"/DX64Binary={args.x64_binary}",
         f"/DX64Launcher={args.x64_launcher}", f"/DArm64Binary={args.arm64_binary}",
         f"/DArm64Launcher={args.arm64_launcher}", f"/DOutputDir={output}",
-        str(ROOT / "packaging/windows.iss"),
+        str(ROOT / "tools/packaging/windows.iss"),
     ], check=True)
     return output / "student-mcp-setup.exe"
 

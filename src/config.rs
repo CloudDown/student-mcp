@@ -5,6 +5,7 @@ use url::Url;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const DEFAULT_PORT: u16 = 8420;
+static SAVE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GatewaySettings {
@@ -120,20 +121,6 @@ pub struct Account {
     pub brightspace: Option<BrightspaceSettings>,
 }
 
-/// Interface zoom persisted in the config; 1.0 keeps the platform default.
-pub const DEFAULT_SCALE: f32 = 1.2;
-pub const SCALE_MIN: f32 = 0.8;
-pub const SCALE_MAX: f32 = 2.0;
-pub const SCALE_STEP: f32 = 0.1;
-
-impl Settings {
-    pub fn scale(&self) -> f32 {
-        self.scale
-            .unwrap_or(DEFAULT_SCALE)
-            .clamp(SCALE_MIN, SCALE_MAX)
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Gateway {
     pub port: u16,
@@ -207,14 +194,6 @@ impl Settings {
         scoped
     }
 
-    pub fn reload(&self) -> Self {
-        let fresh = Self::load();
-        match &self.account_scope {
-            Some((service, id)) => fresh.for_account(service, id),
-            None => fresh,
-        }
-    }
-
     pub fn load() -> Self {
         let path = config_path();
         let text = match std::fs::read_to_string(&path) {
@@ -246,6 +225,30 @@ impl Settings {
     }
 
     pub fn save(&self) -> std::io::Result<()> {
+        let _guard = SAVE_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        self.save_unlocked()
+    }
+
+    /// Apply a small change to the latest root state, under the same lock as saves.
+    pub fn update(edit: impl FnOnce(&mut Self)) -> std::io::Result<Self> {
+        let _guard = SAVE_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let mut settings = Self::load();
+        edit(&mut settings);
+        settings.save_unlocked()?;
+        Ok(settings)
+    }
+
+    /// Persist only this service/account; a login must not overwrite UI preferences
+    /// or credentials saved by another worker while the network request was running.
+    pub fn save_service(&self, service: &str) -> std::io::Result<()> {
+        let mut scoped = self.clone();
+        if scoped.account_scope.is_none() {
+            scoped.account_scope = Some((service.into(), service.into()));
+        }
+        scoped.save()
+    }
+
+    fn save_unlocked(&self) -> std::io::Result<()> {
         if let Some(message) = &self.config_error {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -260,7 +263,6 @@ impl Settings {
                     message,
                 ));
             }
-            root.scale = self.scale;
             if id == service {
                 match service.as_str() {
                     "moodle" => root.moodle = self.moodle.clone(),
@@ -289,7 +291,7 @@ impl Settings {
                     root.accounts.push(account);
                 }
             }
-            return root.save();
+            return root.save_unlocked();
         }
         let path = config_path();
         if let Some(parent) = path.parent() {
@@ -315,6 +317,7 @@ impl Settings {
         if let Some(token) = self.gateway.token.clone().filter(|token| !token.is_empty()) {
             return Gateway { port, token };
         }
+        let _guard = SAVE_LOCK.lock().unwrap_or_else(|error| error.into_inner());
         let mut root = Self::load();
         root.account_scope = None;
         let port = root.gateway.port.unwrap_or(port);
@@ -329,7 +332,7 @@ impl Settings {
         }
         let generated = random_hex(24);
         root.gateway.token = Some(generated.clone());
-        if root.save().is_ok() {
+        if root.save_unlocked().is_ok() {
             return Gateway {
                 port,
                 token: generated,
@@ -432,20 +435,22 @@ pub fn config_path() -> PathBuf {
     // Test override is process-global and mutex-guarded (see with_temp_config).
     // Checked before env vars so parallel tests never race on set_var/remove_var.
     #[cfg(test)]
-    if let Some(path) = tests::override_config_path() {
-        return path;
-    }
-    for variable in ["STUDENT_MCP_CONFIG_FILE", "MOODLE_CONFIG_FILE"] {
-        if let Ok(path) = std::env::var(variable) {
-            if !path.trim().is_empty() {
-                return PathBuf::from(path);
+    return tests::override_config_path()
+        .expect("config access requires with_temp_config in tests");
+    #[cfg(not(test))]
+    {
+        for variable in ["STUDENT_MCP_CONFIG_FILE", "MOODLE_CONFIG_FILE"] {
+            if let Ok(path) = std::env::var(variable) {
+                if !path.trim().is_empty() {
+                    return PathBuf::from(path);
+                }
             }
         }
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap_or_else(|_| ".".to_string());
+        Path::new(&home).join(".student-mcp.json")
     }
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_else(|_| ".".to_string());
-    Path::new(&home).join(".student-mcp.json")
 }
 
 pub fn random_hex(bytes: usize) -> String {
@@ -553,27 +558,25 @@ pub fn normalize_brightspace_url(input: &str) -> Result<String, String> {
 
 fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
-    let temp = path.with_extension(format!("json.tmp-{}", std::process::id()));
-    {
-        let mut file = std::fs::File::create(&temp)?;
+    let temp = path.with_extension(format!("json.tmp-{}", random_hex(8)));
+    let result = (|| {
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&temp)?;
         file.write_all(bytes)?;
-        file.sync_all().ok();
+        file.sync_all()?;
+        drop(file);
+        std::fs::rename(&temp, path)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temp);
     }
-    set_private(&temp);
-    std::fs::rename(&temp, path)?;
-    Ok(())
-}
-
-fn set_private(path: &Path) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-    }
-    #[cfg(windows)]
-    {
-        let _ = path;
-    }
+    result
 }
 
 #[cfg(test)]
@@ -621,11 +624,6 @@ pub(crate) mod tests {
     fn scale_clamps_and_persists() {
         with_temp_config(|| {
             let mut settings = Settings::load();
-            assert!((settings.scale() - DEFAULT_SCALE).abs() < f32::EPSILON);
-            settings.scale = Some(9.9);
-            assert_eq!(settings.scale(), SCALE_MAX);
-            settings.scale = Some(0.1);
-            assert_eq!(settings.scale(), SCALE_MIN);
             settings.scale = Some(1.5);
             let _ = settings.save();
             let reloaded = Settings::load();
@@ -856,6 +854,30 @@ pub(crate) mod tests {
             assert!(loaded.save().is_err());
             let _ = loaded.gateway();
             assert_eq!(std::fs::read(&path).unwrap(), original);
+        });
+    }
+
+    #[test]
+    fn concurrent_account_saves_preserve_preferences_and_other_accounts() {
+        with_temp_config(|| {
+            let stale = Settings::default();
+            Settings::update(|settings| settings.scale = Some(1.7)).unwrap();
+            std::thread::scope(|scope| {
+                for index in 0..12 {
+                    let mut account = stale.for_account("moodle", &format!("account-{index}"));
+                    scope.spawn(move || {
+                        account.moodle = Some(MoodleSettings {
+                            url: Some("https://school.example".into()),
+                            token: Some(format!("token-{index}")),
+                            ..Default::default()
+                        });
+                        account.save_service("moodle").unwrap();
+                    });
+                }
+            });
+            let saved = Settings::load();
+            assert_eq!(saved.scale, Some(1.7));
+            assert_eq!(saved.account_list("moodle").len(), 12);
         });
     }
 

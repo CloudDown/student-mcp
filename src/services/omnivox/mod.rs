@@ -275,7 +275,9 @@ impl OmnivoxClient {
 
     pub fn calendar(&self, range: Option<&str>) -> Result<Value, String> {
         if self.is_college() {
-            let _ = range;
+            if range.is_some() {
+                return Err("Date range filters are only supported by the Omnivox MCP gateway. Omit range to read the college's current calendar page.".into());
+            }
             return self.mobl(
                 "Calendrier/GetCalendrierModel",
                 json!({
@@ -450,7 +452,7 @@ impl PendingLogin {
                     .and_then(Value::as_str)
                     .filter(|url| !url.is_empty())
                     .ok_or("Omnivox did not return a login continuation. Sign in again.")?;
-                let target = self.session.resolve(target)?;
+                let target = self.session.begin_handoff(target)?;
                 let olt = reply.get("olt")
                     .and_then(Value::as_str)
                     .filter(|token| !token.is_empty())
@@ -564,7 +566,7 @@ fn persist(
         device_id: device_id.map(str::to_string),
         auth_hash: auth_hash.map(str::to_string),
     });
-    updated.save().map_err(|error| {
+    updated.save_service("omnivox").map_err(|error| {
         format!("Cannot save Omnivox credentials to the private config file: {error}")
     })?;
     *settings = updated;
@@ -585,6 +587,27 @@ struct LoginSession {
 }
 
 impl LoginSession {
+    /// Only a successful MFA reply may switch the college origin. Password/code
+    /// POSTs and subsequent redirects remain restricted to the selected origin.
+    fn begin_handoff(&mut self, target: &str) -> Result<String, String> {
+        let target = session::resolve_url(&self.current, target)?;
+        let base = url::Url::parse(&self.base_url).map_err(|_| "Invalid Omnivox address.")?;
+        let next = url::Url::parse(&target).map_err(|_| "Invalid Omnivox redirect.")?;
+        let official = |url: &url::Url| {
+            url.scheme() == "https"
+                && url.port_or_known_default() == Some(443)
+                && crate::config::is_omnivox_host(url.as_str())
+        };
+        if !next.username().is_empty()
+            || next.password().is_some()
+            || (base.origin() != next.origin() && !(official(&base) && official(&next)))
+        {
+            return Err("Omnivox redirected the login away from the college site.".into());
+        }
+        self.base_url = next.origin().ascii_serialization();
+        Ok(target)
+    }
+
     fn resolve(&self, target: &str) -> Result<String, String> {
         let next = session::resolve_url(&self.current, target)?;
         let base = url::Url::parse(&self.base_url).map_err(|_| "Invalid Omnivox address.")?;
@@ -1111,7 +1134,7 @@ pub fn tools() -> Vec<Value> {
         json!({"name":"omnivox_course_documents","description":"List Léa documents for one Omnivox course.","inputSchema":{"type":"object","properties":{"course_id":{"type":"string","description":"Course id from omnivox_my_courses, e.g. 2434K5EM.1011."}},"required":["course_id"]}}),
         json!({"name":"omnivox_assignments","description":"List Omnivox assignments. Omit course_id for a summary of every course.","inputSchema":{"type":"object","properties":{"course_id":{"type":"string"}}}}),
         json!({"name":"omnivox_grades","description":"Get Omnivox grades. Omit course_id for a summary of every course.","inputSchema":{"type":"object","properties":{"course_id":{"type":"string"}}}}),
-        json!({"name":"omnivox_calendar","description":"Get the Omnivox day-by-day calendar, including holidays and posted deadlines.","inputSchema":{"type":"object","properties":{"range":{"type":"string","enum":["today","week","month","all"]}}}}),
+        json!({"name":"omnivox_calendar","description":"Get the college's current calendar page, including holidays and posted deadlines. The optional range filter is supported only by the MCP gateway; omit it for a direct college login.","inputSchema":{"type":"object","properties":{"range":{"type":"string","enum":["today","week","month","all"]}}}}),
     ];
     for tool in &mut tools {
         tool["annotations"] = json!({"readOnlyHint":true});
@@ -1230,13 +1253,6 @@ pub(crate) mod tests {
         }
     }
 
-    pub(crate) fn verification_fixture() -> Box<PendingLogin> {
-        let (config, worker) = login_server(challenge_responses());
-        let pending = pending_login(&mut crate::config::Settings::default(), &config.base_url);
-        worker.join().unwrap();
-        pending
-    }
-
     #[test]
     fn mfa_code_form_drops_deleted_cookies_and_preserves_cookie_paths() {
         let mut responses = challenge_responses();
@@ -1301,6 +1317,21 @@ pub(crate) mod tests {
             .cookies_for("https://college.omnivox.ca/api/mfa/login")
             .unwrap();
         assert_eq!(header, "k=parent");
+        assert!(login.resolve("https://other.omnivox.ca/intr/").is_err());
+        for target in [
+            "https://omnivox.ca.evil.example/",
+            "http://other.omnivox.ca/",
+            "https://other.omnivox.ca:8443/",
+            "https://user@other.omnivox.ca/",
+        ] {
+            assert!(login.begin_handoff(target).is_err());
+        }
+        let next = login
+            .begin_handoff("https://other.omnivox.ca/intr/")
+            .unwrap();
+        assert_eq!(login.base_url, "https://other.omnivox.ca");
+        assert_eq!(login.cookies_for(&next).unwrap(), "k=parent");
+        assert!(login.resolve(&next).is_ok());
     }
 
     #[test]

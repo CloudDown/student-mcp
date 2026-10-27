@@ -1,13 +1,14 @@
 use serde_json::{json, Value};
 use std::sync::OnceLock;
 
-static CATALOG_JSON: &str = include_str!("../catalog/functions.json");
+static CATALOG_JSON: &str = include_str!("catalog/functions.json");
 
 #[derive(Debug, Clone)]
 pub struct CatalogEntry {
     pub name: String,
     pub description: String,
     pub write: bool,
+    pub parameters: Value,
 }
 
 /// Bundled Moodle Web Service function catalog (from the open Moodle docs dump).
@@ -23,7 +24,7 @@ impl Catalog {
     }
 
     fn parse() -> Catalog {
-        let parsed: Value = serde_json::from_str(CATALOG_JSON).unwrap_or(Value::Null);
+        let parsed: Value = serde_json::from_str(CATALOG_JSON).expect("valid bundled catalog");
         let release = parsed
             .get("moodle")
             .and_then(|moodle| moodle.get("release"))
@@ -46,6 +47,7 @@ impl Catalog {
                     name,
                     description,
                     write,
+                    parameters: entry.get("parameters").cloned().unwrap_or(Value::Null),
                 })
             })
             .collect();
@@ -78,7 +80,7 @@ impl Catalog {
                 }
             })
             .collect();
-        matched.sort_by(|left, right| left.0.cmp(&right.0));
+        matched.sort_by_key(|entry| entry.0);
         matched
             .into_iter()
             .take(limit.max(1))
@@ -120,6 +122,7 @@ mod tests {
             .get("core_enrol_get_users_courses")
             .expect("read function in catalog");
         assert!(!entry.write);
+        assert_eq!(entry.parameters["userid"]["type"], "integer");
     }
 
     #[test]
@@ -150,6 +153,7 @@ mod tests {
             let actual = cached.get(&entry.name).unwrap();
             assert_eq!(entry.description, actual.description);
             assert_eq!(entry.write, actual.write);
+            assert_eq!(entry.parameters, actual.parameters);
         }
     }
 

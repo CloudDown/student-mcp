@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Advanced path: curl -fsSL https://raw.githubusercontent.com/CloudDown/student-mcp/main/install.sh | bash
+# Advanced path: curl -fsSL https://raw.githubusercontent.com/CloudDown/student-mcp/main/tools/packaging/install.sh | bash
 # Downloads the same release as the Windows/macOS installers, without choosing a ZIP.
 set -euo pipefail
 

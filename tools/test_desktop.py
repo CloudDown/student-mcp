@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-spec = importlib.util.spec_from_file_location("desktop", ROOT / "scripts/package-desktop.py")
+spec = importlib.util.spec_from_file_location("desktop", ROOT / "tools/package-desktop.py")
 desktop = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(desktop)
 with (ROOT / "Cargo.toml").open("rb") as source:
@@ -128,7 +128,7 @@ class DesktopTests(unittest.TestCase):
             root = pathlib.Path(directory)
             args, output = self.fixtures(root)
             result = subprocess.run([
-                os.sys.executable, str(ROOT / "scripts/package-desktop.py"), "windows",
+                os.sys.executable, str(ROOT / "tools/package-desktop.py"), "windows",
                 "--x64-binary", str(args.x64_binary), "--x64-launcher", str(args.x64_launcher),
                 "--arm64-binary", str(args.arm64_binary),
                 "--arm64-launcher", str(root / "missing"), "--output", str(output),

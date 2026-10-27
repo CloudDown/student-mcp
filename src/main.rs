@@ -1,27 +1,21 @@
-mod background;
-mod brightspace;
-mod catalog;
-mod config;
-mod gui;
-mod http;
-mod logos;
-mod mcp;
-mod moodle;
-mod omnivox;
-mod session;
-mod share;
-mod stdio;
-mod tunnel;
-
-use config::VERSION;
+use student_mcp::{run_stdio, run_web, VERSION};
 
 fn main() {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
-        None => stdio::run(), // default for local AI clients (OpenCode, Claude Desktop, ...)
-        Some("up") => gui::run(port_from(&args.collect::<Vec<String>>()), false),
-        Some("install") => gui::run(None, true), // popup right away: configuration lives there
+        None => run_stdio(),
+        Some("up") => run_web(
+            args.find_map(|arg| arg.strip_prefix("--port=")?.parse().ok()),
+            false,
+        ),
+        Some("install") => run_web(None, true),
         Some("version" | "--version" | "-V") => println!("student-mcp {VERSION}"),
+        Some("--licenses") => print!(
+            "{}\n{}\n{}",
+            include_str!("../LICENSE"),
+            include_str!("services/moodle/catalog/LICENSE.md"),
+            include_str!("services/moodle/catalog/COPYING")
+        ),
         Some("--help" | "-h" | "help") => usage(),
         Some(other) => {
             eprintln!("Unknown command: {other}");
@@ -31,25 +25,18 @@ fn main() {
     }
 }
 
-fn port_from(args: &[String]) -> Option<u16> {
-    args.iter().find_map(|value| {
-        value
-            .strip_prefix("--port=")
-            .and_then(|rest| rest.parse::<u16>().ok())
-    })
-}
-
 fn usage() {
     eprintln!(
         "student-mcp: your local MCP for Moodle, Omnivox and Brightspace.
 
 Commands:
   student-mcp (no command)        stdio MCP server for local AI clients
-  student-mcp up [--port=8420]    Small configuration window + local MCP
+  student-mcp up [--port=8420]    Local browser configuration + MCP
                                   (automatic stable public link through srv.us)
-  student-mcp install             Opens the configuration window
+  student-mcp install             Opens the local configuration page
   student-mcp version
+  student-mcp --licenses          Bundled licence texts and notices
 
-Connector URL: /mcp/<token>; the token is in the window and in ~/.student-mcp.json."
+Connector URL: /mcp/<token>; the token is in the page and in ~/.student-mcp.json."
     );
 }

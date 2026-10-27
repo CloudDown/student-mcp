@@ -1,4 +1,5 @@
 //! Shared helpers for school-site logins: cookies, HTML forms, same-host redirects.
+use cookie_store::CookieStore;
 use std::collections::BTreeMap;
 use url::Url;
 
@@ -12,19 +13,25 @@ pub fn form(pairs: &[(&str, &str)]) -> String {
     serializer.finish()
 }
 
-pub fn merge_set_cookie(jar: &mut BTreeMap<String, String>, response: &ureq::Response) {
+pub fn merge_set_cookie(
+    jar: &mut CookieStore,
+    response: &ureq::Response,
+    target: &str,
+) -> Result<(), String> {
+    let url = Url::parse(target).map_err(|_| "Invalid cookie address.")?;
     for header in response.all("set-cookie") {
-        if let Some((name, value)) = parse_set_cookie(header) {
-            jar.insert(name, value);
-        }
+        let _ = jar.parse(header, &url);
     }
+    Ok(())
 }
 
-pub fn cookie_header(jar: &BTreeMap<String, String>) -> String {
-    jar.iter()
+pub fn cookie_header(jar: &CookieStore, target: &str) -> Result<String, String> {
+    let url = Url::parse(target).map_err(|_| "Invalid cookie address.")?;
+    Ok(jar
+        .get_request_values(&url)
         .map(|(name, value)| format!("{name}={value}"))
         .collect::<Vec<_>>()
-        .join("; ")
+        .join("; "))
 }
 
 pub fn parse_cookie_header(header: &str) -> BTreeMap<String, String> {
@@ -50,22 +57,6 @@ pub fn csrf_from_cookies(header: &str) -> Option<String> {
 pub fn session_cookie_auth(token: &str) -> bool {
     let token = token.trim();
     token.contains("d2lSessionVal=") || token.contains(';')
-}
-
-pub fn parse_set_cookie(header: &str) -> Option<(String, String)> {
-    let first = header.split(';').next()?.trim();
-    let (name, value) = first.split_once('=')?;
-    let name = name.trim();
-    if name.is_empty()
-        || name.eq_ignore_ascii_case("path")
-        || name.eq_ignore_ascii_case("domain")
-        || name.eq_ignore_ascii_case("expires")
-        || name.eq_ignore_ascii_case("max-age")
-        || name.eq_ignore_ascii_case("samesite")
-    {
-        return None;
-    }
-    Some((name.to_string(), value.to_string()))
 }
 
 pub fn html_form_action(html: &str) -> Option<String> {
@@ -133,9 +124,9 @@ pub fn resolve_url(base: &str, location: &str) -> Result<String, String> {
 pub fn same_host(left: &str, right: &str) -> bool {
     match (Url::parse(left), Url::parse(right)) {
         (Ok(left), Ok(right)) => {
-            left.host_str().map(str::to_ascii_lowercase)
-                == right.host_str().map(str::to_ascii_lowercase)
-                && left.scheme() == right.scheme()
+            left.origin() == right.origin()
+                && right.username().is_empty()
+                && right.password().is_none()
         }
         _ => false,
     }
@@ -241,16 +232,24 @@ mod tests {
         assert!(body.contains("Identifiant=1111111"));
         assert!(body.contains("Password=secret"));
         assert!(body.contains("k=123"));
-        let mut jar = BTreeMap::new();
-        jar.insert("d2lSessionVal".into(), "abc".into());
-        jar.insert("d2lSecureSessionVal".into(), "xyz".into());
-        let header = cookie_header(&jar);
+        let mut jar = CookieStore::default();
+        let url = Url::parse("https://mycourses.mcgill.ca/d2l/login").unwrap();
+        jar.parse("d2lSessionVal=abc; Path=/", &url).unwrap();
+        jar.parse("d2lSecureSessionVal=xyz; Path=/", &url).unwrap();
+        let header = cookie_header(&jar, url.as_str()).unwrap();
         assert!(session_cookie_auth(&header));
         assert_eq!(csrf_from_cookies(&header).as_deref(), Some("abc"));
-        assert_eq!(
-            parse_set_cookie("d2lSessionVal=abc; Path=/; HttpOnly"),
-            Some(("d2lSessionVal".into(), "abc".into()))
-        );
+        jar.parse("d2lSessionVal=deleted; Path=/; Max-Age=0", &url)
+            .unwrap();
+        assert!(csrf_from_cookies(&cookie_header(&jar, url.as_str()).unwrap()).is_none());
+        assert!(!same_host(
+            url.as_str(),
+            "https://mycourses.mcgill.ca:8443/d2l/home"
+        ));
+        assert!(!same_host(
+            url.as_str(),
+            "https://user@mycourses.mcgill.ca/d2l/home"
+        ));
         assert!(is_sso_host("https://login.microsoftonline.com/common"));
         assert!(!is_sso_host("https://mycourses.mcgill.ca/d2l/login"));
         assert!(same_host(

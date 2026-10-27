@@ -53,8 +53,8 @@ impl server::Handler for Peer {
         // Deliberately fragment the announcement over separate SSH data frames.
         let text = format!("1: {}/\r\n", self.origin);
         let id = self.channel.as_ref().unwrap().id();
-        session.data(id, text[..4].as_bytes().to_vec())?;
-        session.data(id, text[4..].as_bytes().to_vec())?;
+        session.data(id, text.as_bytes()[..4].to_vec())?;
+        session.data(id, text.as_bytes()[4..].to_vec())?;
         let _ = self.connections.send(session.handle());
         Ok(true)
     }

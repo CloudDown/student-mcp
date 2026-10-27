@@ -1,4 +1,4 @@
-# PowerShell: irm https://raw.githubusercontent.com/CloudDown/student-mcp/main/install.ps1 | iex
+# PowerShell: irm https://raw.githubusercontent.com/CloudDown/student-mcp/main/tools/packaging/install.ps1 | iex
 # Advanced path: installs the same universal app as the downloadable setup.exe.
 $ErrorActionPreference = 'Stop'
 $base = 'https://github.com/CloudDown/student-mcp/releases/latest/download'

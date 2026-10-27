@@ -267,8 +267,14 @@ fn read_before(
     if remaining.is_zero() {
         return Err((408, "{\"error\":\"Request timed out.\"}".into()));
     }
-    stream.set_read_timeout(Some(remaining)).map_err(broken)?;
+    stream.set_read_timeout(Some(remaining)).map_err(|error| {
+        #[cfg(test)]
+        eprintln!("set_read_timeout({remaining:?}): {error:?}");
+        broken(error)
+    })?;
     stream.read(buffer).map_err(|error| {
+        #[cfg(test)]
+        eprintln!("socket read: {error:?}");
         if matches!(
             error.kind(),
             std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
@@ -578,10 +584,9 @@ fn write_response(
         "Connection: close\r\n"
     });
     head.push_str("\r\n");
-    let mut response = head.into_bytes();
-    response.extend_from_slice(body);
     let mut output = stream.try_clone()?;
-    output.write_all(&response)?;
+    output.write_all(head.as_bytes())?;
+    output.write_all(body)?;
     output.flush()?;
     Ok(())
 }
@@ -719,7 +724,11 @@ mod tests {
             let (mut client, mut server) = socket_pair();
             client.write_all(prefix.as_bytes()).unwrap();
             let result = read_request(&mut server, &mut Vec::new(), Duration::from_millis(40));
-            assert!(matches!(result, Err((408, _))));
+            assert!(
+                matches!(result, Err((408, _))),
+                "timeout result: {:?}",
+                result.as_ref().err()
+            );
         }
     }
 
@@ -736,7 +745,11 @@ mod tests {
         });
         let started = Instant::now();
         let result = read_request(&mut server, &mut Vec::new(), Duration::from_millis(60));
-        assert!(matches!(result, Err((408, _))));
+        assert!(
+            matches!(result, Err((408, _))),
+            "timeout result: {:?}",
+            result.as_ref().err()
+        );
         assert!(started.elapsed() < Duration::from_millis(800));
         drop(server);
         writer.join().unwrap();
