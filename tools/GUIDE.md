@@ -6,11 +6,10 @@ A local browser page plus a Rust MCP server, with a built-in srv.us tunnel clien
 
 Install from the [latest release](https://github.com/CloudDown/student-mcp/releases/latest):
 
-- **Windows:** run the PowerShell command in the [README](../README.md#install).
-  It downloads checksum-verified x64/ARM64 binaries, installs under
-  `%LOCALAPPDATA%\student-mcp`, adds a Start menu shortcut, and opens the page.
-  Quit the tray app before upgrading. The optional `student-mcp-setup.exe` can
-  instead be installed/uninstalled through Windows Settings → Apps.
+- **Windows:** download `student-mcp-setup.exe`, double-click it, and leave
+  **Open student-mcp** selected. It supports x64 and ARM64. Reopen from the Start
+  menu; uninstall through Windows Settings → Apps. The optional PowerShell
+  `tools/packaging/install.ps1` downloads and runs the same setup file.
 - **macOS:** open `student-mcp.dmg`, double-click
   **Install student-mcp**, then **Install and open**. Reopen from Applications.
   To remove it, stop it from its browser page and move the app to the Trash.

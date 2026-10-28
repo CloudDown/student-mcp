@@ -47,9 +47,9 @@ fi
 
 printf 'Downloading %s...\n' "$file"
 curl --fail --location --silent --show-error --retry 2 --proto '=https' --proto-redir '=https' "$base/$file" -o "$tmp/$file"
-curl --fail --location --silent --show-error --retry 2 --proto '=https' --proto-redir '=https' "$base/$file.sha256" -o "$tmp/$file.sha256"
+curl --fail --location --silent --show-error --retry 2 --proto '=https' --proto-redir '=https' "$base/SHA256SUMS.txt" -o "$tmp/SHA256SUMS.txt"
 
-read -r expected _ < "$tmp/$file.sha256"
+expected="$(awk -v filename="$file" '$2 == filename { print $1 }' "$tmp/SHA256SUMS.txt")"
 if [ "${#expected}" -ne 64 ]; then
   printf 'The download checksum is invalid.\n' >&2
   exit 1

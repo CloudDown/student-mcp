@@ -44,23 +44,6 @@ class StageReleaseTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse((root / "release/student-mcp-linux-x64").exists())
 
-    def test_windows_powershell_assets_have_checksums_for_both_architectures(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = pathlib.Path(directory)
-            for arch in ("x64", "arm64"):
-                for name in ("student-mcp", "student-mcp-desktop"):
-                    asset = f"{name}-windows-{arch}.exe"
-                    source = root / f"{asset}.input"
-                    source.write_bytes(asset.encode())
-                    subprocess.run([
-                        sys.executable, str(ROOT / "stage-release.py"),
-                        "--binary", str(source), "--name", asset,
-                    ], cwd=root, check=True, capture_output=True)
-                    staged = root / "release" / asset
-                    self.assertEqual(staged.read_bytes(), source.read_bytes())
-                    checksum = (root / "release" / f"{asset}.sha256").read_text()
-                    self.assertEqual(checksum, f"{hashlib.sha256(source.read_bytes()).hexdigest()}  {asset}\n")
-
     def test_asset_name_cannot_escape_the_output_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)

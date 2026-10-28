@@ -26,7 +26,7 @@ class InstallTests(unittest.TestCase):
                 installed.parent.mkdir(parents=True)
                 installed.write_bytes(b"existing application")
             digest = hashlib.sha256(asset.read_bytes()).hexdigest() if valid_checksum else "0" * 64
-            asset.with_name(asset.name + ".sha256").write_text(f"{digest}  {asset.name}\n")
+            (root / "SHA256SUMS.txt").write_text(f"{digest}  {asset.name}\n")
             (tools / "uname").write_text(
                 '#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo x86_64;; esac\n'
             )
@@ -46,7 +46,7 @@ class InstallTests(unittest.TestCase):
             result = subprocess.run(["bash", str(ROOT / "tools/packaging/install.sh")], env=environment,
                                     capture_output=True, timeout=10)
             self.assertEqual((root / "downloads").read_text().splitlines(),
-                             [asset.name, asset.name + ".sha256"])
+                              [asset.name, "SHA256SUMS.txt"])
             if compatible:
                 self.assertFalse((home / ".student-mcp").exists())
             else:
