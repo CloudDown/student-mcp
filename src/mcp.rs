@@ -186,7 +186,15 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
         "brightspace_status"
         | "brightspace_my_courses"
         | "brightspace_course_content"
-        | "brightspace_grades" => brightspace_tool(settings, name, args),
+        | "brightspace_file"
+        | "brightspace_grades"
+        | "brightspace_assignments"
+        | "brightspace_assignment_status"
+        | "brightspace_quizzes"
+        | "brightspace_quiz_status"
+        | "brightspace_calendar"
+        | "brightspace_deadlines"
+        | "brightspace_news" => brightspace_tool(settings, name, args),
         "moodle_status" => moodle_tool(settings, |config| {
             let client = MoodleClient::new(config);
             let info = client.site_info()?;
@@ -421,8 +429,18 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
     };
     match outcome {
         Ok(data) => {
-            let content = if name == "moodle_file" {
-                crate::moodle::mcp_content_for_file(data)
+            let content = if name == "moodle_file" || name == "brightspace_file" {
+                let mut content = crate::moodle::mcp_content_for_file(data);
+                if name == "brightspace_file" {
+                    for item in &mut content {
+                        if let Some(uri) = item.pointer_mut("/resource/uri") {
+                            if let Some(value) = uri.as_str() {
+                                *uri = json!(value.replacen("moodle://", "brightspace://", 1));
+                            }
+                        }
+                    }
+                }
+                content
             } else {
                 vec![json!({
                     "type": "text",
@@ -604,7 +622,36 @@ fn brightspace_tool(settings: &Settings, name: &str, args: &Value) -> ToolResult
             client.courses(bookmark)
         }
         "brightspace_course_content" => client.content(require_integer(args, "courseid")?),
+        "brightspace_file" => client.download_file(
+            require_integer(args, "courseid")?,
+            require_integer(args, "topicid")?,
+            &file_query(args)?,
+        ),
         "brightspace_grades" => client.grades(require_integer(args, "courseid")?),
+        "brightspace_assignments" => client.assignments(require_integer(args, "courseid")?),
+        "brightspace_assignment_status" => client.assignment_status(
+            require_integer(args, "courseid")?,
+            require_integer(args, "folderid")?,
+        ),
+        "brightspace_quizzes" => client.quizzes(require_integer(args, "courseid")?),
+        "brightspace_quiz_status" => client.quiz_status(
+            require_integer(args, "courseid")?,
+            require_integer(args, "quizid")?,
+        ),
+        "brightspace_calendar" => {
+            let days = args.get("days").and_then(json_i64).unwrap_or(60);
+            let courseid = match args.get("courseid") {
+                None | Some(Value::Null) => None,
+                _ => Some(require_integer(args, "courseid")?),
+            };
+            client.calendar(courseid, days)
+        }
+        "brightspace_deadlines" => {
+            let days = args.get("days").and_then(json_i64).unwrap_or(60);
+            let courseids = optional_i64_list(args.get("courseids"))?;
+            client.deadlines(days, courseids)
+        }
+        "brightspace_news" => client.news(require_integer(args, "courseid")?),
         _ => Err("Unknown Brightspace tool.".into()),
     }
 }
@@ -1025,7 +1072,7 @@ mod protocol_tests {
                 tools.len(),
                 1 + if enabled & 1 != 0 { 24 } else { 0 }
                     + if enabled & 2 != 0 { 7 } else { 0 }
-                    + if enabled & 4 != 0 { 4 } else { 0 }
+                    + if enabled & 4 != 0 { 12 } else { 0 }
             );
             for tool in tools {
                 assert_eq!(
@@ -1050,7 +1097,13 @@ mod protocol_tests {
                         | "ws_schema"
                         | "ws_call"
                         | "brightspace_course_content"
+                        | "brightspace_file"
                         | "brightspace_grades"
+                        | "brightspace_assignments"
+                        | "brightspace_assignment_status"
+                        | "brightspace_quizzes"
+                        | "brightspace_quiz_status"
+                        | "brightspace_news"
                         | "omnivox_course_documents"
                 ) {
                     assert!(

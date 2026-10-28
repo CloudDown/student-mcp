@@ -1,5 +1,5 @@
 //! Notification-area icon so closing the browser tab still shows the app is up.
-use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
+use std::sync::mpsc::{channel, Receiver, Sender};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
@@ -35,10 +35,7 @@ impl Tray {
     }
 
     pub fn poll(&self) -> Option<Command> {
-        match self.receiver.try_recv() {
-            Ok(command) => Some(command),
-            Err(TryRecvError::Empty | TryRecvError::Disconnected) => None,
-        }
+        self.receiver.try_recv().ok()
     }
 }
 

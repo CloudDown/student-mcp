@@ -1,5 +1,4 @@
-//! Shared helpers for school-site logins: cookies, HTML forms, same-host redirects.
-use cookie_store::CookieStore;
+//! Shared helpers for school-site sessions: cookie auth, HTML forms, redirects.
 use std::collections::BTreeMap;
 use url::Url;
 
@@ -11,27 +10,6 @@ pub fn form(pairs: &[(&str, &str)]) -> String {
         serializer.append_pair(key, value);
     }
     serializer.finish()
-}
-
-pub fn merge_set_cookie(
-    jar: &mut CookieStore,
-    response: &ureq::Response,
-    target: &str,
-) -> Result<(), String> {
-    let url = Url::parse(target).map_err(|_| "Invalid cookie address.")?;
-    for header in response.all("set-cookie") {
-        let _ = jar.parse(header, &url);
-    }
-    Ok(())
-}
-
-pub fn cookie_header(jar: &CookieStore, target: &str) -> Result<String, String> {
-    let url = Url::parse(target).map_err(|_| "Invalid cookie address.")?;
-    Ok(jar
-        .get_request_values(&url)
-        .map(|(name, value)| format!("{name}={value}"))
-        .collect::<Vec<_>>()
-        .join("; "))
 }
 
 pub fn parse_cookie_header(header: &str) -> BTreeMap<String, String> {
@@ -121,102 +99,94 @@ pub fn resolve_url(base: &str, location: &str) -> Result<String, String> {
         .map_err(|_| "The site returned an invalid redirect.".to_string())
 }
 
-pub fn same_host(left: &str, right: &str) -> bool {
-    match (Url::parse(left), Url::parse(right)) {
-        (Ok(left), Ok(right)) => {
-            left.origin() == right.origin()
-                && right.username().is_empty()
-                && right.password().is_none()
-        }
-        _ => false,
-    }
-}
-
-pub fn is_sso_host(url: &str) -> bool {
-    let Ok(parsed) = Url::parse(url) else {
-        return false;
-    };
-    let host = parsed.host_str().unwrap_or("").to_ascii_lowercase();
-    host.contains("microsoftonline.")
-        || host.contains("login.microsoft.")
-        || host.contains("windows.net")
-        || host.contains("okta.com")
-        || host.contains("onelogin.com")
-        || host.contains("pingidentity.")
-        || host.contains("auth0.com")
-        || host.contains("accounts.google.")
-        || host.contains("duosecurity.com")
-}
-
-pub fn looks_like_mfa(url: &str, html: &str) -> bool {
-    let haystack = format!("{url} {html}").to_ascii_lowercase();
-    [
-        "twofactor",
-        "two-factor",
-        "doublefacteur",
-        "double-facteur",
-        "/mfa",
-        "totp",
-        "2fa",
-        "verificationcode",
-        "code de verification",
-        "code de vérification",
-    ]
-    .iter()
-    .any(|needle| haystack.contains(needle))
-}
-
-pub fn fill_login_form(
-    html: &str,
-    username: &str,
-    password: &str,
-    username_names: &[&str],
-) -> Result<(String, String), String> {
-    let action = html_form_action(html).unwrap_or_default();
-    let mut pairs: Vec<(String, String)> = html_form_inputs(html);
-    if pairs.is_empty() {
-        return Err("The login page did not include a form.".into());
-    }
-    let mut user_set = false;
-    let mut password_set = false;
-    for (name, value) in &mut pairs {
-        let lower = name.to_ascii_lowercase();
-        if username_names
-            .iter()
-            .any(|candidate| lower == candidate.to_ascii_lowercase())
-            || lower.contains("identifiant")
-            || lower == "noda"
-            || lower == "username"
-            || lower == "userid"
-            || lower == "loginid"
-            || lower == "login"
-        {
-            *value = username.to_string();
-            user_set = true;
-        }
-        if lower.contains("password") {
-            *value = password.to_string();
-            password_set = true;
-        }
-    }
-    if !user_set || !password_set {
-        return Err(
-            "This school uses a login page this app cannot fill (often single sign-on). Use a session cookie or token in advanced options."
-                .into(),
-        );
-    }
-    let encoded = form(
-        &pairs
-            .iter()
-            .map(|(name, value)| (name.as_str(), value.as_str()))
-            .collect::<Vec<_>>(),
-    );
-    Ok((action, encoded))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cookie_store::CookieStore;
+
+    fn cookie_header(jar: &CookieStore, target: &str) -> Result<String, String> {
+        let url = Url::parse(target).map_err(|_| "Invalid cookie address.")?;
+        Ok(jar
+            .get_request_values(&url)
+            .map(|(name, value)| format!("{name}={value}"))
+            .collect::<Vec<_>>()
+            .join("; "))
+    }
+
+    fn same_host(left: &str, right: &str) -> bool {
+        match (Url::parse(left), Url::parse(right)) {
+            (Ok(left), Ok(right)) => {
+                left.origin() == right.origin()
+                    && right.username().is_empty()
+                    && right.password().is_none()
+            }
+            _ => false,
+        }
+    }
+
+    fn is_sso_host(url: &str) -> bool {
+        let Ok(parsed) = Url::parse(url) else {
+            return false;
+        };
+        let host = parsed.host_str().unwrap_or("").to_ascii_lowercase();
+        host.contains("microsoftonline.")
+            || host.contains("login.microsoft.")
+            || host.contains("windows.net")
+            || host.contains("okta.com")
+            || host.contains("onelogin.com")
+            || host.contains("pingidentity.")
+            || host.contains("auth0.com")
+            || host.contains("accounts.google.")
+            || host.contains("duosecurity.com")
+    }
+
+    fn fill_login_form(
+        html: &str,
+        username: &str,
+        password: &str,
+        username_names: &[&str],
+    ) -> Result<(String, String), String> {
+        let action = html_form_action(html).unwrap_or_default();
+        let mut pairs: Vec<(String, String)> = html_form_inputs(html);
+        if pairs.is_empty() {
+            return Err("The login page did not include a form.".into());
+        }
+        let mut user_set = false;
+        let mut password_set = false;
+        for (name, value) in &mut pairs {
+            let lower = name.to_ascii_lowercase();
+            if username_names
+                .iter()
+                .any(|candidate| lower == candidate.to_ascii_lowercase())
+                || lower.contains("identifiant")
+                || lower == "noda"
+                || lower == "username"
+                || lower == "userid"
+                || lower == "loginid"
+                || lower == "login"
+            {
+                *value = username.to_string();
+                user_set = true;
+            }
+            if lower.contains("password") {
+                *value = password.to_string();
+                password_set = true;
+            }
+        }
+        if !user_set || !password_set {
+            return Err(
+                "This school uses a login page this app cannot fill (often single sign-on). Paste a session cookie or access token instead."
+                    .into(),
+            );
+        }
+        let encoded = form(
+            &pairs
+                .iter()
+                .map(|(name, value)| (name.as_str(), value.as_str()))
+                .collect::<Vec<_>>(),
+        );
+        Ok((action, encoded))
+    }
 
     #[test]
     fn parses_forms_cookies_and_sso_hosts() {

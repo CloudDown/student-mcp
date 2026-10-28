@@ -283,12 +283,27 @@ impl MoodleClient {
                 file
             }
         };
-        let filename = &file.filename;
-        let mime = &file.mime;
-        let bytes = file.bytes.as_slice();
+        Self::read_document(
+            &file.filename,
+            &file.mime,
+            Arc::clone(&file.bytes),
+            query,
+            &self.token,
+        )
+    }
+
+    /// Shared document delivery; platform-specific clients own authentication and download.
+    pub(crate) fn read_document(
+        filename: &str,
+        mime: &str,
+        document: Arc<Vec<u8>>,
+        query: &FileQuery,
+        secret: &str,
+    ) -> Result<Value, String> {
+        let bytes = document.as_slice();
         let is_pdf = mime.to_ascii_lowercase().contains("pdf") || bytes.starts_with(b"%PDF");
         if !is_pdf {
-            let text = extract_text(mime, bytes).map(|text| scrub_secret(text, &self.token));
+            let text = extract_text(mime, bytes).map(|text| scrub_secret(text, secret));
             let mut result = json!({
                 "filename": filename,
                 "mimeType": mime,
@@ -298,7 +313,7 @@ impl MoodleClient {
                 Some(text) if !text.trim().is_empty() => result["text"] = json!(text),
                 _ => {
                     result["note"] = json!(
-                        "Binary Moodle file downloaded. Text is inlined only for PDF and text documents."
+                        "Binary file downloaded. Text is inlined only for PDF and text documents."
                     );
                 }
             }
@@ -314,7 +329,7 @@ impl MoodleClient {
                 if let Some(id) = crate::share::publish_bytes(
                     filename,
                     "application/pdf",
-                    Arc::clone(&file.bytes),
+                    Arc::clone(&document),
                     "",
                     0,
                 ) {
@@ -392,7 +407,7 @@ impl MoodleClient {
             Some(text) => {
                 let over = text.chars().count() > MAX_TEXT_CHARS;
                 let text = if over { truncate_text(&text) } else { text };
-                (Some(scrub_secret(text, &self.token)), over)
+                (Some(scrub_secret(text, secret)), over)
             }
             None => (None, false),
         };
@@ -403,8 +418,8 @@ impl MoodleClient {
             crate::share::publish_bytes(
                 filename,
                 "application/pdf",
-                Arc::clone(&file.bytes),
-                &scrub_secret(full_text, &self.token),
+                Arc::clone(&document),
+                &scrub_secret(full_text, secret),
                 total_pages,
             )
         } else {
@@ -1651,7 +1666,7 @@ fn resolve_search_courses(courses: &[Value], query: &str, courseid: Option<i64>)
             (score > 0).then_some((score, course))
         })
         .collect::<Vec<_>>();
-    scored.sort_by(|left, right| right.0.cmp(&left.0));
+    scored.sort_by_key(|right| std::cmp::Reverse(right.0));
     let best = scored.first().map(|(score, _)| *score).unwrap_or(0);
     scored
         .into_iter()
@@ -2171,7 +2186,7 @@ fn looks_like_html(mime: &str, bytes: &[u8]) -> bool {
     head.starts_with("<!doctype html") || head.starts_with("<html")
 }
 
-fn filename_from(disposition: Option<&str>, fileurl: &str) -> String {
+pub(crate) fn filename_from(disposition: Option<&str>, fileurl: &str) -> String {
     if let Some(header) = disposition {
         if let Some(value) = header.split("filename=").nth(1) {
             let value = value

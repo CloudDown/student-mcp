@@ -65,17 +65,23 @@ id so the same mobile session can be reopened after a restart.
 and `accessKey.txt`).
 
 **Brightspace / myCourses.** Enter your institution's Brightspace site address
-and your normal username and password. The app signs in on the school login
-page, keeps only the session cookies, and verifies your profile and course
-enrollments. This connector only reads your account, courses, content and
-visible grades. Course lists retain `PagingInfo`; supply `bookmark` to request
-the next page. The password is never stored.
-
-If the school uses Microsoft SSO, the password form is refused. Open Brightspace
-in your browser, sign in, then under **Advanced options** paste the
-`d2lSessionVal` and `d2lSecureSessionVal` cookies (or an institution-authorized
-OAuth token, without `Bearer`). Sessions expire and must be replaced via
-**Change login**. The connector uses LP API 1.49 and LE API 1.82.
+and the two session cookie **values** from your browser after SSO:
+`d2lSessionVal` and `d2lSecureSessionVal` (separate fields; values only). The
+**⋯** help control explains how to copy them from DevTools. An
+institution-authorized OAuth access token can go under **Advanced options**
+instead (without `Bearer`). The app verifies your profile and course
+enrollments. This connector is read-only and covers courses, content, grades,
+assignments (dropbox + due dates), quizzes, calendar, aggregated deadlines and
+course news. `brightspace_file` reads documents using `courseid` and a file
+topic's `Id` from `brightspace_course_content` as `topicid`. PDFs are returned as
+original resources/download links by default; `format=text` supports page
+selection and `find`, while `format=images` handles scans and diagrams. The
+12 MB download limit also applies here. External links and redirected downloads
+are refused so session cookies never leave the configured site.
+Course lists retain `PagingInfo`; supply `bookmark` to request the
+next page. Prefer `brightspace_deadlines` for upcoming work. Sessions expire and
+must be replaced via **Change login**. The connector uses LP API 1.49 and LE
+API 1.82.
 
 Saved accounts have check, reconnect and disconnect actions. Moodle permissions
 can be changed without re-entering credentials. Omnivox and Brightspace remain
@@ -99,10 +105,10 @@ Only implemented connectors are displayed, without empty slots.
   Maisonneuve MFA API; code validation, mobile-session establishment and
   persistence are covered by local HTTP fixtures. End-to-end verification with a
   real email code still depends on the college account.
-- **Brightspace** signs in with the student's school login and reads the Valence
-  API with session cookies (OAuth tokens still work). SSO schools need cookies
-  pasted from the browser. Tested with local HTTP fixtures; it has not been
-  validated against a real institutional account.
+- **Brightspace** reads the Valence API with session cookies pasted from the
+  browser after SSO (OAuth tokens still work). Tools cover content, grades,
+  dropbox assignments, quizzes, calendar, deadlines and news. Tested with local
+  HTTP fixtures; live validation still depends on a real institutional account.
 - **monPortail/Brio** is not integrated yet. Laval requires institutional SSO/MFA;
   no suitable public student API was found. Current browser-session evidence and
   an authorized test account are needed; old monPortail API examples from 2017
@@ -194,8 +200,9 @@ student-mcp version
   empty HTML body. All Moodle HTTP clients must send `session::BROWSER_UA`.
   Do not treat that 202 as a missing mobile token.
 - **Brightspace asks for SSO cookies**: the school sends you through Microsoft
-  or another identity provider. Sign in in your browser, copy `d2lSessionVal`
-  and `d2lSecureSessionVal`, and paste them under **Advanced options**.
+  or another identity provider. Sign in in your browser, copy the **values** of
+  `d2lSessionVal` and `d2lSecureSessionVal`, and paste each in its field (see
+  the **⋯** help).
 - **Omnivox asks for identity verification**: enter the emailed 6-digit code in
   the app. Use **Send a new code** if needed. If the session expires, sign in
   again to start a new verification.

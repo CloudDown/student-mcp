@@ -327,18 +327,7 @@ fn action(
             get("token"),
             args["allow_write"] == true,
         )?,
-        "brightspace" => {
-            if get("token").is_empty() {
-                crate::brightspace::activate_login(
-                    &mut settings,
-                    get("url"),
-                    get("username"),
-                    get("password"),
-                )?
-            } else {
-                crate::brightspace::activate(&mut settings, get("url"), get("token"))?
-            }
-        }
+        "brightspace" => crate::brightspace::activate(&mut settings, get("url"), get("token"))?,
         _ => {
             if get("token").is_empty() {
                 match crate::omnivox::activate_login(
