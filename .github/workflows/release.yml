@@ -158,7 +158,6 @@ jobs:
               throw "External Visual C++ runtime required by $($binary.Name)"
             }
           }
-          done
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-windows
