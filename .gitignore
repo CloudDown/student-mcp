@@ -1,10 +1,35 @@
+# Build outputs
 target/
-node_modules/
+release/
 dist/
 build/
-release/
+
+# Local agent / editor config (machine-specific paths)
+opencode.json
+.opencode/
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Secrets and runtime config (never in the repo)
 .env
-*.log
+.env.*
+*.student-mcp.json
+*.student-mcp.ui.json
+*.student-mcp.srvus-key
+*.student-mcp.srvus-host
 *.moodle-ws-mcp.json
+
+# Logs and caches
+*.log
 *.pyc
 __pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+node_modules/
