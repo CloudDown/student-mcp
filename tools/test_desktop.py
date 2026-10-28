@@ -78,7 +78,7 @@ class DesktopTests(unittest.TestCase):
             )
             signatures = [command for command in calls if command[:2] == ["codesign", "--force"]]
             self.assertEqual(len(signatures), 4)  # two binaries, inner app, installer app
-            self.assertEqual(signatures[-1][-1].split("/")[-1], "Install student-mcp.app")
+            self.assertEqual(pathlib.Path(signatures[-1][-1]).name, "Install student-mcp.app")
             self.assertTrue(any(command[:2] == ["codesign", "--verify"] for command in calls))
             desktop.checksum(artifact)
             self.assertEqual(

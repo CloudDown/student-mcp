@@ -8,19 +8,23 @@
 
 ## Install
 
+Open the **[latest release](https://github.com/CloudDown/student-mcp/releases/latest)** and download:
+
 ### Windows
 
-Download **[student-mcp-setup.exe](https://github.com/CloudDown/student-mcp/releases/latest/download/student-mcp-setup.exe)** → double-click → install and open.
+**[student-mcp-setup.exe](https://github.com/CloudDown/student-mcp/releases/latest/download/student-mcp-setup.exe)** → double-click → install and open.
 
 ### macOS
 
-Download **[student-mcp.dmg](https://github.com/CloudDown/student-mcp/releases/latest/download/student-mcp.dmg)** → open → double-click **Install student-mcp**.
+**[student-mcp.dmg](https://github.com/CloudDown/student-mcp/releases/latest/download/student-mcp.dmg)** → open → double-click **Install student-mcp**.
 
 ### Linux
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/CloudDown/student-mcp/main/tools/packaging/install.sh | bash
 ```
+
+Or take `student-mcp-linux-x64` / `student-mcp-linux-arm64` from the same release page.
 
 Windows/macOS builds are not yet publisher-signed. [Details](tools/GUIDE.md#installation).
 
