@@ -1160,7 +1160,11 @@ mod protocol_tests {
                 tools.len(),
                 1 + if enabled & 1 != 0 { 26 } else { 0 }
                     + if enabled & 2 != 0 { 7 } else { 0 }
-                    + if enabled & 4 != 0 { crate::brightspace::tools().len() } else { 0 }
+                    + if enabled & 4 != 0 {
+                        crate::brightspace::tools().len()
+                    } else {
+                        0
+                    }
             );
             for tool in tools {
                 assert_eq!(

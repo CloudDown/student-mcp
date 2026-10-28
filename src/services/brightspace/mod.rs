@@ -74,10 +74,15 @@ impl BrightspaceClient {
             );
         }
         let mut bytes = Vec::new();
-        response.into_reader().take(2 * 1024 * 1024 + 1).read_to_end(&mut bytes)
+        response
+            .into_reader()
+            .take(2 * 1024 * 1024 + 1)
+            .read_to_end(&mut bytes)
             .map_err(|_| "Cannot read Brightspace JSON response.".to_string())?;
         if bytes.len() > 2 * 1024 * 1024 {
-            return Err("Brightspace response exceeded 2 MB. Use a smaller page or narrower query.".into());
+            return Err(
+                "Brightspace response exceeded 2 MB. Use a smaller page or narrower query.".into(),
+            );
         }
         let value: Value = serde_json::from_slice(&bytes)
             .map_err(|_| "Brightspace did not return JSON. Check the site address.".to_string())?;
@@ -223,7 +228,10 @@ impl BrightspaceClient {
             return Err("The submission file is empty.".into());
         }
         if bytes.len() > MAX_BYTES {
-            return Err("Submission files larger than 12 MB are refused. Submit from Brightspace instead.".into());
+            return Err(
+                "Submission files larger than 12 MB are refused. Submit from Brightspace instead."
+                    .into(),
+            );
         }
         let comment = comment.unwrap_or("").trim();
         if comment.chars().count() > 8_000 {
@@ -242,10 +250,8 @@ impl BrightspaceClient {
         body.extend_from_slice(b"\r\n");
         body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
         body.extend_from_slice(
-            format!(
-                "Content-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n"
-            )
-            .as_bytes(),
+            format!("Content-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n")
+                .as_bytes(),
         );
         body.extend_from_slice(format!("Content-Type: {mime}\r\n\r\n").as_bytes());
         body.extend_from_slice(bytes);
@@ -293,7 +299,10 @@ impl BrightspaceClient {
         // Some tenants return empty 200; others return EntityDropbox JSON.
         let status = response.status();
         let mut raw = String::new();
-        let _ = response.into_reader().take(512 * 1024).read_to_string(&mut raw);
+        let _ = response
+            .into_reader()
+            .take(512 * 1024)
+            .read_to_string(&mut raw);
         let result = if raw.trim().is_empty() {
             json!({
                 "ok": true,
@@ -403,10 +412,7 @@ impl BrightspaceClient {
         let end = utc_plus_days(days);
         let mut items = Vec::new();
         for courseid in course_ids {
-            let course_name = names
-                .get(&courseid)
-                .cloned()
-                .unwrap_or(Value::Null);
+            let course_name = names.get(&courseid).cloned().unwrap_or(Value::Null);
             if let Ok(folders) = self.course_get(courseid, "dropbox/folders/") {
                 for folder in as_array(&folders) {
                     if folder.get("IsHidden").and_then(Value::as_bool) == Some(true) {
@@ -485,7 +491,9 @@ impl BrightspaceClient {
             let key = format!(
                 "{}|{}|{}",
                 item.get("type").and_then(Value::as_str).unwrap_or(""),
-                item.get("courseid").map(|v| v.to_string()).unwrap_or_default(),
+                item.get("courseid")
+                    .map(|v| v.to_string())
+                    .unwrap_or_default(),
                 item.get("name").and_then(Value::as_str).unwrap_or("")
             );
             seen.insert(key)
@@ -510,10 +518,7 @@ impl BrightspaceClient {
         if courseid <= 0 {
             return Err("Provide an integer courseid > 0.".into());
         }
-        self.get(
-            &format!("/d2l/api/le/{LE}/{courseid}/{resource}"),
-            &[],
-        )
+        self.get(&format!("/d2l/api/le/{LE}/{courseid}/{resource}"), &[])
     }
 
     fn course_ids(&self) -> Result<Vec<i64>, String> {
@@ -746,7 +751,10 @@ fn sanitize_upload_filename(name: &str) -> Result<String, String> {
     if base.is_empty() || base == "." || base == ".." {
         return Err("filename must be a plain file name, not a path.".into());
     }
-    if base.chars().any(|ch| matches!(ch, '/' | '\\' | '\0' | '"' | '\r' | '\n')) {
+    if base
+        .chars()
+        .any(|ch| matches!(ch, '/' | '\\' | '\0' | '"' | '\r' | '\n'))
+    {
         return Err("filename contains forbidden characters.".into());
     }
     if base.len() > 180 {
@@ -818,7 +826,10 @@ fn compact_assignment(folder: &Value) -> Value {
 }
 
 fn summarize_quizzes(courseid: i64, page: &Value) -> Value {
-    let items: Vec<Value> = list_objects(page).into_iter().map(|q| compact_quiz(&q)).collect();
+    let items: Vec<Value> = list_objects(page)
+        .into_iter()
+        .map(|q| compact_quiz(&q))
+        .collect();
     json!({"courseid": courseid, "quizzes": items, "paging": page.get("Next").or_else(|| page.get("PagingInfo"))})
 }
 
@@ -998,13 +1009,21 @@ mod tests {
             ..Default::default()
         };
         let reply = crate::mcp::dispatch_tool(
-            &settings, "brightspace_file", &json!({"courseid":42,"topicid":17}),
+            &settings,
+            "brightspace_file",
+            &json!({"courseid":42,"topicid":17}),
         );
         assert_eq!(reply["isError"], false, "{reply}");
         let content = reply["content"].as_array().unwrap();
-        let resource = content.iter().find_map(|item| item.get("resource")).unwrap();
+        let resource = content
+            .iter()
+            .find_map(|item| item.get("resource"))
+            .unwrap();
         assert_eq!(resource["mimeType"], "application/pdf");
-        assert!(resource["uri"].as_str().unwrap().starts_with("brightspace://file/"));
+        assert!(resource["uri"]
+            .as_str()
+            .unwrap()
+            .starts_with("brightspace://file/"));
         assert!(resource["blob"].is_string());
         assert!(!reply.to_string().contains("private-one"));
         assert!(!reply.to_string().contains("private-two"));
@@ -1012,20 +1031,23 @@ mod tests {
         assert_eq!(requests.len(), 1);
         assert!(requests[0].starts_with("GET /d2l/api/le/1.82/42/content/topics/17/file "));
         assert!(requests[0].contains(session::BROWSER_UA));
-        assert!(requests[0].to_lowercase().contains("cookie: d2lsessionval=private-one"));
+        assert!(requests[0]
+            .to_lowercase()
+            .contains("cookie: d2lsessionval=private-one"));
     }
 
     #[test]
     fn file_download_supports_text_and_bearer_auth() {
-        let (config, worker) = server_with_mime(
-            vec![(200, "Read chapter five.".into())], "text/plain",
-        );
-        let result = BrightspaceClient::new(config).download_file(
-            42, 17, &crate::moodle::FileQuery::default(),
-        ).unwrap();
+        let (config, worker) =
+            server_with_mime(vec![(200, "Read chapter five.".into())], "text/plain");
+        let result = BrightspaceClient::new(config)
+            .download_file(42, 17, &crate::moodle::FileQuery::default())
+            .unwrap();
         assert_eq!(result["text"], "Read chapter five.");
         let requests = worker.join().unwrap();
-        assert!(requests[0].to_lowercase().contains("authorization: bearer test-private-token"));
+        assert!(requests[0]
+            .to_lowercase()
+            .contains("authorization: bearer test-private-token"));
     }
 
     #[test]
@@ -1036,14 +1058,22 @@ mod tests {
             (404, "text/plain", "test-private-token".into()),
             (302, "text/plain", String::new()),
             (200, "text/html", "<html>SSO login</html>".into()),
-            (200, "application/octet-stream", "<!doctype html><html>login</html>".into()),
-            (200, "application/json", r#"{"error":"test-private-token"}"#.into()),
+            (
+                200,
+                "application/octet-stream",
+                "<!doctype html><html>login</html>".into(),
+            ),
+            (
+                200,
+                "application/json",
+                r#"{"error":"test-private-token"}"#.into(),
+            ),
             (200, "application/pdf", "x".repeat(12 * 1024 * 1024 + 1)),
         ] {
             let (config, worker) = server_with_mime(vec![(status, body)], mime);
-            let error = BrightspaceClient::new(config).download_file(
-                42, 17, &crate::moodle::FileQuery::default(),
-            ).unwrap_err();
+            let error = BrightspaceClient::new(config)
+                .download_file(42, 17, &crate::moodle::FileQuery::default())
+                .unwrap_err();
             assert!(!error.contains("test-private-token"));
             assert_eq!(worker.join().unwrap().len(), 1);
         }
@@ -1117,8 +1147,9 @@ mod tests {
         assert!(requests[0].starts_with(&format!("GET /d2l/api/lp/{LP}/users/whoami ")));
         assert!(requests[1].contains("orgUnitTypeId=3&bookmark=a%26b"));
         assert!(requests[2].starts_with(&format!("GET /d2l/api/le/{LE}/42/content/toc ")));
-        assert!(requests[3]
-            .starts_with(&format!("GET /d2l/api/le/{LE}/42/grades/values/myGradeValues/ ")));
+        assert!(requests[3].starts_with(&format!(
+            "GET /d2l/api/le/{LE}/42/grades/values/myGradeValues/ "
+        )));
         assert!(requests[4].starts_with(&format!("GET /d2l/api/le/{LE}/42/dropbox/folders/ ")));
         assert!(requests[5].starts_with(&format!("GET /d2l/api/le/{LE}/42/quizzes/ ")));
         assert!(requests[6].starts_with(&format!("GET /d2l/api/le/{LE}/42/news/ ")));
@@ -1341,10 +1372,7 @@ mod tests {
                 if reader.read_line(&mut line).unwrap() == 0 || line == "\r\n" {
                     break;
                 }
-                if let Some(value) = line
-                    .to_ascii_lowercase()
-                    .strip_prefix("content-length:")
-                {
+                if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
                     content_length = value.trim().parse().unwrap_or(0);
                 }
                 headers.push_str(&line);
@@ -1372,9 +1400,8 @@ mod tests {
         assert_eq!(result["submission"]["EntityId"], 7);
         let (headers, body) = worker.join().unwrap();
         let headers_l = headers.to_ascii_lowercase();
-        assert!(headers.starts_with(
-            "POST /d2l/api/le/1.82/42/dropbox/folders/9/submissions/mysubmissions/ "
-        ));
+        assert!(headers
+            .starts_with("POST /d2l/api/le/1.82/42/dropbox/folders/9/submissions/mysubmissions/ "));
         assert!(headers_l.contains("content-type: multipart/mixed; boundary="));
         assert!(headers_l.contains("cookie: d2lsessionval=sess"));
         assert!(!headers_l.contains("authorization:"));
@@ -1402,10 +1429,7 @@ mod tests {
                 if reader.read_line(&mut line).unwrap() == 0 || line == "\r\n" {
                     break;
                 }
-                if let Some(value) = line
-                    .to_ascii_lowercase()
-                    .strip_prefix("content-length:")
-                {
+                if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
                     content_length = value.trim().parse().unwrap_or(0);
                 }
                 headers.push_str(&line);
@@ -1444,8 +1468,12 @@ mod tests {
         assert_eq!(reply["isError"], false, "{reply}");
         assert!(!reply.to_string().contains("test-private-token"));
         let (headers, body) = worker.join().unwrap();
-        assert!(headers.contains("Authorization: Bearer test-private-token")
-            || headers.to_ascii_lowercase().contains("authorization: bearer test-private-token"));
+        assert!(
+            headers.contains("Authorization: Bearer test-private-token")
+                || headers
+                    .to_ascii_lowercase()
+                    .contains("authorization: bearer test-private-token")
+        );
         let body_text = String::from_utf8_lossy(&body);
         assert!(body_text.contains("answer body"));
         assert!(body_text.contains("filename=\"answers.txt\""));

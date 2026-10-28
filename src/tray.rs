@@ -222,6 +222,8 @@ mod tests {
         assert!(pixels.chunks_exact(4).any(|p| p[3] == 255));
         assert!(pixels.chunks_exact(4).any(|p| p[3] == 0));
         // Yellow face present (graduation smiley).
-        assert!(pixels.chunks_exact(4).any(|p| p[0] > 200 && p[1] > 150 && p[2] < 40 && p[3] == 255));
+        assert!(pixels
+            .chunks_exact(4)
+            .any(|p| p[0] > 200 && p[1] > 150 && p[2] < 40 && p[3] == 255));
     }
 }
