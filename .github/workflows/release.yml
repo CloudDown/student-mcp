@@ -292,9 +292,9 @@ jobs:
           installer="$mount/Install student-mcp.app"
           payload="$installer/Contents/Resources/student-mcp.app/Contents/MacOS"
           codesign --verify --deep --strict "$installer"
-          lipo -verify_arch x86_64 arm64 "$installer/Contents/MacOS/applet"
-          lipo -verify_arch x86_64 arm64 "$payload/student-mcp"
-          lipo -verify_arch x86_64 arm64 "$payload/student-mcp-desktop"
+          lipo "$installer/Contents/MacOS/applet" -verify_arch x86_64 arm64
+          lipo "$payload/student-mcp" -verify_arch x86_64 arm64
+          lipo "$payload/student-mcp-desktop" -verify_arch x86_64 arm64
           for executable in "$payload/student-mcp" "$payload/student-mcp-desktop"; do
             # Every shared-library dependency must be provided by macOS itself.
             otool -L "$executable" | awk '/compatibility version/ { print $1 }' > "$RUNNER_TEMP/student-mcp-libraries"
