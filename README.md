@@ -37,4 +37,6 @@ Windows/macOS builds are not yet publisher-signed. [Details](tools/GUIDE.md#inst
 Sign in on the local page → copy the link → add it to your assistant's **MCP connectors**.
 Keep the computer online. Closing the tab leaves a tray icon; quit from there or from the page.
 
+**v0.6.0:** Moodle and Brightspace are the stable connectors. Omnivox is still experimental and may fail on real college sites.
+
 <p align="center"><a href="tools/GUIDE.md">Docs</a> · <a href="tools/GUIDE.md#4-automatic-public-link-for-web-ai">Privacy &amp; relay</a> · MIT code; <a href="src/services/moodle/catalog/LICENSE.md">GPL-3.0+ Moodle catalogue</a></p>

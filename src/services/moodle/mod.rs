@@ -303,6 +303,19 @@ impl MoodleClient {
         let bytes = document.as_slice();
         let is_pdf = mime.to_ascii_lowercase().contains("pdf") || bytes.starts_with(b"%PDF");
         if !is_pdf {
+            if let Some(document) = crate::document::extract(filename, bytes)? {
+                if query.format == FileFormat::Images {
+                    return Err("Office image rendering is not supported. Request format=text, or export to PDF for diagrams and page images.".into());
+                }
+                return office_document_result(
+                    filename,
+                    mime,
+                    bytes.len(),
+                    document,
+                    query,
+                    secret,
+                );
+            }
             let text = extract_text(mime, bytes).map(|text| scrub_secret(text, secret));
             let mut result = json!({
                 "filename": filename,
@@ -313,7 +326,7 @@ impl MoodleClient {
                 Some(text) if !text.trim().is_empty() => result["text"] = json!(text),
                 _ => {
                     result["note"] = json!(
-                        "Binary file downloaded. Text is inlined only for PDF and text documents."
+                        "Unsupported binary format. No content was extracted; export to PDF or a supported Office/OpenDocument format."
                     );
                 }
             }
@@ -740,10 +753,7 @@ impl MoodleClient {
                 .get("modulename")
                 .and_then(Value::as_str)
                 .unwrap_or("event");
-            let event_type = event
-                .get("eventtype")
-                .and_then(Value::as_str)
-                .unwrap_or("");
+            let event_type = event.get("eventtype").and_then(Value::as_str).unwrap_or("");
             if event_type == "auth_outage" {
                 continue;
             }
@@ -1062,6 +1072,118 @@ impl MoodleClient {
             "count": grades.len(),
             "grades": grades
         }))
+    }
+
+    /// Recent assessment grades, not course totals. Never invent a publication date.
+    pub fn recent_grades(
+        &self,
+        courseids: Option<Vec<i64>>,
+        limit: usize,
+    ) -> Result<Value, String> {
+        let courses = self.my_courses(false)?;
+        let ids = match courseids {
+            Some(ids) => ids,
+            None => courses["courses"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|c| c["id"].as_i64())
+                .collect(),
+        };
+        if ids.len() > 30 {
+            return Err("Select at most 30 courseids for recent grades.".into());
+        }
+        let userid = self.userid()?;
+        let mut grades = Vec::new();
+        let mut errors = Vec::new();
+        let mut undated = 0;
+        for id in ids {
+            let raw = match self.call(
+                "gradereport_user_get_grade_items",
+                &json!({"courseid": id, "userid": userid}),
+            ) {
+                Ok(raw) => raw,
+                Err(error) => {
+                    errors.push(json!({"courseid": id, "error": error}));
+                    continue;
+                }
+            };
+            if let Some(warnings) = raw
+                .get("warnings")
+                .and_then(Value::as_array)
+                .filter(|w| !w.is_empty())
+            {
+                errors.push(json!({"courseid": id, "warnings": warnings}));
+            }
+            for mut grade in compact_grade_items(&raw) {
+                if grade["type"] == "course"
+                    || grade["type"] == "category"
+                    || grade["raw"].is_null()
+                {
+                    continue;
+                }
+                if grade["gradedAt"].as_i64().unwrap_or(0) <= 0 {
+                    undated += 1;
+                    continue;
+                }
+                grade["courseid"] = json!(id);
+                grade["course"] = courses["courses"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .find(|c| c["id"].as_i64() == Some(id))
+                    .map(|c| c["fullname"].clone())
+                    .unwrap_or(Value::Null);
+                grades.push(grade);
+            }
+        }
+        grades.sort_by_key(|g| std::cmp::Reverse(g["gradedAt"].as_i64().unwrap_or(0)));
+        let total = grades.len();
+        grades.truncate(limit.clamp(1, 50));
+        Ok(
+            json!({"count": grades.len(), "total": total, "grades": grades,
+            "undatedGradesOmitted": undated, "partial": !errors.is_empty(), "errors": errors,
+            "note": "Sorted by Moodle's grading timestamp, not necessarily the date a grade became visible. Undated grades are omitted; use moodle_grades for them."}),
+        )
+    }
+
+    pub fn course_updates(&self, courseid: i64, since: i64) -> Result<Value, String> {
+        if since < 0 || since > unix_now() {
+            return Err("since must be a past Unix timestamp in seconds.".into());
+        }
+        let raw = self.call(
+            "core_course_get_updates_since",
+            &json!({"courseid": courseid, "since": since}),
+        )?;
+        let content = self.course_content(courseid, None)?;
+        let modules: Vec<&Value> = content["sections"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|s| s["modules"].as_array().into_iter().flatten())
+            .collect();
+        let updates: Vec<Value> = raw["instances"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|instance| {
+                instance["updates"]
+                    .as_array()
+                    .is_some_and(|u| !u.is_empty())
+            })
+            .map(|instance| {
+                let id = instance["id"].as_i64();
+                let module = modules.iter().find(|m| m["id"].as_i64() == id);
+                json!({"cmid": id, "name": module.map(|m| &m["name"]),
+                "modname": module.map(|m| &m["modname"]), "url": module.map(|m| &m["url"]),
+                "updates": instance.get("updates")})
+            })
+            .collect();
+        Ok(
+            json!({"courseid": courseid, "since": since, "count": updates.len(), "updates": updates,
+            "warnings": raw.get("warnings"),
+            "note": "Changes reported by Moodle's activity update API, not a full audit log. Some plugins or deleted activities may not be reported."}),
+        )
     }
 
     pub fn grades_overview(&self) -> Result<Value, String> {
@@ -1467,6 +1589,66 @@ impl MoodleClient {
     }
 }
 
+fn office_document_result(
+    filename: &str,
+    mime: &str,
+    size: usize,
+    document: crate::document::Document,
+    query: &FileQuery,
+    secret: &str,
+) -> Result<Value, String> {
+    // A large sheet/slide must not bypass the token budget. Blocks are not physical pages.
+    let mut blocks = Vec::new();
+    for (index, part) in document.parts.iter().enumerate() {
+        let clean = scrub_secret(part.clone(), secret);
+        let chars: Vec<char> = clean.chars().collect();
+        for chunk in chars.chunks(8_000) {
+            blocks.push((index + 1, chunk.iter().collect::<String>()));
+        }
+    }
+    let total = blocks.len() as u32;
+    let needle = query.find.as_deref().map(str::to_lowercase);
+    let matches: Vec<u32> = needle
+        .as_ref()
+        .map(|needle| {
+            blocks
+                .iter()
+                .enumerate()
+                .filter(|(_, (_, text))| text.to_lowercase().contains(needle))
+                .map(|(i, _)| i as u32 + 1)
+                .collect()
+        })
+        .unwrap_or_default();
+    let from = query
+        .page_from
+        .or_else(|| matches.first().copied())
+        .unwrap_or(1);
+    if from == 0 || (total > 0 && from > total) {
+        return Err("page_from is outside this document's text blocks.".into());
+    }
+    let to = query.page_to.unwrap_or(from.saturating_add(1));
+    if to < from {
+        return Err("page_to must be >= page_from.".into());
+    }
+    let to = to.min(from.saturating_add(1)).min(total);
+    let selected: Vec<Value> = blocks
+        .iter()
+        .enumerate()
+        .skip(from.saturating_sub(1) as usize)
+        .take(to.saturating_sub(from).saturating_add(1) as usize)
+        .map(|(i, (unit, text))| json!({"block": i + 1, "sourceUnit": unit, "text": text}))
+        .collect();
+    Ok(json!({
+        "filename": filename, "mimeType": mime, "size": size,
+        "sourceUnit": document.unit, "totalBlocks": total,
+        "pageFrom": from, "pageTo": to,
+        "blocks": selected, "matches": matches,
+        "truncated": to < total,
+        "nextPageFrom": if to < total { Some(to + 1) } else { None },
+        "note": format!("{} page_from/page_to select text blocks (8000 characters), not physical pages; sourceUnit identifies the original slide/sheet/document. Follow nextPageFrom for the rest.", document.note)
+    }))
+}
+
 fn compact_course_contents(courseid: i64, raw: &Value, query: Option<&str>) -> Value {
     let mut sections = Vec::new();
     for section in raw.as_array().cloned().unwrap_or_default() {
@@ -1547,13 +1729,25 @@ fn compact_module_files(module: &Value) -> Vec<Value> {
                 return None;
             }
             let mut item = json!({ "filename": filename });
-            if let Some(url) = file.get("fileurl").cloned().filter(|value| !value.is_null()) {
+            if let Some(url) = file
+                .get("fileurl")
+                .cloned()
+                .filter(|value| !value.is_null())
+            {
                 item["fileurl"] = url;
             }
-            if let Some(size) = file.get("filesize").cloned().filter(|value| !value.is_null()) {
+            if let Some(size) = file
+                .get("filesize")
+                .cloned()
+                .filter(|value| !value.is_null())
+            {
                 item["filesize"] = size;
             }
-            if let Some(mime) = file.get("mimetype").cloned().filter(|value| !value.is_null()) {
+            if let Some(mime) = file
+                .get("mimetype")
+                .cloned()
+                .filter(|value| !value.is_null())
+            {
                 item["mimetype"] = mime;
             }
             Some(item)
@@ -1574,6 +1768,10 @@ fn compact_grade_items(raw: &Value) -> Vec<Value> {
                 .unwrap_or_default()
         })
         .filter_map(|item| {
+            if item.get("gradeishidden").and_then(Value::as_bool) == Some(true)
+                || item.get("hidden").and_then(Value::as_bool) == Some(true) {
+                return None;
+            }
             let itemtype = item.get("itemtype").and_then(Value::as_str).unwrap_or("");
             let name = item
                 .get("itemname")
@@ -1590,6 +1788,7 @@ fn compact_grade_items(raw: &Value) -> Vec<Value> {
                 name
             };
             Some(json!({
+                "id": item.get("id"),
                 "name": name,
                 "module": item.get("itemmodule"),
                 "type": itemtype,
@@ -1598,6 +1797,7 @@ fn compact_grade_items(raw: &Value) -> Vec<Value> {
                 "max": item.get("grademax"),
                 "percentage": item.get("percentageformatted"),
                 "gradedAt": item.get("gradedategraded"),
+                "feedback": truncate(&plain_text(item.get("feedback").and_then(Value::as_str).unwrap_or("")), 2000),
             }))
         })
         .collect()
@@ -1831,7 +2031,9 @@ fn haystack_matches(name: &str, files: &[Value], leftover: &[String]) -> bool {
     if words.iter().any(|word| word == "td") && !digits.is_empty() {
         return digits.iter().all(|digit| td_number_in(&hay, digit));
     }
-    leftover.iter().all(|token| hay.iter().any(|part| part == token))
+    leftover
+        .iter()
+        .all(|token| hay.iter().any(|part| part == token))
 }
 
 fn td_number_in(hay: &[String], number: &str) -> bool {
@@ -3482,6 +3684,109 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn office_delivery_paginates_searches_and_scrubs_secrets() {
+        let bytes = crate::document::tests::archive(&[(
+            "word/document.xml",
+            &format!(
+                "<document><p>{}</p><p>PRIVATE-TOKEN Needle</p></document>",
+                "é".repeat(17_000)
+            ),
+        )]);
+        let read = |query: FileQuery| {
+            MoodleClient::read_document(
+                "notes.docx",
+                "application/octet-stream",
+                Arc::new(bytes.clone()),
+                &query,
+                "PRIVATE-TOKEN",
+            )
+            .unwrap()
+        };
+        let first = read(FileQuery::default());
+        assert_eq!(first["totalBlocks"], 3);
+        assert_eq!(first["nextPageFrom"], 3);
+        assert_eq!(first["blocks"].as_array().unwrap().len(), 2);
+        let found = read(FileQuery {
+            find: Some("needle".into()),
+            ..Default::default()
+        });
+        assert_eq!(found["pageFrom"], 3);
+        assert!(found["blocks"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("[redacted] Needle"));
+        assert!(!found.to_string().contains("PRIVATE-TOKEN"));
+        assert_eq!(found["truncated"], false);
+        assert!(MoodleClient::read_document(
+            "notes.docx",
+            "application/octet-stream",
+            Arc::new(bytes),
+            &FileQuery {
+                format: FileFormat::Images,
+                ..Default::default()
+            },
+            "secret"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn recent_grades_sort_dated_assessments_and_report_partial_failures() {
+        let (url, worker) = server(vec![
+            json!({"userid": 42}),
+            json!([]),
+            json!({"userid": 42}),
+            json!({"usergrades": [{"gradeitems": [
+                {"itemname": "Older", "itemtype": "mod", "graderaw": 10, "gradedategraded": 100},
+                {"itemname": "Latest", "itemtype": "mod", "graderaw": 0, "gradedategraded": 200},
+                {"itemname": "Undated", "itemtype": "mod", "graderaw": 12},
+                {"itemname": "Ungraded", "itemtype": "mod", "graderaw": null},
+                {"itemname": "Hidden", "itemtype": "mod", "gradeishidden": true, "graderaw": 15, "gradedategraded": 300},
+                {"itemname": "Total", "itemtype": "course", "graderaw": 12, "gradedategraded": 500}
+            ]}]}),
+            json!({"exception": "moodle_exception", "errorcode": "accessdenied", "message": "Denied"}),
+        ]);
+        let client = MoodleClient::new(&MoodleConfig {
+            base_url: url,
+            token: "private-token".into(),
+            allow_write: false,
+        });
+        let result = client.recent_grades(Some(vec![1, 2]), 1).unwrap();
+        assert_eq!(result["count"], 1);
+        assert_eq!(result["total"], 2);
+        assert_eq!(result["grades"][0]["name"], "Latest");
+        assert_eq!(result["grades"][0]["raw"], 0);
+        assert_eq!(result["undatedGradesOmitted"], 1);
+        assert_eq!(result["partial"], true);
+        assert_eq!(result["errors"][0]["courseid"], 2);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn course_updates_use_standard_moodle_api_and_resolve_names() {
+        let (url, worker) = server(vec![
+            json!({"instances": [
+                {"id": 10, "contextlevel": "module", "updates": [{"name": "files", "timeupdated": 200}]},
+                {"id": 11, "contextlevel": "module", "updates": []}
+            ], "warnings": []}),
+            td5_contents(),
+        ]);
+        let client = MoodleClient::new(&MoodleConfig {
+            base_url: url,
+            token: "private-token".into(),
+            allow_write: false,
+        });
+        let result = client.course_updates(5476, 100).unwrap();
+        assert_eq!(result["count"], 1);
+        assert_eq!(result["updates"][0]["name"], "TD Chapitre 5");
+        assert_eq!(result["updates"][0]["updates"][0]["timeupdated"], 200);
+        let requests = worker.join().unwrap();
+        assert!(requests[0].contains("wsfunction=core_course_get_updates_since"));
+        assert!(requests[0].contains("since=100"));
+        assert!(client.course_updates(1, -1).is_err());
+    }
+
+    #[test]
     fn course_content_is_compact_and_query_keeps_td5() {
         let payload = td5_contents();
         let (url, worker) = server(vec![payload.clone(), payload]);
@@ -3504,8 +3809,14 @@ pub(crate) mod tests {
         assert!(!dumped.contains("description"));
         assert!(!dumped.contains("xxxx"));
         let filtered = client.course_content(5476, Some("TD5")).unwrap();
-        assert_eq!(filtered["sections"][0]["modules"].as_array().unwrap().len(), 1);
-        assert_eq!(filtered["sections"][0]["modules"][0]["name"], "TD Chapitre 5");
+        assert_eq!(
+            filtered["sections"][0]["modules"].as_array().unwrap().len(),
+            1
+        );
+        assert_eq!(
+            filtered["sections"][0]["modules"][0]["name"],
+            "TD Chapitre 5"
+        );
         worker.join().unwrap();
     }
 
@@ -3531,9 +3842,7 @@ pub(crate) mod tests {
             token: "token".into(),
             allow_write: false,
         });
-        let found = client
-            .search("PHS0102 TD5", 0, None)
-            .unwrap();
+        let found = client.search("PHS0102 TD5", 0, None).unwrap();
         assert_eq!(found["total"], 1);
         assert_eq!(found["results"][0]["title"], "TD Chapitre 5");
         assert_eq!(found["results"][0]["courseid"], 5476);
@@ -3676,7 +3985,10 @@ pub(crate) mod tests {
     #[test]
     fn td5_token_split_matches_chapitre_five() {
         assert_eq!(normalize_tokens("TD5"), vec!["td", "5"]);
-        assert_eq!(normalize_tokens("TD Chapitre 5"), vec!["td", "chapitre", "5"]);
+        assert_eq!(
+            normalize_tokens("TD Chapitre 5"),
+            vec!["td", "chapitre", "5"]
+        );
         assert!(haystack_matches(
             "TD Chapitre 5",
             &[json!({"filename": "TD_Chapitre_5.doc"})],

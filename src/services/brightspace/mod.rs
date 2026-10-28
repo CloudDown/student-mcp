@@ -1,15 +1,19 @@
-//! Read-only Brightspace Valence API.
+//! Brightspace Valence API (read tools plus gated student writes such as dropbox submit).
 //! Session cookies pasted from the browser after SSO, or an OAuth token if the school issued one.
 //! https://docs.valence.desire2learn.com/
 use crate::config::BrightspaceConfig;
 use crate::session;
+use base64::Engine;
 use serde_json::{json, Value};
 use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const LP: &str = "1.49";
 const LE: &str = "1.82";
+mod student_tools;
+pub(crate) use student_tools::dispatch;
 
 pub struct BrightspaceClient {
     config: BrightspaceConfig,
@@ -69,8 +73,13 @@ impl BrightspaceClient {
                     .into(),
             );
         }
-        let value: Value = response
-            .into_json()
+        let mut bytes = Vec::new();
+        response.into_reader().take(2 * 1024 * 1024 + 1).read_to_end(&mut bytes)
+            .map_err(|_| "Cannot read Brightspace JSON response.".to_string())?;
+        if bytes.len() > 2 * 1024 * 1024 {
+            return Err("Brightspace response exceeded 2 MB. Use a smaller page or narrower query.".into());
+        }
+        let value: Value = serde_json::from_slice(&bytes)
             .map_err(|_| "Brightspace did not return JSON. Check the site address.".to_string())?;
         Ok(crate::moodle::scrub(value, &self.config.token))
     }
@@ -187,6 +196,135 @@ impl BrightspaceClient {
             "folder": compact_assignment(&folder),
             "mysubmissions": submissions,
         }))
+    }
+
+    /// Submit a file to a dropbox folder for the connected student.
+    /// Valence requires multipart/mixed: JSON RichText comment, then the file bytes.
+    pub fn submit_assignment(
+        &self,
+        courseid: i64,
+        folderid: i64,
+        filename: &str,
+        bytes: &[u8],
+        comment: Option<&str>,
+    ) -> Result<Value, String> {
+        if !self.config.allow_write {
+            return Err(
+                "Brightspace writes are off. Enable “Allow assistant changes” for this account in the student-mcp window first."
+                    .into(),
+            );
+        }
+        if courseid <= 0 || folderid <= 0 {
+            return Err("Provide integer courseid and folderid > 0.".into());
+        }
+        let filename = sanitize_upload_filename(filename)?;
+        const MAX_BYTES: usize = 12 * 1024 * 1024;
+        if bytes.is_empty() {
+            return Err("The submission file is empty.".into());
+        }
+        if bytes.len() > MAX_BYTES {
+            return Err("Submission files larger than 12 MB are refused. Submit from Brightspace instead.".into());
+        }
+        let comment = comment.unwrap_or("").trim();
+        if comment.chars().count() > 8_000 {
+            return Err("Submission comment is too long (max 8000 characters).".into());
+        }
+        let description = json!({
+            "Text": comment,
+            "Html": Value::Null,
+        });
+        let boundary = format!("student-mcp-{}", random_boundary());
+        let mime = mime_for_filename(&filename);
+        let mut body = Vec::with_capacity(bytes.len() + 512);
+        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+        body.extend_from_slice(b"Content-Type: application/json\r\n\r\n");
+        body.extend_from_slice(description.to_string().as_bytes());
+        body.extend_from_slice(b"\r\n");
+        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+        body.extend_from_slice(
+            format!(
+                "Content-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n"
+            )
+            .as_bytes(),
+        );
+        body.extend_from_slice(format!("Content-Type: {mime}\r\n\r\n").as_bytes());
+        body.extend_from_slice(bytes);
+        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+        let url = format!(
+            "{}/d2l/api/le/{LE}/{courseid}/dropbox/folders/{folderid}/submissions/mysubmissions/",
+            self.config.base_url
+        );
+        let response = self
+            .authorize(self.agent.post(&url))
+            .set(
+                "Content-Type",
+                &format!("multipart/mixed; boundary={boundary}"),
+            )
+            .send_bytes(&body)
+            .map_err(|error| match error {
+                ureq::Error::Status(401, _) => {
+                    "Brightspace session or token expired or refused. Reconnect in the app."
+                        .to_string()
+                }
+                ureq::Error::Status(403, _) => {
+                    "Brightspace denied this submission. The folder may be closed or not accept files from your role."
+                        .into()
+                }
+                ureq::Error::Status(404, _) => {
+                    "Brightspace dropbox folder not found. Use folderid from brightspace_assignments."
+                        .into()
+                }
+                ureq::Error::Status(405, _) => {
+                    "Brightspace refused this submission method for the folder (text-only or on-paper folders cannot take a file this way)."
+                        .into()
+                }
+                ureq::Error::Status(code, _) => {
+                    format!("Brightspace submission returned HTTP error {code}.")
+                }
+                _ => "Cannot submit this Brightspace assignment.".into(),
+            })?;
+        if !(200..300).contains(&response.status()) {
+            return Err(
+                "Brightspace redirected the submission. Credentials were not forwarded to another host."
+                    .into(),
+            );
+        }
+        // Some tenants return empty 200; others return EntityDropbox JSON.
+        let status = response.status();
+        let mut raw = String::new();
+        let _ = response.into_reader().take(512 * 1024).read_to_string(&mut raw);
+        let result = if raw.trim().is_empty() {
+            json!({
+                "ok": true,
+                "courseid": courseid,
+                "folderid": folderid,
+                "filename": filename,
+                "bytes": bytes.len(),
+                "httpStatus": status,
+                "note": "Submission accepted. Confirm with brightspace_assignment_status."
+            })
+        } else if let Ok(value) = serde_json::from_str::<Value>(&raw) {
+            json!({
+                "ok": true,
+                "courseid": courseid,
+                "folderid": folderid,
+                "filename": filename,
+                "bytes": bytes.len(),
+                "submission": crate::moodle::scrub(value, &self.config.token),
+            })
+        } else {
+            json!({
+                "ok": true,
+                "courseid": courseid,
+                "folderid": folderid,
+                "filename": filename,
+                "bytes": bytes.len(),
+                "httpStatus": status,
+                "note": "Submission accepted (non-JSON body). Confirm with brightspace_assignment_status."
+            })
+        };
+        Ok(result)
     }
 
     pub fn quizzes(&self, courseid: i64) -> Result<Value, String> {
@@ -429,6 +567,7 @@ pub fn activate(
     settings: &mut crate::config::Settings,
     url: &str,
     token: &str,
+    allow_write: bool,
 ) -> Result<String, String> {
     let token = token.trim();
     if token.is_empty() {
@@ -441,18 +580,20 @@ pub fn activate(
             "Enter an access token without spaces, or both d2lSessionVal and d2lSecureSessionVal cookie values.".into(),
         );
     }
-    persist(settings, url, token)
+    persist(settings, url, token, allow_write)
 }
 
 fn persist(
     settings: &mut crate::config::Settings,
     url: &str,
     token: &str,
+    allow_write: bool,
 ) -> Result<String, String> {
     let base_url = crate::config::normalize_brightspace_url(url)?;
     let client = BrightspaceClient::new(BrightspaceConfig {
         base_url: base_url.clone(),
         token: token.into(),
+        allow_write,
     });
     client.whoami()?;
     // Verify useful student access too, rather than saving a profile-only token.
@@ -464,12 +605,106 @@ fn persist(
     updated.brightspace = Some(crate::config::BrightspaceSettings {
         url: Some(base_url),
         token: Some(token.into()),
+        allow_write: Some(allow_write),
     });
     updated.save_service("brightspace").map_err(|error| {
         format!("Cannot save Brightspace credentials to the private config file: {error}")
     })?;
     *settings = updated;
-    Ok("Brightspace connected (read only).".into())
+    Ok(if allow_write {
+        "Brightspace connected (writes allowed when the assistant confirms)."
+    } else {
+        "Brightspace connected (read only). Turn on “Allow assistant changes” to submit work."
+    }
+    .into())
+}
+
+pub fn set_write(settings: &mut crate::config::Settings, allow: bool) -> Result<(), String> {
+    let mut updated = settings.clone();
+    let brightspace = updated
+        .brightspace
+        .as_mut()
+        .ok_or("Brightspace is not connected anymore.")?;
+    brightspace.allow_write = Some(allow);
+    updated.save_service("brightspace").map_err(|error| {
+        format!(
+            "Cannot save Brightspace permissions. The previous permissions are still active. {error}"
+        )
+    })?;
+    *settings = updated;
+    Ok(())
+}
+
+/// Resolve file bytes for brightspace_assignment_submit from path, base64, or plain text.
+pub fn submission_bytes(args: &Value) -> Result<(String, Vec<u8>), String> {
+    let path = args
+        .get("path")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let base64 = args
+        .get("content_base64")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let text = args
+        .get("text")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let filename_arg = args
+        .get("filename")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+
+    match (path, base64, text) {
+        (Some(path), None, None) => {
+            let path = PathBuf::from(path);
+            let meta = std::fs::metadata(&path).map_err(|_| {
+                "Cannot read that path. Provide an absolute path on the machine running student-mcp."
+                    .to_string()
+            })?;
+            if !meta.is_file() {
+                return Err("path must point to a regular file.".into());
+            }
+            const MAX_BYTES: u64 = 12 * 1024 * 1024;
+            if meta.len() > MAX_BYTES {
+                return Err("Submission files larger than 12 MB are refused.".into());
+            }
+            let bytes = std::fs::read(&path)
+                .map_err(|_| "Cannot read that file for submission.".to_string())?;
+            let name = filename_arg
+                .map(str::to_string)
+                .unwrap_or_else(|| {
+                    path.file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("submission.bin")
+                        .to_string()
+                });
+            Ok((name, bytes))
+        }
+        (None, Some(encoded), None) => {
+            let filename = filename_arg
+                .ok_or("Provide filename when using content_base64.")?
+                .to_string();
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(encoded.as_bytes())
+                .map_err(|_| "content_base64 is not valid base64.".to_string())?;
+            Ok((filename, bytes))
+        }
+        (None, None, Some(text)) => {
+            let filename = filename_arg.unwrap_or("submission.txt").to_string();
+            Ok((filename, text.as_bytes().to_vec()))
+        }
+        (None, None, None) => Err(
+            "Provide path (local file on the student-mcp host), content_base64 + filename, or text."
+                .into(),
+        ),
+        _ => Err(
+            "Provide only one of path, content_base64, or text for the submission file.".into(),
+        ),
+    }
 }
 
 pub fn tools() -> Vec<Value> {
@@ -478,10 +713,11 @@ pub fn tools() -> Vec<Value> {
         json!({"name":"brightspace_status","description":"Check the connected Brightspace / myCourses account.","annotations":{"readOnlyHint":true}}),
         json!({"name":"brightspace_my_courses","description":"List one page of the connected student's Brightspace courses. Use PagingInfo.Bookmark when HasMoreItems is true.","inputSchema":{"type":"object","properties":{"bookmark":{"type":"string"}}},"annotations":{"readOnlyHint":true}}),
         json!({"name":"brightspace_course_content","description":"Table of contents and resources for a Brightspace course. Pass a file topic's Id (not a module Id) as topicid to brightspace_file to read its document.","inputSchema":{"type":"object","properties":{"courseid":course},"required":["courseid"]},"annotations":{"readOnlyHint":true}}),
-        json!({"name":"brightspace_file","description":"Read a file topic from brightspace_course_content using courseid and topicid (topic Id). Default: original PDF resource/download link. Use format=text for text and page search, or format=images for scans/diagrams (max 8 pages). Page/find arguments default to text mode. Follow nextPageFrom when truncated; never guess missing content. External link topics are not downloaded. Cookies and tokens stay private.","inputSchema":{"type":"object","properties":{"courseid":course,"topicid":{"type":"integer","minimum":1},"format":{"type":"string","enum":["file","text","images"]},"find":{"type":"string"},"page_from":{"type":"integer","minimum":1},"page_to":{"type":"integer","minimum":1}},"required":["courseid","topicid"]},"annotations":{"readOnlyHint":true}}),
+        json!({"name":"brightspace_file","description":"Read a file topic using courseid and topicid. PDF: original file by default, format=text for pages/search or format=images for diagrams. Office/OpenDocument: bounded text blocks with tables, slides or sheet cell values; page_from/page_to select blocks, not physical pages. doc/ppt require local antiword/catppt. Office charts, images and equations may be missing: export to PDF for visual analysis. Follow nextPageFrom; never guess missing content. External links are not downloaded. Cookies and tokens stay private.","inputSchema":{"type":"object","properties":{"courseid":course,"topicid":{"type":"integer","minimum":1},"format":{"type":"string","enum":["file","text","images"]},"find":{"type":"string"},"page_from":{"type":"integer","minimum":1},"page_to":{"type":"integer","minimum":1}},"required":["courseid","topicid"]},"annotations":{"readOnlyHint":true}}),
         json!({"name":"brightspace_grades","description":"Visible grade values for the connected student in a Brightspace course.","inputSchema":{"type":"object","properties":{"courseid":course},"required":["courseid"]},"annotations":{"readOnlyHint":true}}),
         json!({"name":"brightspace_assignments","description":"Dropbox / assignment folders for a course, including DueDate when set. Prefer brightspace_deadlines for a cross-course due list.","inputSchema":{"type":"object","properties":{"courseid":course},"required":["courseid"]},"annotations":{"readOnlyHint":true}}),
         json!({"name":"brightspace_assignment_status","description":"One dropbox folder plus the connected student's submissions and feedback.","inputSchema":{"type":"object","properties":{"courseid":course,"folderid":{"type":"integer","minimum":1}},"required":["courseid","folderid"]},"annotations":{"readOnlyHint":true}}),
+        json!({"name":"brightspace_assignment_submit","description":"Submit a file to a Brightspace dropbox folder (student write). Requires “Allow assistant changes” in the app. Provide courseid + folderid from brightspace_assignments, and exactly one of: path (absolute file on the student-mcp host), content_base64 + filename, or text (optional filename, default submission.txt). Optional comment becomes the submission description. Confirm with the user before calling; irreversible for the course. Max 12 MB.","inputSchema":{"type":"object","properties":{"courseid":course,"folderid":{"type":"integer","minimum":1},"path":{"type":"string","description":"Absolute path to a local file on the machine running student-mcp."},"content_base64":{"type":"string","description":"Base64 file bytes when path is unavailable."},"filename":{"type":"string","description":"Required with content_base64; optional override for path/text."},"text":{"type":"string","description":"UTF-8 text body when submitting a plain-text file."},"comment":{"type":"string","description":"Optional submission comment / description."}},"required":["courseid","folderid"]},"annotations":{"readOnlyHint":false,"destructiveHint":true}}),
         json!({"name":"brightspace_quizzes","description":"Quizzes in a course, including DueDate / StartDate / EndDate when set.","inputSchema":{"type":"object","properties":{"courseid":course},"required":["courseid"]},"annotations":{"readOnlyHint":true}}),
         json!({"name":"brightspace_quiz_status","description":"One quiz definition plus the connected student's attempts when available.","inputSchema":{"type":"object","properties":{"courseid":course,"quizid":{"type":"integer","minimum":1}},"required":["courseid","quizid"]},"annotations":{"readOnlyHint":true}}),
         json!({"name":"brightspace_calendar","description":"Upcoming calendar events for the student. Optional courseid limits to one course; days defaults to 60.","inputSchema":{"type":"object","properties":{"courseid":course,"days":{"type":"integer","minimum":1,"maximum":365}}},"annotations":{"readOnlyHint":true}}),
@@ -493,7 +729,68 @@ pub fn tools() -> Vec<Value> {
             tool["annotations"] = json!({"readOnlyHint": true});
         }
     }
+    tools.extend(student_tools::tools());
     tools
+}
+
+fn sanitize_upload_filename(name: &str) -> Result<String, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("Provide a non-empty filename.".into());
+    }
+    let base = Path::new(name)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .trim();
+    if base.is_empty() || base == "." || base == ".." {
+        return Err("filename must be a plain file name, not a path.".into());
+    }
+    if base.chars().any(|ch| matches!(ch, '/' | '\\' | '\0' | '"' | '\r' | '\n')) {
+        return Err("filename contains forbidden characters.".into());
+    }
+    if base.len() > 180 {
+        return Err("filename is too long.".into());
+    }
+    Ok(base.to_string())
+}
+
+fn mime_for_filename(name: &str) -> &'static str {
+    match Path::new(name)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "pdf" => "application/pdf",
+        "txt" | "md" | "csv" => "text/plain",
+        "html" | "htm" => "text/html",
+        "json" => "application/json",
+        "zip" => "application/zip",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "doc" => "application/msword",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xls" => "application/vnd.ms-excel",
+        "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "ppt" => "application/vnd.ms-powerpoint",
+        "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        _ => "application/octet-stream",
+    }
+}
+
+fn random_boundary() -> String {
+    let mut bytes = [0u8; 12];
+    if getrandom::getrandom(&mut bytes).is_err() {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        return format!("{nanos:x}");
+    }
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 fn summarize_assignments(courseid: i64, folders: &Value) -> Value {
@@ -659,6 +956,7 @@ mod tests {
         let config = BrightspaceConfig {
             base_url: format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port()),
             token: "test-private-token".into(),
+            allow_write: false,
         };
         let worker = std::thread::spawn(move || {
             let mut requests = Vec::new();
@@ -695,6 +993,7 @@ mod tests {
             brightspace: Some(crate::config::BrightspaceSettings {
                 url: Some(config.base_url),
                 token: Some(config.token),
+                allow_write: Some(false),
             }),
             ..Default::default()
         };
@@ -756,6 +1055,7 @@ mod tests {
             brightspace: Some(crate::config::BrightspaceSettings {
                 url: Some("http://127.0.0.1:1".into()),
                 token: Some("secret".into()),
+                allow_write: Some(false),
             }),
             ..Default::default()
         };
@@ -830,6 +1130,7 @@ mod tests {
         let config = BrightspaceConfig {
             base_url: format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port()),
             token: "d2lSessionVal=sess; d2lSecureSessionVal=secure".into(),
+            allow_write: false,
         };
         let worker = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
@@ -896,11 +1197,13 @@ mod tests {
             brightspace: Some(crate::config::BrightspaceSettings {
                 url: Some("https://old.example".into()),
                 token: Some("old-token".into()),
+                allow_write: Some(true),
             }),
             ..Default::default()
         };
-        assert!(activate(&mut settings, &config.base_url, &config.token).is_err());
+        assert!(activate(&mut settings, &config.base_url, &config.token, false).is_err());
         assert_eq!(settings.brightspace().unwrap().token, "old-token");
+        assert!(settings.brightspace().unwrap().allow_write);
         worker.join().unwrap();
     }
 
@@ -915,13 +1218,14 @@ mod tests {
                 ),
             ]);
             let mut settings = crate::config::Settings::default();
-            activate(&mut settings, &config.base_url, &config.token).unwrap();
+            activate(&mut settings, &config.base_url, &config.token, true).unwrap();
             let saved = crate::config::Settings::load();
             assert_eq!(saved.brightspace().unwrap().token, config.token);
+            assert!(saved.brightspace().unwrap().allow_write);
             assert_eq!(saved.services_active(), vec!["brightspace"]);
             assert!(crate::mcp::tool_definitions(&saved)
                 .iter()
-                .any(|tool| tool["name"] == "brightspace_deadlines"));
+                .any(|tool| tool["name"] == "brightspace_assignment_submit"));
             worker.join().unwrap();
         });
     }
@@ -969,6 +1273,7 @@ mod tests {
             brightspace: Some(crate::config::BrightspaceSettings {
                 url: Some(config.base_url),
                 token: Some(config.token),
+                allow_write: Some(false),
             }),
             ..Default::default()
         };
@@ -988,6 +1293,174 @@ mod tests {
                     ["isError"],
                 true
             );
+        }
+    }
+
+    #[test]
+    fn assignment_submit_requires_write_permission_before_network() {
+        let settings = crate::config::Settings {
+            brightspace: Some(crate::config::BrightspaceSettings {
+                url: Some("http://127.0.0.1:1".into()),
+                token: Some("secret".into()),
+                allow_write: Some(false),
+            }),
+            ..Default::default()
+        };
+        let reply = crate::mcp::dispatch_tool(
+            &settings,
+            "brightspace_assignment_submit",
+            &json!({
+                "courseid": 42,
+                "folderid": 9,
+                "text": "hello",
+                "filename": "hw.txt"
+            }),
+        );
+        assert_eq!(reply["isError"], true);
+        assert!(reply.to_string().contains("Allow assistant changes"));
+    }
+
+    #[test]
+    fn assignment_submit_posts_multipart_mixed_with_file_and_comment() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let config = BrightspaceConfig {
+            base_url: format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port()),
+            token: "d2lSessionVal=sess; d2lSecureSessionVal=secure".into(),
+            allow_write: true,
+        };
+        let worker = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut headers = String::new();
+            let mut content_length = 0usize;
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap() == 0 || line == "\r\n" {
+                    break;
+                }
+                if let Some(value) = line
+                    .to_ascii_lowercase()
+                    .strip_prefix("content-length:")
+                {
+                    content_length = value.trim().parse().unwrap_or(0);
+                }
+                headers.push_str(&line);
+            }
+            let mut body = vec![0u8; content_length];
+            if content_length > 0 {
+                use std::io::Read as _;
+                reader.read_exact(&mut body).unwrap();
+            }
+            let response = r#"{"Status":"Submitted","EntityId":7}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response}",
+                response.len()
+            )
+            .unwrap();
+            (headers, body)
+        });
+        let client = BrightspaceClient::new(config);
+        let result = client
+            .submit_assignment(42, 9, "report.pdf", b"%PDF-fixture", Some("My work"))
+            .unwrap();
+        assert_eq!(result["ok"], true);
+        assert_eq!(result["filename"], "report.pdf");
+        assert_eq!(result["submission"]["EntityId"], 7);
+        let (headers, body) = worker.join().unwrap();
+        let headers_l = headers.to_ascii_lowercase();
+        assert!(headers.starts_with(
+            "POST /d2l/api/le/1.82/42/dropbox/folders/9/submissions/mysubmissions/ "
+        ));
+        assert!(headers_l.contains("content-type: multipart/mixed; boundary="));
+        assert!(headers_l.contains("cookie: d2lsessionval=sess"));
+        assert!(!headers_l.contains("authorization:"));
+        let body_text = String::from_utf8_lossy(&body);
+        assert!(body_text.contains("Content-Type: application/json"));
+        assert!(body_text.contains("\"Text\":\"My work\""));
+        assert!(body_text.contains("filename=\"report.pdf\""));
+        assert!(body_text.contains("%PDF-fixture"));
+    }
+
+    #[test]
+    fn assignment_submit_tool_accepts_text_payload_when_writes_enabled() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let worker = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut headers = String::new();
+            let mut content_length = 0usize;
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap() == 0 || line == "\r\n" {
+                    break;
+                }
+                if let Some(value) = line
+                    .to_ascii_lowercase()
+                    .strip_prefix("content-length:")
+                {
+                    content_length = value.trim().parse().unwrap_or(0);
+                }
+                headers.push_str(&line);
+            }
+            let mut body = vec![0u8; content_length];
+            if content_length > 0 {
+                use std::io::Read as _;
+                reader.read_exact(&mut body).unwrap();
+            }
+            write!(
+                stream,
+                "HTTP/1.1 200 Test\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n[]"
+            )
+            .unwrap();
+            (headers, body)
+        });
+        let settings = crate::config::Settings {
+            brightspace: Some(crate::config::BrightspaceSettings {
+                url: Some(format!("http://127.0.0.1:{port}")),
+                token: Some("test-private-token".into()),
+                allow_write: Some(true),
+            }),
+            ..Default::default()
+        };
+        let reply = crate::mcp::dispatch_tool(
+            &settings,
+            "brightspace_assignment_submit",
+            &json!({
+                "courseid": 42,
+                "folderid": 9,
+                "text": "answer body",
+                "filename": "answers.txt",
+                "comment": "final"
+            }),
+        );
+        assert_eq!(reply["isError"], false, "{reply}");
+        assert!(!reply.to_string().contains("test-private-token"));
+        let (headers, body) = worker.join().unwrap();
+        assert!(headers.contains("Authorization: Bearer test-private-token")
+            || headers.to_ascii_lowercase().contains("authorization: bearer test-private-token"));
+        let body_text = String::from_utf8_lossy(&body);
+        assert!(body_text.contains("answer body"));
+        assert!(body_text.contains("filename=\"answers.txt\""));
+    }
+
+    #[test]
+    fn write_tool_is_marked_destructive_not_read_only() {
+        let submit = tools()
+            .into_iter()
+            .find(|tool| tool["name"] == "brightspace_assignment_submit")
+            .unwrap();
+        assert_eq!(submit["annotations"]["readOnlyHint"], false);
+        assert_eq!(submit["annotations"]["destructiveHint"], true);
+        for tool in tools() {
+            assert!(tool["annotations"]["readOnlyHint"].is_boolean());
         }
     }
 }

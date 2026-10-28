@@ -200,7 +200,20 @@ fn serve(port: Option<u16>) -> Result<(), String> {
             for service in ["moodle", "omnivox", "brightspace"] {
                 for (id, url) in current.account_list(service) {
                     let scoped = current.for_account(service, &id);
-                    accounts.push(json!({"service":service,"id":id,"url":url,"allow_write":scoped.moodle.as_ref().is_some_and(|m| m.allow_write.unwrap_or(false))}));
+                    let allow_write = match service {
+                        "moodle" => scoped
+                            .moodle
+                            .as_ref()
+                            .is_some_and(|m| m.allow_write.unwrap_or(false)),
+                        "brightspace" => scoped
+                            .brightspace
+                            .as_ref()
+                            .is_some_and(|b| b.allow_write.unwrap_or(false)),
+                        _ => false,
+                    };
+                    accounts.push(
+                        json!({"service":service,"id":id,"url":url,"allow_write":allow_write}),
+                    );
                 }
             }
             (200, "application/json", json!({"accounts":accounts,"verification":pending.as_ref().map(|(_,p)| &p.prompt),"link":mcp_endpoint(tunnel.origin().unwrap_or(&format!("http://127.0.0.1:{port}")), &gateway.token),"local_link":mcp_endpoint(&format!("http://127.0.0.1:{port}"), &gateway.token),"tunnel":format!("{:?}",tunnel.state),"public":current.gateway.public_enabled(),"local":enabled.load(Ordering::SeqCst)}).to_string().into_bytes(),false)
@@ -301,8 +314,14 @@ fn action(
         get("id").to_owned()
     };
     let mut settings = Settings::load().for_account(service, &id);
-    if get("action") == "permissions" && service == "moodle" {
-        crate::mcp::set_moodle_write(&mut settings, args["allow_write"] == true)?;
+    if get("action") == "permissions" {
+        match service {
+            "moodle" => crate::mcp::set_moodle_write(&mut settings, args["allow_write"] == true)?,
+            "brightspace" => {
+                crate::mcp::set_brightspace_write(&mut settings, args["allow_write"] == true)?
+            }
+            _ => return Err("This service has no write permissions toggle.".into()),
+        }
         return Ok(json!({"message":"Permissions saved"}));
     }
     if get("action") == "disconnect" {
@@ -327,7 +346,12 @@ fn action(
             get("token"),
             args["allow_write"] == true,
         )?,
-        "brightspace" => crate::brightspace::activate(&mut settings, get("url"), get("token"))?,
+        "brightspace" => crate::brightspace::activate(
+            &mut settings,
+            get("url"),
+            get("token"),
+            args["allow_write"] == true,
+        )?,
         _ => {
             if get("token").is_empty() {
                 match crate::omnivox::activate_login(

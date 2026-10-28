@@ -79,6 +79,9 @@ impl std::fmt::Debug for OmnivoxSettings {
 pub struct BrightspaceSettings {
     pub url: Option<String>,
     pub token: Option<String>,
+    /// When true, write tools (assignment submit, …) may change Brightspace data.
+    /// MCP clients still see readOnlyHint=false and can require confirmation.
+    pub allow_write: Option<bool>,
 }
 
 // Never include access tokens when debugging settings.
@@ -87,6 +90,7 @@ impl std::fmt::Debug for BrightspaceSettings {
         f.debug_struct("BrightspaceSettings")
             .field("url", &self.url)
             .field("token", &"[redacted]")
+            .field("allow_write", &self.allow_write)
             .finish()
     }
 }
@@ -146,6 +150,7 @@ pub struct OmnivoxConfig {
 pub struct BrightspaceConfig {
     pub base_url: String,
     pub token: String,
+    pub allow_write: bool,
 }
 
 impl Settings {
@@ -416,6 +421,7 @@ impl Settings {
         Some(BrightspaceConfig {
             base_url: normalize_brightspace_url(saved.url.as_deref()?).ok()?,
             token: token.to_string(),
+            allow_write: saved.allow_write.unwrap_or(false),
         })
     }
 }
@@ -758,12 +764,14 @@ pub(crate) mod tests {
                 brightspace: Some(BrightspaceSettings {
                     url: Some("https://school.example".into()),
                     token: Some("private-token".into()),
+                    allow_write: Some(true),
                 }),
                 ..Default::default()
             };
             settings.save().unwrap();
             let mut loaded = Settings::load();
             assert_eq!(loaded.brightspace().unwrap().token, "private-token");
+            assert!(loaded.brightspace().unwrap().allow_write);
             assert_eq!(loaded.services_active(), vec!["brightspace"]);
             assert!(!format!("{:?}", loaded.brightspace).contains("private-token"));
             loaded.disable("brightspace");

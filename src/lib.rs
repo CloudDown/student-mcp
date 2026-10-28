@@ -1,4 +1,5 @@
 mod config;
+mod document;
 mod http;
 mod mcp;
 mod pdf;

@@ -96,7 +96,7 @@ pub fn tool_definitions(settings: &Settings) -> Vec<Value> {
             { "name": "moodle_search", "description": "Search the student's courses and materials. Prefer this to locate a TD, quiz or file. Pass courseid to search one course; a course code in the query (MATH101) does the same. Matches TD5 to names like 'TD Chapitre 5'.", "inputSchema": { "type": "object", "properties": { "query": { "type": "string" }, "courseid": { "type": "integer", "minimum": 1, "description": "Limit the search to one course." }, "page": { "type": "integer", "minimum": 0 } }, "required": ["query"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_course_content", "description": "Compact section tree of a course: section names, activities, and fileurl values. Optional query keeps matching modules (e.g. TD5). Pass fileurl to moodle_file; do not fetch it with a generic HTTP tool.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 }, "query": { "type": "string", "description": "Keep modules whose name or filename matches, such as TD5 or chapitre 5." } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_resources", "description": "Flat list of pages, files, URLs, folders and books, without section names. Prefer moodle_course_content to find a TD or week.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_file", "description": "Fetch a course file using its fileurl from moodle_course_content. Default: original PDF resource/download link, without duplicate text or images. If your client cannot read the PDF, request format=text for selected pages, or format=images for scans/diagrams (2 pages by default, max 8). find searches the text layer. Page/find arguments default to text mode. Follow nextPageFrom when truncated; never invent missing content. Never send the Moodle token to another tool.", "inputSchema": { "type": "object", "properties": { "fileurl": { "type": "string" }, "format": { "type": "string", "enum": ["file", "text", "images"], "description": "Return one representation only. File by default; text or images are explicit fallbacks." }, "find": { "type": "string", "description": "Section number or phrase to locate in the PDF text layer." }, "page_from": { "type": "integer", "minimum": 1 }, "page_to": { "type": "integer", "minimum": 1 } }, "required": ["fileurl"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_file", "description": "Read a course document using fileurl. PDF: original file by default; format=text for selected pages or format=images for diagrams/scans. Office/OpenDocument: extracted text, tables, slides and sheet cell values in bounded text blocks; page_from/page_to select blocks, not physical pages. Supports docx/pptx/xlsx/xls/odt/odp/ods; legacy doc/ppt need local antiword/catppt. Charts/images/equations may be missing from Office text: export to PDF for visual analysis. find searches extracted text. Follow nextPageFrom when truncated. Never send the Moodle token to another tool.", "inputSchema": { "type": "object", "properties": { "fileurl": { "type": "string" }, "format": { "type": "string", "enum": ["file", "text", "images"], "description": "PDF representation. Office files return extracted text; images requires PDF." }, "find": { "type": "string", "description": "Phrase to find in extracted text." }, "page_from": { "type": "integer", "minimum": 1 }, "page_to": { "type": "integer", "minimum": 1 } }, "required": ["fileurl"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_assignments", "description": "List visible assignments; optionally filter to specific course IDs.", "inputSchema": { "type": "object", "properties": { "courseids": { "type": "array", "items": { "type": "integer" } } } }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_assignment_status", "description": "Submission and grading status for one assignment, including uploaded files.", "inputSchema": { "type": "object", "properties": { "assignid": { "type": "integer", "minimum": 1 } }, "required": ["assignid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_quizzes", "description": "List visible quizzes; optionally filter to specific course IDs.", "inputSchema": { "type": "object", "properties": { "courseids": { "type": "array", "items": { "type": "integer" } } } }, "annotations": { "readOnlyHint": true } },
@@ -113,10 +113,22 @@ pub fn tool_definitions(settings: &Settings) -> Vec<Value> {
             { "name": "moodle_conversation_messages", "description": "Messages inside one private conversation.", "inputSchema": { "type": "object", "properties": { "conversationid": { "type": "integer", "minimum": 1 }, "limit": { "type": "integer", "minimum": 1, "maximum": 100 } }, "required": ["conversationid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_completion", "description": "Activity completion status for a course.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "ws_discover", "description": "Search Moodle Web Service functions this token can call, with description and access type.", "inputSchema": { "type": "object", "properties": { "query": { "type": "string" }, "limit": { "type": "integer", "minimum": 1, "maximum": 100 } } }, "annotations": { "readOnlyHint": true } },
-            { "name": "ws_schema", "description": "Show details for an available Moodle Web Service function by exact name.", "inputSchema": { "type": "object", "properties": { "name": { "type": "string" } }, "required": ["name"] }, "annotations": { "readOnlyHint": true } },
-            { "name": "ws_call", "description": "Call an available Moodle Web Service function by exact name. Find it with ws_discover first. Writes require enabling Moodle writing in the app. Use this for rare student actions not covered by the dedicated tools.", "inputSchema": crate::catalog::ws_call_schema(), "annotations": { "readOnlyHint": false } }
+            { "name": "ws_schema", "description": "Show bundled Moodle catalogue metadata for one Web Service function by exact name (parameters, read/write type). Does not prove the connected token can call it; use ws_discover or site_info for availability.", "inputSchema": { "type": "object", "properties": { "name": { "type": "string" } }, "required": ["name"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "ws_call", "description": "Call a Moodle Web Service function by exact name. Prefer dedicated moodle_* tools first. Find candidates with ws_discover. When Moodle writing is off, only catalogue-classified read functions are allowed; unclassified or write functions are refused. Writes also require enabling Moodle writing in the app.", "inputSchema": crate::catalog::ws_call_schema(), "annotations": { "readOnlyHint": false } }
         ]);
         tools.extend(moodle.as_array().cloned().unwrap_or_default());
+        tools.extend([
+            json!({"name": "moodle_recent_grades", "description": "Latest dated assessment grades across enrolled current courses, newest first. Not course totals. Omitted undated grades and per-course errors are reported; dates are grading timestamps, not publication dates.",
+                "inputSchema": {"type": "object", "properties": {
+                    "courseids": {"type": "array", "maxItems": 30, "items": {"type": "integer", "minimum": 1}},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50}}},
+                "annotations": {"readOnlyHint": true}}),
+            json!({"name": "moodle_course_updates", "description": "Activity changes in a course since a Unix timestamp: files, configuration, grades, forum posts and other changes reported by Moodle. Returns names and links; not a complete audit log.",
+                "inputSchema": {"type": "object", "properties": {
+                    "courseid": {"type": "integer", "minimum": 1},
+                    "since": {"type": "integer", "minimum": 0, "description": "Past Unix timestamp in seconds."}}, "required": ["courseid", "since"]},
+                "annotations": {"readOnlyHint": true}}),
+        ]);
     }
     if settings.omnivox().is_some() {
         tools.extend(crate::omnivox::tools());
@@ -183,18 +195,7 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
         | "omnivox_grades"
         | "omnivox_schedule"
         | "omnivox_calendar" => omnivox_tool(settings, name, args),
-        "brightspace_status"
-        | "brightspace_my_courses"
-        | "brightspace_course_content"
-        | "brightspace_file"
-        | "brightspace_grades"
-        | "brightspace_assignments"
-        | "brightspace_assignment_status"
-        | "brightspace_quizzes"
-        | "brightspace_quiz_status"
-        | "brightspace_calendar"
-        | "brightspace_deadlines"
-        | "brightspace_news" => brightspace_tool(settings, name, args),
+        name if name.starts_with("brightspace_") => brightspace_tool(settings, name, args),
         "moodle_status" => moodle_tool(settings, |config| {
             let client = MoodleClient::new(config);
             let info = client.site_info()?;
@@ -221,9 +222,9 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
             let page = args.get("page").and_then(json_i64).unwrap_or(0);
             let courseid = match args.get("courseid") {
                 None | Some(Value::Null) => None,
-                Some(value) => Some(
-                    json_positive_i64(value).ok_or("Provide an integer courseid > 0.")?,
-                ),
+                Some(value) => {
+                    Some(json_positive_i64(value).ok_or("Provide an integer courseid > 0.")?)
+                }
             };
             MoodleClient::new(config).search(query, page, courseid)
         }),
@@ -276,6 +277,22 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                     client.grades_for_course(courseid)
                 }
             }
+        }),
+        "moodle_recent_grades" => moodle_tool(settings, |config| {
+            let courseids = optional_i64_list(args.get("courseids"))?;
+            let limit = args
+                .get("limit")
+                .and_then(json_i64)
+                .unwrap_or(20)
+                .clamp(1, 50) as usize;
+            MoodleClient::new(config).recent_grades(courseids, limit)
+        }),
+        "moodle_course_updates" => moodle_tool(settings, |config| {
+            let since = args
+                .get("since")
+                .and_then(json_i64)
+                .ok_or("Provide since as a Unix timestamp in seconds.")?;
+            MoodleClient::new(config).course_updates(require_integer(args, "courseid")?, since)
         }),
         "moodle_calendar" => moodle_tool(settings, |config| {
             let client = MoodleClient::new(config);
@@ -390,7 +407,8 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                 "description": entry.description,
                 "type": if entry.write { "write" } else { "read" },
                 "parameters": entry.parameters,
-                "note": "Bundled parameter metadata may differ from your site's Moodle version. Optional/nullable flags are included; unresolved structures have a note. Writes require allowing changes in the app.",
+                "availableOnToken": "unknown",
+                "note": "Bundled catalogue metadata only; it may differ from your site's Moodle version and does not prove this token can call the function. Use ws_discover for token-available names. Optional/nullable flags are included; unresolved structures have a note. Writes require allowing changes in the app.",
                 "catalogRelease": catalog.release()
             }))
         }),
@@ -399,11 +417,21 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                 .get("name")
                 .and_then(Value::as_str)
                 .ok_or("Provide name.")?;
-            if Catalog::load().get(name).is_some_and(|entry| entry.write) && !config.allow_write {
-                return Err(
-                    "This Moodle function changes data. Allow writes for this account in the student-mcp window first."
-                        .into(),
-                );
+            let catalog = Catalog::load();
+            match catalog.get(name) {
+                Some(entry) if entry.write && !config.allow_write => {
+                    return Err(
+                        "This Moodle function changes data. Allow writes for this account in the student-mcp window first."
+                            .into(),
+                    );
+                }
+                None if !config.allow_write => {
+                    return Err(
+                        "This Moodle function is not classified in the bundled catalogue. Allow writes for this account in the student-mcp window first, or use a dedicated moodle_* tool / ws_discover for known reads."
+                            .into(),
+                    );
+                }
+                _ => {}
             }
             let client = MoodleClient::new(config);
             let payload = args.get("args").cloned().unwrap_or_else(|| json!({}));
@@ -429,7 +457,7 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
     };
     match outcome {
         Ok(data) => {
-            let content = if name == "moodle_file" || name == "brightspace_file" {
+            if name == "moodle_file" || name == "brightspace_file" {
                 let mut content = crate::moodle::mcp_content_for_file(data);
                 if name == "brightspace_file" {
                     for item in &mut content {
@@ -440,14 +468,18 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                         }
                     }
                 }
-                content
-            } else {
-                vec![json!({
+                return json!({ "content": content, "isError": false });
+            }
+            // Keep pretty text for human/LLM clients and structuredContent for
+            // machines. File tools stay content-only (binary/text blocks).
+            json!({
+                "content": [{
                     "type": "text",
                     "text": serde_json::to_string_pretty(&data).unwrap_or_default()
-                })]
-            };
-            json!({ "content": content, "isError": false })
+                }],
+                "structuredContent": data,
+                "isError": false
+            })
         }
         Err(message) => {
             json!({ "content": [{ "type": "text", "text": message }], "isError": true })
@@ -568,12 +600,18 @@ fn student_status(settings: &Settings) -> ToolResult {
                 .into_iter()
                 .map(move |(id, url)| {
                     let selected = settings.for_account(service, &id);
+                    let allow_write = match service {
+                        "moodle" => selected.moodle().is_some_and(|config| config.allow_write),
+                        "brightspace" => selected
+                            .brightspace()
+                            .is_some_and(|config| config.allow_write),
+                        _ => false,
+                    };
                     json!({
                         "account_id": id,
                         "service": service,
                         "url": url,
-                        "allowWrite": service == "moodle"
-                            && selected.moodle().is_some_and(|config| config.allow_write)
+                        "allowWrite": allow_write
                     })
                 })
         })
@@ -584,6 +622,10 @@ fn student_status(settings: &Settings) -> ToolResult {
         "accounts": accounts,
         "moodleAllowWrite": accounts.iter().any(|account| {
             account.get("service").and_then(Value::as_str) == Some("moodle")
+                && account.get("allowWrite").and_then(Value::as_bool) == Some(true)
+        }),
+        "brightspaceAllowWrite": accounts.iter().any(|account| {
+            account.get("service").and_then(Value::as_str) == Some("brightspace")
                 && account.get("allowWrite").and_then(Value::as_bool) == Some(true)
         })
     }))
@@ -633,6 +675,21 @@ fn brightspace_tool(settings: &Settings, name: &str, args: &Value) -> ToolResult
             require_integer(args, "courseid")?,
             require_integer(args, "folderid")?,
         ),
+        "brightspace_assignment_submit" => {
+            let (filename, bytes) = crate::brightspace::submission_bytes(args)?;
+            let comment = args
+                .get("comment")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
+            client.submit_assignment(
+                require_integer(args, "courseid")?,
+                require_integer(args, "folderid")?,
+                &filename,
+                &bytes,
+                comment,
+            )
+        }
         "brightspace_quizzes" => client.quizzes(require_integer(args, "courseid")?),
         "brightspace_quiz_status" => client.quiz_status(
             require_integer(args, "courseid")?,
@@ -652,7 +709,7 @@ fn brightspace_tool(settings: &Settings, name: &str, args: &Value) -> ToolResult
             client.deadlines(days, courseids)
         }
         "brightspace_news" => client.news(require_integer(args, "courseid")?),
-        _ => Err("Unknown Brightspace tool.".into()),
+        _ => crate::brightspace::dispatch(&client, name, args),
     }
 }
 
@@ -820,6 +877,10 @@ pub fn set_moodle_write(settings: &mut Settings, allow: bool) -> Result<(), Stri
     Ok(())
 }
 
+pub fn set_brightspace_write(settings: &mut Settings, allow: bool) -> Result<(), String> {
+    crate::brightspace::set_write(settings, allow)
+}
+
 /// Live connectivity check for one configured service, for the "manage" screen.
 pub fn test_service(settings: &Settings, id: &str) -> Result<String, String> {
     match id {
@@ -839,8 +900,14 @@ pub fn test_service(settings: &Settings, id: &str) -> Result<String, String> {
             let config = settings
                 .brightspace()
                 .ok_or("Brightspace is not connected anymore.")?;
+            let allow_write = config.allow_write;
             crate::brightspace::BrightspaceClient::new(config).whoami()?;
-            Ok("Brightspace connected (read only).".into())
+            Ok(if allow_write {
+                "Brightspace connected (writes allowed when the assistant confirms)."
+            } else {
+                "Brightspace connected (read only)."
+            }
+            .into())
         }
         "moodle" => {
             let config = settings
@@ -918,6 +985,25 @@ mod protocol_tests {
     }
 
     #[test]
+    fn ws_call_rejects_unclassified_functions_in_read_only_mode() {
+        let settings = Settings {
+            moodle: Some(MoodleSettings {
+                url: Some("http://127.0.0.1:1".into()),
+                token: Some("fake-token".into()),
+                allow_write: Some(false),
+            }),
+            ..Default::default()
+        };
+        let reply = dispatch_tool(
+            &settings,
+            "ws_call",
+            &json!({"name": "local_example_change_record"}),
+        );
+        assert_eq!(reply["isError"], true);
+        assert!(reply.to_string().contains("not classified"));
+    }
+
+    #[test]
     fn ws_call_gates_writes_and_preserves_valid_calls() {
         let info = json!({"userid": 1, "functions": [
             {"name": "core_course_get_contents"}, {"name": "core_course_delete_courses"}
@@ -964,6 +1050,7 @@ mod protocol_tests {
             &json!({"name": "core_course_get_contents", "args": {"courseid": 1, "options": [{"name": "excludemodules", "value": true}]}}),
         );
         assert_eq!(read["isError"], false);
+        assert!(read.get("structuredContent").is_some());
         let requests = worker.join().unwrap();
         assert_eq!(requests.len(), 5);
         assert!(requests
@@ -1049,6 +1136,7 @@ mod protocol_tests {
             settings.brightspace = (enabled & 4 != 0).then(|| crate::config::BrightspaceSettings {
                 url: Some("https://school.example".into()),
                 token: Some("test-token".into()),
+                allow_write: Some(false),
             });
             settings.omnivox = (enabled & 2 != 0).then(|| crate::config::OmnivoxSettings {
                 url: Some("http://127.0.0.1:3000".into()),
@@ -1070,9 +1158,9 @@ mod protocol_tests {
             let tools = reply["result"]["tools"].as_array().unwrap();
             assert_eq!(
                 tools.len(),
-                1 + if enabled & 1 != 0 { 24 } else { 0 }
+                1 + if enabled & 1 != 0 { 26 } else { 0 }
                     + if enabled & 2 != 0 { 7 } else { 0 }
-                    + if enabled & 4 != 0 { 12 } else { 0 }
+                    + if enabled & 4 != 0 { crate::brightspace::tools().len() } else { 0 }
             );
             for tool in tools {
                 assert_eq!(
@@ -1085,6 +1173,7 @@ mod protocol_tests {
                 if matches!(
                     name,
                     "moodle_course_content"
+                        | "moodle_course_updates"
                         | "moodle_resources"
                         | "moodle_file"
                         | "moodle_search"
@@ -1101,6 +1190,7 @@ mod protocol_tests {
                         | "brightspace_grades"
                         | "brightspace_assignments"
                         | "brightspace_assignment_status"
+                        | "brightspace_assignment_submit"
                         | "brightspace_quizzes"
                         | "brightspace_quiz_status"
                         | "brightspace_news"
@@ -1240,6 +1330,8 @@ mod protocol_tests {
             .collect();
         for required in [
             "moodle_search",
+            "moodle_recent_grades",
+            "moodle_course_updates",
             "moodle_deadlines",
             "moodle_announcements",
             "moodle_assignment_status",
@@ -1278,14 +1370,11 @@ mod protocol_tests {
     }
 
     #[test]
-    fn brightspace_tools_are_read_only_and_require_a_connection() {
+    fn brightspace_tools_require_a_connection_and_mark_writes() {
         for tool in crate::brightspace::tools() {
-            assert_eq!(tool["annotations"]["readOnlyHint"], true);
-            let reply = dispatch_tool(
-                &Settings::default(),
-                tool["name"].as_str().unwrap(),
-                &json!({}),
-            );
+            let name = tool["name"].as_str().unwrap();
+            assert!(tool["annotations"]["readOnlyHint"].is_boolean());
+            let reply = dispatch_tool(&Settings::default(), name, &json!({}));
             assert_eq!(reply["isError"], true);
         }
         assert!(test_service(&Settings::default(), "brightspace").is_err());

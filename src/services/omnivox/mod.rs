@@ -1129,12 +1129,12 @@ fn send_form(request: ureq::Request, body: &str) -> Result<ureq::Response, Strin
 pub fn tools() -> Vec<Value> {
     let mut tools = vec![
         json!({"name":"omnivox_status","description":"Check the connected Omnivox / Léa account."}),
-        json!({"name":"omnivox_my_courses","description":"List the connected student's Omnivox / Léa courses for the current term."}),
+        json!({"name":"omnivox_my_courses","description":"List the connected student's Omnivox / Léa courses for the current term. course_id values are strings (e.g. 2434K5EM.1011), not integers."}),
         json!({"name":"omnivox_schedule","description":"Get the connected student's static weekly Omnivox timetable."}),
-        json!({"name":"omnivox_course_documents","description":"List Léa documents for one Omnivox course.","inputSchema":{"type":"object","properties":{"course_id":{"type":"string","description":"Course id from omnivox_my_courses, e.g. 2434K5EM.1011."}},"required":["course_id"]}}),
-        json!({"name":"omnivox_assignments","description":"List Omnivox assignments. Omit course_id for a summary of every course.","inputSchema":{"type":"object","properties":{"course_id":{"type":"string"}}}}),
-        json!({"name":"omnivox_grades","description":"Get Omnivox grades. Omit course_id for a summary of every course.","inputSchema":{"type":"object","properties":{"course_id":{"type":"string"}}}}),
-        json!({"name":"omnivox_calendar","description":"Get the college's current calendar page, including holidays and posted deadlines. The optional range filter is supported only by the MCP gateway; omit it for a direct college login.","inputSchema":{"type":"object","properties":{"range":{"type":"string","enum":["today","week","month","all"]}}}}),
+        json!({"name":"omnivox_course_documents","description":"List Léa documents for one Omnivox course. Returns metadata only; there is no omnivox_file reader yet.","inputSchema":{"type":"object","properties":{"course_id":{"type":"string","description":"String course id from omnivox_my_courses, e.g. 2434K5EM.1011."}},"required":["course_id"]}}),
+        json!({"name":"omnivox_assignments","description":"List Omnivox assignments. Omit course_id for a summary of every course.","inputSchema":{"type":"object","properties":{"course_id":{"type":"string","description":"String course id from omnivox_my_courses."}}}}),
+        json!({"name":"omnivox_grades","description":"Get Omnivox grades. Omit course_id for a summary of every course.","inputSchema":{"type":"object","properties":{"course_id":{"type":"string","description":"String course id from omnivox_my_courses."}}}}),
+        json!({"name":"omnivox_calendar","description":"College calendar page: holidays and posted deadlines. Optional range is supported only via the MCP gateway; omit it for a direct college login. Prefer this for posted dates; there is no omnivox_deadlines aggregator yet.","inputSchema":{"type":"object","properties":{"range":{"type":"string","enum":["today","week","month","all"]}}}}),
     ];
     for tool in &mut tools {
         tool["annotations"] = json!({"readOnlyHint":true});

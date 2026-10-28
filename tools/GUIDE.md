@@ -70,27 +70,61 @@ and the two session cookie **values** from your browser after SSO:
 **⋯** help control explains how to copy them from DevTools. An
 institution-authorized OAuth access token can go under **Advanced options**
 instead (without `Bearer`). The app verifies your profile and course
-enrollments. This connector is read-only and covers courses, content, grades,
-assignments (dropbox + due dates), quizzes, calendar, aggregated deadlines and
-course news. `brightspace_file` reads documents using `courseid` and a file
-topic's `Id` from `brightspace_course_content` as `topicid`. PDFs are returned as
-original resources/download links by default; `format=text` supports page
-selection and `find`, while `format=images` handles scans and diagrams. The
-12 MB download limit also applies here. External links and redirected downloads
-are refused so session cookies never leave the configured site.
-Course lists retain `PagingInfo`; supply `bookmark` to request the
-next page. Prefer `brightspace_deadlines` for upcoming work. Sessions expire and
-must be replaced via **Change login**. The connector uses LP API 1.49 and LE
+enrollments. Read tools cover courses, content, grades, assignments (dropbox +
+due dates), quizzes, calendar, aggregated deadlines and course news.
+`brightspace_file` reads documents using `courseid` and a file topic's `Id`
+from `brightspace_course_content` as `topicid`. PDFs are returned as original
+resources/download links by default; `format=text` supports page selection and
+`find`, while `format=images` handles scans and diagrams. The 12 MB download
+limit also applies here. External links and redirected downloads are refused so
+session cookies never leave the configured site.
+`brightspace_assignment_submit` posts a file to a dropbox folder when **Allow
+assistant changes** is on for that account. Provide `courseid` + `folderid`, and
+exactly one of `path` (file on the machine running student-mcp),
+`content_base64` + `filename`, or `text`. Write tools advertise
+`readOnlyHint: false` so MCP clients can require confirmation; the app toggle is
+a second gate. Course lists retain `PagingInfo`; supply `bookmark` to request
+the next page. Prefer `brightspace_deadlines` for upcoming work. Sessions expire
+and must be replaced via **Change login**. The connector uses LP API 1.49 and LE
 API 1.82.
 
-Saved accounts have check, reconnect and disconnect actions. Moodle permissions
-can be changed without re-entering credentials. Omnivox and Brightspace remain
-read-only.
+Saved accounts have check, reconnect and disconnect actions. Moodle and
+Brightspace write permissions can be changed without re-entering credentials.
+Omnivox remains read-only.
+
+### Additional Brightspace workflows
+
+Brightspace now exposes 55 tools. Beyond the original course/file/assignment
+tools, the connector supports discussion forum/topic/post reading, thread/reply
+creation, deletion and read status; course-local TOC title/URL search; native
+content due items, recent/bookmarked topics and completion counts; own final
+grades and item feedback; alerts and course update counters; groups/sections
+and visible participants; checklist/survey definitions; full announcements and
+dismiss/unhide actions; course pin/unpin; profile/locale reads; notification
+channels, subscriptions and subscribe/unsubscribe.
+
+New group-membership discovery requires LP API 1.64 and checks support first.
+Joining/leaving groups targets only the connected user and may be refused by
+institutional permissions. Notification carrier/message type IDs are GUIDs
+from the channel/subscription results, not numeric course IDs. Discussion
+creation currently accepts plain text only, not attachments or anonymous/group
+topics. Search does not search PDF bodies. Paging metadata is preserved; request
+subsequent bookmarks/pages rather than treating the first page as exhaustive.
+
+All writes require **Allow assistant changes**. Client confirmation depends on
+the client's settings, not just MCP annotations. If an action times out or
+returns an unexpected response, inspect its actual state before retrying.
+These additions have local HTTP-fixture tests, not live institutional validation.
+Optional modules (locker, awards, ePortfolio, CPD) are not implemented yet;
+see [coverage and remaining work](BRIGHTSPACE-COVERAGE.md).
 
 ### Quebec integration targets
 
 Target order: Moodle → Omnivox → Brightspace → monPortail/Brio.
 Only implemented connectors are displayed, without empty slots.
+
+**Status (v0.6.0):** Moodle and Brightspace are the stable student connectors.
+Omnivox remains experimental: login/MFA may still fail on real college portals.
 
 - **Moodle** also covers installations such as StudiUM; it is not a separate
   platform. Each institution must enable the required mobile/Web Service access.
@@ -105,10 +139,11 @@ Only implemented connectors are displayed, without empty slots.
   Maisonneuve MFA API; code validation, mobile-session establishment and
   persistence are covered by local HTTP fixtures. End-to-end verification with a
   real email code still depends on the college account.
-- **Brightspace** reads the Valence API with session cookies pasted from the
+- **Brightspace** uses the Valence API with session cookies pasted from the
   browser after SSO (OAuth tokens still work). Tools cover content, grades,
-  dropbox assignments, quizzes, calendar, deadlines and news. Tested with local
-  HTTP fixtures; live validation still depends on a real institutional account.
+  dropbox assignments (including student submit when writes are enabled),
+  quizzes, calendar, deadlines and news. Tested with local HTTP fixtures; live
+  validation still depends on a real institutional account.
 - **monPortail/Brio** is not integrated yet. Laval requires institutional SSO/MFA;
   no suitable public student API was found. Current browser-session evidence and
   an authorized test account are needed; old monPortail API examples from 2017
@@ -130,6 +165,9 @@ References: [D2L API authentication](https://docs.valence.desire2learn.com/basic
    opens the browser page, while the main binary starts MCP stdio without arguments.
 - The tool list follows the window: add or remove a service and the tools appear
   or disappear on the next call (the config is re-read every time).
+- Tool naming, parameters, annotations and result shape follow
+  [MCP tool conventions](MCP-CONVENTIONS.md). Restart student-mcp after upgrades
+  so assistants reload the live `tools/list` catalogue.
 
 ## 4. Automatic public link for web AI
 
