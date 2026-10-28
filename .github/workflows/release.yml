@@ -158,6 +158,16 @@ jobs:
               throw "External Visual C++ runtime required by $($binary.Name)"
             }
           }
+      - name: Stage binaries for the PowerShell installer
+        shell: bash
+        run: |
+          for arch in x64 arm64; do
+            for binary in student-mcp student-mcp-desktop; do
+              python tools/stage-release.py \
+                --binary "payload/${binary}-windows-${arch}.exe" \
+                --name "${binary}-windows-${arch}.exe"
+            done
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-windows
@@ -214,6 +224,7 @@ jobs:
     name: Verify installation (${{ matrix.label }})
     runs-on: ${{ matrix.runner }}
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: ${{ matrix.artifact }}
@@ -246,6 +257,29 @@ jobs:
           $process = Start-Process "$destination/unins000.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Uninstall failed: $($process.ExitCode)" }
           if (Test-Path "$destination/student-mcp.exe") { throw 'Uninstall left the app behind' }
+      - name: Smoke PowerShell install and upgrade from release assets (no network or GUI)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $assets = (Resolve-Path release).Path
+          $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'student-mcp script install'
+          $env:APPDATA = Join-Path $env:RUNNER_TEMP 'student-mcp script profile'
+          function Invoke-WebRequest {
+            param($Uri, $OutFile, [switch]$UseBasicParsing)
+            $name = [System.IO.Path]::GetFileName(([uri]$Uri).AbsolutePath)
+            Copy-Item (Join-Path $assets $name) $OutFile
+          }
+          function Start-Process { param($FilePath) }
+          $script = Join-Path $PWD 'tools/packaging/install.ps1'
+          foreach ($pass in @('install', 'upgrade')) {
+            & $script
+            if (-not (Test-Path "$env:LOCALAPPDATA/student-mcp/student-mcp-desktop.exe")) { throw 'Desktop launcher missing' }
+            & "$env:LOCALAPPDATA/student-mcp/student-mcp.exe" --version
+            if ($LASTEXITCODE -ne 0) { throw 'Installed CLI failed' }
+          }
+          if (-not (Test-Path "$env:APPDATA/Microsoft/Windows/Start Menu/Programs/student-mcp.lnk")) {
+            throw 'Start menu shortcut missing'
+          }
       - name: Smoke macOS disk image, install and upgrade (no GUI)
         if: runner.os == 'macOS'
         shell: bash
@@ -294,9 +328,9 @@ jobs:
           generate_release_notes: true
           body: |
             ## Desktop installation
-            - **Windows:** download `student-mcp-setup.exe`, double-click it and keep **Open student-mcp** selected.
+            - **Windows:** run `irm https://raw.githubusercontent.com/CloudDown/student-mcp/main/tools/packaging/install.ps1 | iex` in PowerShell. Alternatively, download `student-mcp-setup.exe`.
             - **macOS:** download `student-mcp.dmg`, open it and double-click **Install student-mcp**. Confirm **Install and open**.
-            - One file per OS. The same installer works on Intel/AMD and ARM (Apple Silicon / Windows on ARM).
+            - Windows PowerShell chooses x64 or arm64 binaries automatically; macOS DMG is universal (Intel / Apple Silicon).
             - **Linux:** download `student-mcp-linux-x64` or `student-mcp-linux-arm64` (raw binary), or use `tools/packaging/install.sh`.
             - These builds are not yet publisher-signed/notarized; Windows/macOS may warn or block them. Do not disable system security protections.
             - SHA-256 files verify download integrity, not publisher identity.

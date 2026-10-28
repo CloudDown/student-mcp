@@ -4,23 +4,25 @@ A local browser page plus a Rust MCP server, with a built-in srv.us tunnel clien
 
 ## Installation
 
-Download from the [latest release](https://github.com/CloudDown/student-mcp/releases/latest):
+Install from the [latest release](https://github.com/CloudDown/student-mcp/releases/latest):
 
-- **Windows:** double-click `student-mcp-setup.exe`,
-  install, and leave **Open student-mcp** selected. Reopen from the Start menu;
-  uninstall through Windows Settings → Apps.
+- **Windows:** run the PowerShell command in the [README](../README.md#install).
+  It downloads checksum-verified x64/ARM64 binaries, installs under
+  `%LOCALAPPDATA%\student-mcp`, adds a Start menu shortcut, and opens the page.
+  Quit the tray app before upgrading. The optional `student-mcp-setup.exe` can
+  instead be installed/uninstalled through Windows Settings → Apps.
 - **macOS:** open `student-mcp.dmg`, double-click
   **Install student-mcp**, then **Install and open**. Reopen from Applications.
   To remove it, stop it from its browser page and move the app to the Trash.
-- One download per desktop OS: Intel/AMD and ARM are handled automatically.
+- Windows and macOS choose Intel/AMD or ARM automatically.
 - Quit any running copy before upgrading. Removing/updating the application
   does not delete saved accounts or tunnel identity files in your home folder.
 
 The installers are not yet publisher-signed/notarized; OS security checks may
 warn or block them. Do not disable those checks. See
 [release maintenance](#release-maintenance) for build and signing requirements.
-Linux and advanced users can still use `tools/packaging/install.sh` / `tools/packaging/install.ps1`, as described
-in the [README](../README.md#install). No ZIPs are published.
+Linux uses `tools/packaging/install.sh`, as described in the
+[README](../README.md#install). No ZIPs are published.
 
 ## 1. What you see when it opens
 

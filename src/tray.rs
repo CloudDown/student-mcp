@@ -95,7 +95,7 @@ mod linux {
         }
         fn icon_pixmap(&self) -> Vec<ksni::Icon> {
             let mut argb = icon_rgba();
-            for pixel in argb.chunks_exact_mut(4) {
+            for pixel in argb.as_chunks_mut::<4>().0 {
                 pixel.rotate_right(1);
             }
             vec![ksni::Icon {
@@ -219,11 +219,13 @@ mod tests {
     fn bundled_icon_is_nonempty_rgba_with_transparent_background() {
         let pixels = icon_rgba();
         assert_eq!(pixels.len(), (ICON_SIZE * ICON_SIZE * 4) as usize);
-        assert!(pixels.chunks_exact(4).any(|p| p[3] == 255));
-        assert!(pixels.chunks_exact(4).any(|p| p[3] == 0));
+        assert!(pixels.as_chunks::<4>().0.iter().any(|p| p[3] == 255));
+        assert!(pixels.as_chunks::<4>().0.iter().any(|p| p[3] == 0));
         // Yellow face present (graduation smiley).
         assert!(pixels
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .any(|p| p[0] > 200 && p[1] > 150 && p[2] < 40 && p[3] == 255));
     }
 }
