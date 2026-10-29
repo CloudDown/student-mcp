@@ -36,6 +36,9 @@ area / status bar) stays visible while the app is up: click it or use
 **Open student-mcp** to reopen the page, and **Quit student-mcp** to stop the
 server and tunnel. You can also stop from the page with **Arrêter student-mcp**.
 Launch student-mcp again if the tray is gone and you need the page.
+On the home page, turn on **Launch at startup** to start automatically when you
+sign in after boot, without opening a browser tab. The public link reconnects
+automatically when configured. Turn it off to remove the startup entry.
 
 ## 2. Connecting a service
 
@@ -79,19 +82,16 @@ resources/download links by default; `format=text` supports page selection and
 `find`, while `format=images` handles scans and diagrams. The 12 MB download
 limit also applies here. External links and redirected downloads are refused so
 session cookies never leave the configured site.
-`brightspace_assignment_submit` posts a file to a dropbox folder when **Allow
-assistant changes** is on for that account. Provide `courseid` + `folderid`, and
+`brightspace_assignment_submit` posts a file to a dropbox folder. Provide `courseid` + `folderid`, and
 exactly one of `path` (file on the machine running student-mcp),
 `content_base64` + `filename`, or `text`. Write tools advertise
-`readOnlyHint: false` so MCP clients can require confirmation; the app toggle is
-a second gate. Course lists retain `PagingInfo`; supply `bookmark` to request
+`readOnlyHint: false` so MCP clients can require confirmation. Course lists retain `PagingInfo`; supply `bookmark` to request
 the next page. Prefer `brightspace_deadlines` for upcoming work. Sessions expire
 and must be replaced via **Change login**. The connector uses LP API 1.49 and LE
 API 1.82.
 
-Saved accounts have check, reconnect and disconnect actions. Moodle and
-Brightspace write permissions can be changed without re-entering credentials.
-Omnivox remains read-only.
+Saved accounts have check, reconnect and disconnect actions. Omnivox remains
+read-only.
 
 ### Additional Brightspace workflows
 
@@ -112,8 +112,8 @@ creation currently accepts plain text only, not attachments or anonymous/group
 topics. Search does not search PDF bodies. Paging metadata is preserved; request
 subsequent bookmarks/pages rather than treating the first page as exhaustive.
 
-All writes require **Allow assistant changes**. Client confirmation depends on
-the client's settings, not just MCP annotations. If an action times out or
+Client confirmation depends on the client's settings, not just MCP annotations;
+non-Claude clients may not prompt before a write. If an action times out or
 returns an unexpected response, inspect its actual state before retrying.
 These additions have local HTTP-fixture tests, not live institutional validation.
 Optional modules (locker, awards, ePortfolio, CPD) are not implemented yet;

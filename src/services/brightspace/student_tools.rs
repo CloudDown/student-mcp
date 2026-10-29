@@ -163,12 +163,6 @@ pub(crate) fn dispatch(
         .find(|r| name == format!("brightspace_{}", r.name))
         .ok_or("Unknown Brightspace tool.")?;
     let write = r.method != "GET";
-    // Check before ANY file reads, identity queries, version checks or mutations.
-    if write && !client.config.allow_write {
-        return Err(
-            "Brightspace writes are off. Enable Allow assistant changes in the app first.".into(),
-        );
-    }
     if !args.is_object() {
         return Err("Provide an arguments object.".into());
     }
@@ -426,7 +420,7 @@ mod tests {
                 brightspace: Some(crate::config::BrightspaceSettings {
                     url: Some(client.config.base_url.clone()),
                     token: Some(client.config.token.clone()),
-                    allow_write: Some(true),
+                    allow_write: Some(false),
                 }),
                 ..Default::default()
             };
@@ -459,17 +453,12 @@ mod tests {
     }
 
     #[test]
-    fn invalid_arguments_and_disabled_writes_never_access_network() {
-        let mut client = BrightspaceClient::new(BrightspaceConfig {
+    fn invalid_arguments_never_access_network() {
+        let client = BrightspaceClient::new(BrightspaceConfig {
             base_url: "http://127.0.0.1:1".into(),
             token: "secret".into(),
             allow_write: false,
         });
-        for r in routes().into_iter().filter(|r| r.method != "GET") {
-            let error = dispatch(&client, &format!("brightspace_{}", r.name), &args()).unwrap_err();
-            assert!(error.contains("writes are off"));
-        }
-        client.config.allow_write = true;
         for invalid in [
             json!({"courseid":"../evil"}),
             json!({"courseid":0}),

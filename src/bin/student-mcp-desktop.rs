@@ -12,6 +12,9 @@ fn launch() -> std::io::Result<()> {
     });
     let mut command = Command::new(binary);
     command.arg("up");
+    if std::env::args().skip(1).any(|arg| arg == "--background") {
+        command.arg("--background");
+    }
 
     #[cfg(windows)]
     {

@@ -114,7 +114,7 @@ pub fn tool_definitions(settings: &Settings) -> Vec<Value> {
             { "name": "moodle_completion", "description": "Activity completion status for a course.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "ws_discover", "description": "Search Moodle Web Service functions this token can call, with description and access type.", "inputSchema": { "type": "object", "properties": { "query": { "type": "string" }, "limit": { "type": "integer", "minimum": 1, "maximum": 100 } } }, "annotations": { "readOnlyHint": true } },
             { "name": "ws_schema", "description": "Show bundled Moodle catalogue metadata for one Web Service function by exact name (parameters, read/write type). Does not prove the connected token can call it; use ws_discover or site_info for availability.", "inputSchema": { "type": "object", "properties": { "name": { "type": "string" } }, "required": ["name"] }, "annotations": { "readOnlyHint": true } },
-            { "name": "ws_call", "description": "Call a Moodle Web Service function by exact name. Prefer dedicated moodle_* tools first. Find candidates with ws_discover. When Moodle writing is off, only catalogue-classified read functions are allowed; unclassified or write functions are refused. Writes also require enabling Moodle writing in the app.", "inputSchema": crate::catalog::ws_call_schema(), "annotations": { "readOnlyHint": false } }
+            { "name": "ws_call", "description": "Call a Moodle Web Service function by exact name. Prefer dedicated moodle_* tools first. Find candidates with ws_discover. This function may change school data; confirm write actions with the user before calling. Moodle still enforces the token's permissions.", "inputSchema": crate::catalog::ws_call_schema(), "annotations": { "readOnlyHint": false } }
         ]);
         tools.extend(moodle.as_array().cloned().unwrap_or_default());
         tools.extend([
@@ -408,7 +408,7 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                 "type": if entry.write { "write" } else { "read" },
                 "parameters": entry.parameters,
                 "availableOnToken": "unknown",
-                "note": "Bundled catalogue metadata only; it may differ from your site's Moodle version and does not prove this token can call the function. Use ws_discover for token-available names. Optional/nullable flags are included; unresolved structures have a note. Writes require allowing changes in the app.",
+                "note": "Bundled catalogue metadata only; it may differ from your site's Moodle version and does not prove this token can call the function. Use ws_discover for token-available names. Optional/nullable flags are included; unresolved structures have a note. Confirm writes with the user before calling.",
                 "catalogRelease": catalog.release()
             }))
         }),
@@ -417,22 +417,6 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                 .get("name")
                 .and_then(Value::as_str)
                 .ok_or("Provide name.")?;
-            let catalog = Catalog::load();
-            match catalog.get(name) {
-                Some(entry) if entry.write && !config.allow_write => {
-                    return Err(
-                        "This Moodle function changes data. Allow writes for this account in the student-mcp window first."
-                            .into(),
-                    );
-                }
-                None if !config.allow_write => {
-                    return Err(
-                        "This Moodle function is not classified in the bundled catalogue. Allow writes for this account in the student-mcp window first, or use a dedicated moodle_* tool / ws_discover for known reads."
-                            .into(),
-                    );
-                }
-                _ => {}
-            }
             let client = MoodleClient::new(config);
             let payload = args.get("args").cloned().unwrap_or_else(|| json!({}));
             let info = client.site_info()?;
@@ -599,19 +583,11 @@ fn student_status(settings: &Settings) -> ToolResult {
                 .account_list(service)
                 .into_iter()
                 .map(move |(id, url)| {
-                    let selected = settings.for_account(service, &id);
-                    let allow_write = match service {
-                        "moodle" => selected.moodle().is_some_and(|config| config.allow_write),
-                        "brightspace" => selected
-                            .brightspace()
-                            .is_some_and(|config| config.allow_write),
-                        _ => false,
-                    };
                     json!({
                         "account_id": id,
                         "service": service,
                         "url": url,
-                        "allowWrite": allow_write
+                        "allowWrite": service == "moodle" || service == "brightspace"
                     })
                 })
         })
@@ -861,26 +837,6 @@ pub fn disable_service(settings: &mut Settings, id: &str) -> Result<(), String> 
     Ok(())
 }
 
-pub fn set_moodle_write(settings: &mut Settings, allow: bool) -> Result<(), String> {
-    let mut updated = settings.clone();
-    let moodle = updated
-        .moodle
-        .as_mut()
-        .ok_or("Moodle is not connected anymore.")?;
-    moodle.allow_write = Some(allow);
-    updated.save_service("moodle").map_err(|error| {
-        format!(
-            "Cannot save Moodle permissions. The previous permissions are still active. {error}"
-        )
-    })?;
-    *settings = updated;
-    Ok(())
-}
-
-pub fn set_brightspace_write(settings: &mut Settings, allow: bool) -> Result<(), String> {
-    crate::brightspace::set_write(settings, allow)
-}
-
 /// Live connectivity check for one configured service, for the "manage" screen.
 pub fn test_service(settings: &Settings, id: &str) -> Result<String, String> {
     match id {
@@ -900,14 +856,8 @@ pub fn test_service(settings: &Settings, id: &str) -> Result<String, String> {
             let config = settings
                 .brightspace()
                 .ok_or("Brightspace is not connected anymore.")?;
-            let allow_write = config.allow_write;
             crate::brightspace::BrightspaceClient::new(config).whoami()?;
-            Ok(if allow_write {
-                "Brightspace connected (writes allowed when the assistant confirms)."
-            } else {
-                "Brightspace connected (read only)."
-            }
-            .into())
+            Ok("Brightspace connected.".into())
         }
         "moodle" => {
             let config = settings
@@ -957,7 +907,7 @@ mod protocol_tests {
         };
         let status = student_status(&settings).unwrap();
         assert_eq!(status["accounts"].as_array().unwrap().len(), 2);
-        assert_eq!(status["moodleAllowWrite"], false);
+        assert_eq!(status["moodleAllowWrite"], true);
         assert!(!status.to_string().contains("secret"));
         for args in [
             json!({"courseid": 1}),
@@ -985,10 +935,12 @@ mod protocol_tests {
     }
 
     #[test]
-    fn ws_call_rejects_unclassified_functions_in_read_only_mode() {
+    fn ws_call_checks_token_authorization_even_for_unclassified_functions() {
+        let info = json!({"userid":1,"functions":[{"name":"local_example_change_record"}]});
+        let (url, worker) = crate::moodle::tests::server(vec![info, json!({"ok":true})]);
         let settings = Settings {
             moodle: Some(MoodleSettings {
-                url: Some("http://127.0.0.1:1".into()),
+                url: Some(url),
                 token: Some("fake-token".into()),
                 allow_write: Some(false),
             }),
@@ -999,12 +951,13 @@ mod protocol_tests {
             "ws_call",
             &json!({"name": "local_example_change_record"}),
         );
-        assert_eq!(reply["isError"], true);
-        assert!(reply.to_string().contains("not classified"));
+        assert_eq!(reply["isError"], false);
+        let requests = worker.join().unwrap();
+        assert!(requests[1].contains("wsfunction=local_example_change_record"));
     }
 
     #[test]
-    fn ws_call_gates_writes_and_preserves_valid_calls() {
+    fn ws_call_allows_writes_for_existing_accounts_and_preserves_valid_calls() {
         let info = json!({"userid": 1, "functions": [
             {"name": "core_course_get_contents"}, {"name": "core_course_delete_courses"}
         ]});
@@ -1015,7 +968,7 @@ mod protocol_tests {
             info,
             json!([]),
         ]);
-        let mut settings = Settings {
+        let settings = Settings {
             moodle: Some(MoodleSettings {
                 url: Some(url.clone()),
                 token: Some("fake-token".into()),
@@ -1023,14 +976,6 @@ mod protocol_tests {
             }),
             ..Default::default()
         };
-        let denied = dispatch_tool(
-            &settings,
-            "ws_call",
-            &json!({"name": "core_course_delete_courses", "args": {"courseids": [1]}}),
-        );
-        assert_eq!(denied["isError"], true);
-        assert!(denied.to_string().contains("Allow writes"));
-        settings.moodle.as_mut().unwrap().allow_write = Some(true);
         let write = dispatch_tool(
             &settings,
             "ws_call",
@@ -1078,7 +1023,7 @@ mod protocol_tests {
     }
 
     #[test]
-    fn moodle_activation_permissions_and_disconnect_report_save_failures() {
+    fn moodle_activation_and_disconnect_report_save_failures() {
         crate::config::tests::with_temp_config(|| {
             // A directory at the destination fails on every OS, even as root.
             std::fs::create_dir(crate::config::config_path()).unwrap();
@@ -1099,8 +1044,6 @@ mod protocol_tests {
             );
             worker.join().unwrap();
             assert_eq!(serde_json::to_value(&settings).unwrap(), original);
-            assert!(set_moodle_write(&mut settings, false).is_err());
-            assert_eq!(serde_json::to_value(&settings).unwrap(), original);
             assert!(disable_service(&mut settings, "moodle").is_err());
             assert_eq!(serde_json::to_value(&settings).unwrap(), original);
 
@@ -1109,8 +1052,6 @@ mod protocol_tests {
             activate_moodle(&mut settings, &url, "", "", "new-token", false).unwrap();
             worker.join().unwrap();
             assert_eq!(Settings::load().moodle().unwrap().token, "new-token");
-            set_moodle_write(&mut settings, true).unwrap();
-            assert!(Settings::load().moodle().unwrap().allow_write);
             disable_service(&mut settings, "moodle").unwrap();
             assert!(Settings::load().moodle().is_none());
         });

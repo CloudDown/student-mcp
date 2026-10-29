@@ -35,12 +35,18 @@ fn open_browser(url: &str) {
 }
 
 pub fn run(port: Option<u16>, _first_run: bool) {
-    if let Err(error) = serve(port) {
+    if let Err(error) = serve(port, true) {
         eprintln!("student-mcp: {error}");
     }
 }
 
-fn serve(port: Option<u16>) -> Result<(), String> {
+pub fn run_background(port: Option<u16>) {
+    if let Err(error) = serve(port, false) {
+        eprintln!("student-mcp: {error}");
+    }
+}
+
+fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
     let settings = Settings::load();
     if let Some(error) = settings.config_error {
         return Err(error);
@@ -62,7 +68,9 @@ fn serve(port: Option<u16>) -> Result<(), String> {
                         .call()
                         .is_ok()
                     {
-                        open_browser(&format!("{origin}/#{key}"));
+                        if open_window {
+                            open_browser(&format!("{origin}/#{key}"));
+                        }
                         return Ok(());
                     }
                 }
@@ -118,7 +126,9 @@ fn serve(port: Option<u16>) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
     let config_url = format!("{origin}/#{secret}");
-    open_browser(&config_url);
+    if open_window {
+        open_browser(&config_url);
+    }
     let tray = crate::tray::Tray::start();
     let mut tunnel = Tunnel::default();
     let mut pending: Option<(Settings, Box<PendingLogin>)> = None;
@@ -199,24 +209,13 @@ fn serve(port: Option<u16>) -> Result<(), String> {
             let mut accounts = Vec::new();
             for service in ["moodle", "omnivox", "brightspace"] {
                 for (id, url) in current.account_list(service) {
-                    let scoped = current.for_account(service, &id);
-                    let allow_write = match service {
-                        "moodle" => scoped
-                            .moodle
-                            .as_ref()
-                            .is_some_and(|m| m.allow_write.unwrap_or(false)),
-                        "brightspace" => scoped
-                            .brightspace
-                            .as_ref()
-                            .is_some_and(|b| b.allow_write.unwrap_or(false)),
-                        _ => false,
-                    };
+                    let allow_write = service == "moodle" || service == "brightspace";
                     accounts.push(
                         json!({"service":service,"id":id,"url":url,"allow_write":allow_write}),
                     );
                 }
             }
-            (200, "application/json", json!({"accounts":accounts,"verification":pending.as_ref().map(|(_,p)| &p.prompt),"link":mcp_endpoint(tunnel.origin().unwrap_or(&format!("http://127.0.0.1:{port}")), &gateway.token),"local_link":mcp_endpoint(&format!("http://127.0.0.1:{port}"), &gateway.token),"tunnel":format!("{:?}",tunnel.state),"public":current.gateway.public_enabled(),"local":enabled.load(Ordering::SeqCst)}).to_string().into_bytes(),false)
+            (200, "application/json", json!({"accounts":accounts,"verification":pending.as_ref().map(|(_,p)| &p.prompt),"link":mcp_endpoint(tunnel.origin().unwrap_or(&format!("http://127.0.0.1:{port}")), &gateway.token),"local_link":mcp_endpoint(&format!("http://127.0.0.1:{port}"), &gateway.token),"tunnel":format!("{:?}",tunnel.state),"public":current.gateway.public_enabled(),"local":enabled.load(Ordering::SeqCst),"autostart":crate::autostart::enabled().unwrap_or(false)}).to_string().into_bytes(),false)
         } else if request.method() == &Method::Post && path == "/action" {
             let mut bytes = Vec::new();
             let read = request.as_reader().take(16_385).read_to_end(&mut bytes);
@@ -272,6 +271,10 @@ fn action(
     let get = |key| args.get(key).and_then(Value::as_str).unwrap_or("");
     match get("action") {
         "stop" => return Ok(json!({"stop":true})),
+        "autostart" => {
+            crate::autostart::set(args["enabled"] == true)?;
+            return Ok(json!({}));
+        }
         "links" => {
             let local = args["local"] == true;
             let public = args["public"] == true;
@@ -314,16 +317,6 @@ fn action(
         get("id").to_owned()
     };
     let mut settings = Settings::load().for_account(service, &id);
-    if get("action") == "permissions" {
-        match service {
-            "moodle" => crate::mcp::set_moodle_write(&mut settings, args["allow_write"] == true)?,
-            "brightspace" => {
-                crate::mcp::set_brightspace_write(&mut settings, args["allow_write"] == true)?
-            }
-            _ => return Err("This service has no write permissions toggle.".into()),
-        }
-        return Ok(json!({"message":"Permissions saved"}));
-    }
     if get("action") == "disconnect" {
         crate::mcp::disable_service(&mut settings, service)?;
         *pending = None;
@@ -344,14 +337,11 @@ fn action(
             get("username"),
             get("password"),
             get("token"),
-            args["allow_write"] == true,
+            true,
         )?,
-        "brightspace" => crate::brightspace::activate(
-            &mut settings,
-            get("url"),
-            get("token"),
-            args["allow_write"] == true,
-        )?,
+        "brightspace" => {
+            crate::brightspace::activate(&mut settings, get("url"), get("token"), true)?
+        }
         _ => {
             if get("token").is_empty() {
                 match crate::omnivox::activate_login(

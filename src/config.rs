@@ -135,6 +135,8 @@ pub struct Gateway {
 pub struct MoodleConfig {
     pub base_url: String,
     pub token: String,
+    // Retained to read legacy account settings; writes no longer use an app-level gate.
+    #[allow(dead_code)]
     pub allow_write: bool,
 }
 
@@ -150,6 +152,8 @@ pub struct OmnivoxConfig {
 pub struct BrightspaceConfig {
     pub base_url: String,
     pub token: String,
+    // Retained to read legacy account settings; writes no longer use an app-level gate.
+    #[allow(dead_code)]
     pub allow_write: bool,
 }
 

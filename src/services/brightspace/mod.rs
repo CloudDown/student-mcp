@@ -213,12 +213,6 @@ impl BrightspaceClient {
         bytes: &[u8],
         comment: Option<&str>,
     ) -> Result<Value, String> {
-        if !self.config.allow_write {
-            return Err(
-                "Brightspace writes are off. Enable “Allow assistant changes” for this account in the student-mcp window first."
-                    .into(),
-            );
-        }
         if courseid <= 0 || folderid <= 0 {
             return Err("Provide integer courseid and folderid > 0.".into());
         }
@@ -616,28 +610,7 @@ fn persist(
         format!("Cannot save Brightspace credentials to the private config file: {error}")
     })?;
     *settings = updated;
-    Ok(if allow_write {
-        "Brightspace connected (writes allowed when the assistant confirms)."
-    } else {
-        "Brightspace connected (read only). Turn on “Allow assistant changes” to submit work."
-    }
-    .into())
-}
-
-pub fn set_write(settings: &mut crate::config::Settings, allow: bool) -> Result<(), String> {
-    let mut updated = settings.clone();
-    let brightspace = updated
-        .brightspace
-        .as_mut()
-        .ok_or("Brightspace is not connected anymore.")?;
-    brightspace.allow_write = Some(allow);
-    updated.save_service("brightspace").map_err(|error| {
-        format!(
-            "Cannot save Brightspace permissions. The previous permissions are still active. {error}"
-        )
-    })?;
-    *settings = updated;
-    Ok(())
+    Ok("Brightspace connected.".into())
 }
 
 /// Resolve file bytes for brightspace_assignment_submit from path, base64, or plain text.
@@ -722,7 +695,7 @@ pub fn tools() -> Vec<Value> {
         json!({"name":"brightspace_grades","description":"Visible grade values for the connected student in a Brightspace course.","inputSchema":{"type":"object","properties":{"courseid":course},"required":["courseid"]},"annotations":{"readOnlyHint":true}}),
         json!({"name":"brightspace_assignments","description":"Dropbox / assignment folders for a course, including DueDate when set. Prefer brightspace_deadlines for a cross-course due list.","inputSchema":{"type":"object","properties":{"courseid":course},"required":["courseid"]},"annotations":{"readOnlyHint":true}}),
         json!({"name":"brightspace_assignment_status","description":"One dropbox folder plus the connected student's submissions and feedback.","inputSchema":{"type":"object","properties":{"courseid":course,"folderid":{"type":"integer","minimum":1}},"required":["courseid","folderid"]},"annotations":{"readOnlyHint":true}}),
-        json!({"name":"brightspace_assignment_submit","description":"Submit a file to a Brightspace dropbox folder (student write). Requires “Allow assistant changes” in the app. Provide courseid + folderid from brightspace_assignments, and exactly one of: path (absolute file on the student-mcp host), content_base64 + filename, or text (optional filename, default submission.txt). Optional comment becomes the submission description. Confirm with the user before calling; irreversible for the course. Max 12 MB.","inputSchema":{"type":"object","properties":{"courseid":course,"folderid":{"type":"integer","minimum":1},"path":{"type":"string","description":"Absolute path to a local file on the machine running student-mcp."},"content_base64":{"type":"string","description":"Base64 file bytes when path is unavailable."},"filename":{"type":"string","description":"Required with content_base64; optional override for path/text."},"text":{"type":"string","description":"UTF-8 text body when submitting a plain-text file."},"comment":{"type":"string","description":"Optional submission comment / description."}},"required":["courseid","folderid"]},"annotations":{"readOnlyHint":false,"destructiveHint":true}}),
+        json!({"name":"brightspace_assignment_submit","description":"Submit a file to a Brightspace dropbox folder (student write). Provide courseid + folderid from brightspace_assignments, and exactly one of: path (absolute file on the student-mcp host), content_base64 + filename, or text (optional filename, default submission.txt). Optional comment becomes the submission description. Confirm with the user before calling; irreversible for the course. Max 12 MB.","inputSchema":{"type":"object","properties":{"courseid":course,"folderid":{"type":"integer","minimum":1},"path":{"type":"string","description":"Absolute path to a local file on the machine running student-mcp."},"content_base64":{"type":"string","description":"Base64 file bytes when path is unavailable."},"filename":{"type":"string","description":"Required with content_base64; optional override for path/text."},"text":{"type":"string","description":"UTF-8 text body when submitting a plain-text file."},"comment":{"type":"string","description":"Optional submission comment / description."}},"required":["courseid","folderid"]},"annotations":{"readOnlyHint":false,"destructiveHint":true}}),
         json!({"name":"brightspace_quizzes","description":"Quizzes in a course, including DueDate / StartDate / EndDate when set.","inputSchema":{"type":"object","properties":{"courseid":course},"required":["courseid"]},"annotations":{"readOnlyHint":true}}),
         json!({"name":"brightspace_quiz_status","description":"One quiz definition plus the connected student's attempts when available.","inputSchema":{"type":"object","properties":{"courseid":course,"quizid":{"type":"integer","minimum":1}},"required":["courseid","quizid"]},"annotations":{"readOnlyHint":true}}),
         json!({"name":"brightspace_calendar","description":"Upcoming calendar events for the student. Optional courseid limits to one course; days defaults to 60.","inputSchema":{"type":"object","properties":{"courseid":course,"days":{"type":"integer","minimum":1,"maximum":365}}},"annotations":{"readOnlyHint":true}}),
@@ -1328,7 +1301,7 @@ mod tests {
     }
 
     #[test]
-    fn assignment_submit_requires_write_permission_before_network() {
+    fn assignment_submit_rejects_invalid_arguments_before_network() {
         let settings = crate::config::Settings {
             brightspace: Some(crate::config::BrightspaceSettings {
                 url: Some("http://127.0.0.1:1".into()),
@@ -1340,15 +1313,10 @@ mod tests {
         let reply = crate::mcp::dispatch_tool(
             &settings,
             "brightspace_assignment_submit",
-            &json!({
-                "courseid": 42,
-                "folderid": 9,
-                "text": "hello",
-                "filename": "hw.txt"
-            }),
+            &json!({"courseid": 0, "folderid": 9, "text": "hello"}),
         );
         assert_eq!(reply["isError"], true);
-        assert!(reply.to_string().contains("Allow assistant changes"));
+        assert!(reply.to_string().contains("courseid"));
     }
 
     #[test]
@@ -1357,7 +1325,7 @@ mod tests {
         let config = BrightspaceConfig {
             base_url: format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port()),
             token: "d2lSessionVal=sess; d2lSecureSessionVal=secure".into(),
-            allow_write: true,
+            allow_write: false,
         };
         let worker = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();

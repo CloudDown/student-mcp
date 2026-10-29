@@ -58,8 +58,9 @@ Keep descriptions under a short paragraph. Put long procedure notes in
 | `idempotentHint` | Safe to retry with the same args when true |
 | `openWorldHint: true` | Talks to an external school system (typical) |
 
-App toggles (`allow_write`) are a **second** gate. Annotations alone are not
-enough; refuse writes in dispatch when the account has writes disabled.
+Write-tool approvals belong to the MCP client. Annotations describe the risk,
+but clients other than Claude may not prompt automatically; confirm the user's
+intent before performing irreversible actions.
 
 ## Prefer / avoid matrix
 

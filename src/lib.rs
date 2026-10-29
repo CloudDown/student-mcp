@@ -1,3 +1,4 @@
+mod autostart;
 mod config;
 mod document;
 mod http;
@@ -17,3 +18,4 @@ use services::{brightspace, moodle, omnivox};
 pub use config::VERSION;
 pub use stdio::run as run_stdio;
 pub use web::run as run_web;
+pub use web::run_background as run_web_background;

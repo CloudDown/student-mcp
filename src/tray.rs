@@ -84,14 +84,13 @@ mod linux {
     struct LinuxTray(Events);
 
     impl ksni::Tray for LinuxTray {
+        const MENU_ON_ACTIVATE: bool = true;
+
         fn id(&self) -> String {
             "student-mcp".into()
         }
         fn title(&self) -> String {
             "student-mcp".into()
-        }
-        fn activate(&mut self, _: i32, _: i32) {
-            self.0.send(Command::Open);
         }
         fn icon_pixmap(&self) -> Vec<ksni::Icon> {
             let mut argb = icon_rgba();
@@ -115,19 +114,44 @@ mod linux {
             use ksni::menu::StandardItem;
             vec![
                 StandardItem {
-                    label: "Open student-mcp".into(),
+                    label: "Open".into(),
                     activate: Box::new(|tray: &mut Self| tray.0.send(Command::Open)),
                     ..Default::default()
                 }
                 .into(),
                 ksni::MenuItem::Separator,
                 StandardItem {
-                    label: "Quit student-mcp".into(),
+                    label: "Close".into(),
                     activate: Box::new(|tray: &mut Self| tray.0.send(Command::Quit)),
                     ..Default::default()
                 }
                 .into(),
             ]
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use ksni::Tray as _;
+
+        #[test]
+        fn menu_opens_configuration_and_quits() {
+            assert!(<LinuxTray as ksni::Tray>::MENU_ON_ACTIVATE);
+            let (sender, receiver) = channel();
+            let mut tray = LinuxTray(Events(sender));
+            let menu = tray.menu();
+            for (item, label, command) in [
+                (&menu[0], "Open", Command::Open),
+                (&menu[2], "Close", Command::Quit),
+            ] {
+                let ksni::MenuItem::Standard(item) = item else {
+                    panic!("expected standard menu item");
+                };
+                assert_eq!(item.label, label);
+                (item.activate)(&mut tray);
+                assert_eq!(receiver.try_recv().unwrap(), command);
+            }
         }
     }
 }
@@ -150,8 +174,8 @@ mod desktop {
     impl NativeTray {
         pub(super) fn new(sender: Sender<Command>) -> Result<Self, String> {
             let menu = Menu::new();
-            let open = MenuItem::new("Open student-mcp", true, None);
-            let quit = MenuItem::new("Quit student-mcp", true, None);
+            let open = MenuItem::new("Open", true, None);
+            let quit = MenuItem::new("Close", true, None);
             menu.append_items(&[&open, &quit])
                 .map_err(|error| error.to_string())?;
             let icon = Icon::from_rgba(icon_rgba(), ICON_SIZE, ICON_SIZE)
@@ -159,14 +183,11 @@ mod desktop {
             let mut builder = TrayIconBuilder::new()
                 .with_icon(icon)
                 .with_tooltip("student-mcp — running")
-                .with_menu(Box::new(menu));
+                .with_menu(Box::new(menu))
+                .with_menu_on_left_click(true);
             #[cfg(target_os = "macos")]
             {
                 builder = builder.with_icon_as_template(true);
-            }
-            #[cfg(target_os = "windows")]
-            {
-                builder = builder.with_menu_on_left_click(false);
             }
             let icon = builder.build().map_err(|error| error.to_string())?;
             let open_id = open.id().clone();
@@ -180,22 +201,6 @@ mod desktop {
                     menu_events.send(Command::Quit);
                 }
             }));
-            #[cfg(target_os = "windows")]
-            {
-                let click = Events(sender);
-                tray_icon::TrayIconEvent::set_event_handler(Some(move |event| {
-                    if matches!(
-                        event,
-                        tray_icon::TrayIconEvent::Click {
-                            button: tray_icon::MouseButton::Left,
-                            button_state: tray_icon::MouseButtonState::Up,
-                            ..
-                        }
-                    ) {
-                        click.send(Command::Open);
-                    }
-                }));
-            }
             Ok(Self { _icon: icon })
         }
     }
