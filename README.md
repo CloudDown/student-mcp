@@ -10,19 +10,11 @@
 
 ### Windows
 
-Download **[student-mcp-setup.exe](https://github.com/CloudDown/student-mcp/releases/latest/download/student-mcp-setup.exe)** → double-click → install and open. Works on x64 and ARM64.
-
-Or install with [install.ps1](tools/packaging/install.ps1) in PowerShell:
-
-```powershell
-irm https://raw.githubusercontent.com/CloudDown/student-mcp/main/tools/packaging/install.ps1 | iex
-```
-
-Both options install the same app and add a Start menu shortcut.
+Download **[student-mcp-setup.exe](https://github.com/CloudDown/student-mcp/releases/latest/download/student-mcp-setup.exe)**.
 
 ### macOS
 
-Download **[student-mcp.dmg](https://github.com/CloudDown/student-mcp/releases/latest/download/student-mcp.dmg)** → open → double-click **Install student-mcp**.
+Download **[student-mcp.dmg](https://github.com/CloudDown/student-mcp/releases/latest/download/student-mcp.dmg)**.
 
 ### Linux
 
