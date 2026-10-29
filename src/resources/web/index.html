@@ -74,20 +74,18 @@ body{background:var(--canvas)}
 .manage-actions .full-button{min-height:3rem;font-weight:600;line-height:1.25;padding:.75rem 1rem}
 .advanced summary{color:var(--subtle);border-radius:.625rem}
 @media(hover:hover) and (pointer:fine){.secondary:hover,.account-head .small-button:hover{background:#f0f5fb}.danger:hover{background:#f6dfe2}.icon-button:hover,.advanced summary:hover{background:var(--hover);color:var(--ink)}}
-/* Account management: choose an account first, then act on it in one place. */
-.account-heading{font-size:.8125rem;font-weight:600;color:var(--subtle);margin:0 0 .625rem .25rem}
-.account-list{background:#fff;border:1px solid var(--border);border-radius:1.25rem;box-shadow:var(--shadow);overflow:hidden}
+/* One card for account selection (when needed), status and actions. */
+.account-choices{border-bottom:1px solid var(--border)}
 .account-row{display:flex;align-items:center;gap:.875rem;width:100%;min-height:4.25rem;text-align:left;background:#fff;border:0;padding:.75rem 1rem}
 .account-row+.account-row{border-top:1px solid var(--border)}
 .account-row.active{background:#f1f7f4}
 .account-row-main{display:flex;flex:1;flex-direction:column;min-width:0;gap:.125rem}
 .account-row-title{font-size:.9375rem;font-weight:600;line-height:1.3;overflow-wrap:anywhere}
-.account-row-detail{font-size:.75rem;color:var(--subtle);line-height:1.35;overflow-wrap:anywhere}
 .account-row .account-mark{display:grid;place-items:center;width:20px;height:20px;flex:none;border-radius:50%;background:#36a36c;color:#fff;font-size:.75rem;line-height:1}
-.account-row.add-account{min-height:3.25rem;color:var(--blue);font-size:.875rem;font-weight:550}
-.account-row.add-account.active{background:#f0f5fb}
+.manage-card .add-account{min-height:3.25rem;padding:.75rem 1.25rem;border-top:1px solid var(--border);color:var(--blue);font-size:.875rem;font-weight:550}
 .account-row.add-account .plus{display:grid;place-items:center;width:20px;height:20px;font-size:1.375rem;font-weight:400;line-height:1}
-.manage-card{margin-top:1rem}
+.manage-status-copy{display:flex;flex-direction:column;min-width:0}
+.manage-account-host{font-size:.75rem;color:var(--subtle);overflow-wrap:anywhere}
 .manage-card .status-row{min-height:4rem}
 .manage-card .manage-actions{display:flex;gap:0;margin:0;border-top:1px solid var(--border)}
 .manage-card .manage-actions button{flex:1;min-width:0;min-height:3.25rem;padding:.75rem .375rem;margin:0;border:0;border-radius:0;background:#fff;font-size:.875rem;font-weight:550;line-height:1.25}
@@ -99,7 +97,7 @@ body{background:var(--canvas)}
 .startup-row{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-top:1.5rem;padding:.75rem 1.25rem;border:1px solid var(--border);border-radius:1.25rem;background:var(--white);box-shadow:var(--shadow);font-size:.9375rem;font-weight:550;cursor:pointer}
 .startup-row .switch{margin:0}
 .startup-row .switch:checked{background:var(--blue);border-color:var(--blue)}
-@media(hover:hover) and (pointer:fine){.account-row:hover:not(.active){background:#f7f7f9}.manage-card .manage-actions .secondary:hover{background:#f0f5fb}.manage-card .manage-actions .danger:hover{background:var(--red-soft)}}
+@media(hover:hover) and (pointer:fine){.account-row:hover:not(.active){background:#f7f7f9}.manage-card .add-account:hover{background:#f0f5fb}.manage-card .manage-actions .secondary:hover{background:#f0f5fb}.manage-card .manage-actions .danger:hover{background:var(--red-soft)}}
 @media(max-width:360px){.manage-card .manage-actions{flex-direction:row}.manage-card .manage-actions button{flex:1}}
 button,input,select,summary{touch-action:manipulation}button{-webkit-tap-highlight-color:transparent}
 :where(button,input,select,summary):focus-visible{outline:3px solid var(--blue);outline-offset:4px}
@@ -112,22 +110,274 @@ button{transition:background 140ms ease-out,transform 140ms ease-out}button:acti
 @media(prefers-contrast:more){:root{--subtle:#38383d;--muted:#484850;--border:#777780}.link-card,.tile{background:#fff;backdrop-filter:none}.tile.connected{border-color:var(--green)}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important;scroll-behavior:auto!important}button:active:not(:disabled){transform:none}}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.app{padding-top:max(6rem,calc(env(safe-area-inset-top) + 5rem))}
+.language-control{position:absolute;top:max(1rem,env(safe-area-inset-top));right:max(1rem,env(safe-area-inset-right));z-index:10}
+.language-control>.icon-button{display:grid;place-items:center;background:#ffffffb3;border:1px solid var(--border);box-shadow:var(--shadow);color:var(--subtle)}
+.language-control svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.language-control>.icon-button[aria-expanded="true"]{background:var(--hover);color:var(--blue)}
+.language-menu{position:absolute;right:0;top:calc(100% + .5rem);width:11rem;padding:.375rem;border:1px solid var(--border);border-radius:1rem;background:#fffffff2;backdrop-filter:blur(20px) saturate(150%);box-shadow:0 8px 32px #20203418}
+.language-menu button{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:44px;padding:.625rem .75rem;border:0;border-radius:.625rem;background:transparent;text-align:left;font-size:.875rem}
+.language-menu button span{visibility:hidden;color:var(--blue)}
+.language-menu button[aria-pressed="true"]{color:var(--blue);font-weight:600;background:#0066cc0d}
+.language-menu button[aria-pressed="true"] span{visibility:visible}
+.service-head .tools-entry{left:auto;right:0;margin:0}
+.tools-entry svg{stroke:currentColor}
+.tools-heading{position:relative;padding-top:4rem;margin-bottom:2rem}
+.tools-heading .back{position:absolute;top:0;left:0}
+.tools-heading h1{font-size:2.125rem}
+.tools-heading .subtitle{margin:.5rem 0 0}
+.tools-list{display:flex;flex-direction:column;gap:.75rem}
+.tool-card{padding:1.25rem;background:var(--white);border:1px solid var(--border);border-radius:1.25rem;box-shadow:var(--shadow)}
+.tool-card h2{font:600 .875rem/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere;margin:0}
+.tool-card p{font-size:.875rem;line-height:1.6;color:var(--subtle);margin:.625rem 0 0;overflow-wrap:anywhere}
+@media(hover:hover){.language-menu button:hover{background:var(--hover)}}
+@media(prefers-reduced-transparency:reduce),(prefers-contrast:more){.language-menu,.language-control>.icon-button{background:#fff;backdrop-filter:none}}
 </style></head>
 <body>
+<div class="language-control">
+ <button id="language-button" class="icon-button" type="button" aria-label="Change language" aria-expanded="false" aria-controls="language-menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h12M9 3v2M5 5c1 5 4 8 8 10M13 5c-1 5-4 8-9 11M14 21l4-10 4 10M15.5 17h5"/></svg></button>
+ <div id="language-menu" class="language-menu" hidden role="group" aria-label="Language">
+  <button type="button" data-language="fr" lang="fr" aria-pressed="false">Français<span aria-hidden="true">✓</span></button>
+  <button type="button" data-language="es" lang="es" aria-pressed="false">Español<span aria-hidden="true">✓</span></button>
+  <button type="button" data-language="en" lang="en" aria-pressed="false">English<span aria-hidden="true">✓</span></button>
+ </div>
+</div>
 <main class="app"><div id="screen" class="screen"></div></main>
 <div id="live" class="sr-only" role="status" aria-live="polite"></div>
 <script>
 const $=id=>document.getElementById(id);let key=location.hash.slice(1)||sessionStorage.getItem('admin');if(key)sessionStorage.setItem('admin',key);history.replaceState(null,'',location.pathname);
+const languages=['fr','es','en'];
+let language='en';
+try{const saved=localStorage.getItem('student-mcp.language');language=languages.includes(saved)?saved:(navigator.language||'en').split('-')[0]}catch{}
+if(!languages.includes(language))language='en';
+// English is the source language; only UI copy is translated, never account data or server diagnostics.
+const translations={
+ 'Change language':['Changer de langue','Cambiar idioma'], 'Language':['Langue','Idioma'],
+ ', selected':[', sélectionné',', seleccionada'],
+ 'MCP tools':['Outils MCP','Herramientas MCP'], 'Back to connection':['Retour à la connexion','Volver a la conexión'],
+ 'Loading tools…':['Chargement des outils…','Cargando herramientas…'],
+ 'Could not load tools.':['Impossible de charger les outils.','No se pudieron cargar las herramientas.'],
+ 'No tools available.':['Aucun outil disponible.','No hay herramientas disponibles.'],
+ 'AI connection':['Connexion IA','Conexión de IA'], 'Launch at startup':['Lancer au démarrage','Iniciar al arrancar'],
+ 'Creating your public link…':['Création de votre lien public…','Creando tu enlace público…'],
+ 'Reconnecting your public link…':['Reconnexion de votre lien public…','Reconectando tu enlace público…'],
+ 'Public link unavailable — click to retry':['Lien public indisponible — réessayer','Enlace público no disponible — reintentar'],
+ 'Public link off — click to enable':['Lien public désactivé — activer','Enlace público desactivado — activar'],
+ 'Connect a service to create your link':['Connectez un service pour créer votre lien','Conecta un servicio para crear tu enlace'],
+ 'Copy link':['Copier le lien','Copiar enlace'], 'Back to services':['Retour aux services','Volver a los servicios'],
+ 'Your Moodle account':['Votre compte Moodle','Tu cuenta de Moodle'],
+ 'Léa / Mio · Read only':['Léa / Mio · Lecture seule','Léa / Mio · Solo lectura'],
+ 'myCourses · Read only':['myCourses · Lecture seule','myCourses · Solo lectura'],
+ 'Accounts':['Comptes','Cuentas'], 'Add account':['Ajouter un compte','Añadir cuenta'],
+ 'Advanced options':['Options avancées','Opciones avanzadas'], 'Moodle address':['Adresse Moodle','Dirección de Moodle'],
+ 'Token':['Jeton','Token'], 'Moodle mobile token':['Jeton mobile Moodle','Token móvil de Moodle'],
+ 'Omnivox MCP address':['Adresse MCP Omnivox','Dirección MCP de Omnivox'], 'Access key':['Clé d’accès','Clave de acceso'],
+ 'Run Beat-YT/omnivox-mcp, log in there, then paste its address and access key.':['Lancez Beat-YT/omnivox-mcp, connectez-vous, puis collez son adresse et sa clé d’accès.','Ejecuta Beat-YT/omnivox-mcp, inicia sesión y pega su dirección y clave de acceso.'],
+ 'OAuth access token':['Jeton d’accès OAuth','Token de acceso OAuth'], 'Without Bearer prefix':['Sans le préfixe Bearer','Sin el prefijo Bearer'],
+ 'Only if your school issued a Valence OAuth token. Leave empty when using the two session cookies above.':['Uniquement si votre établissement a fourni un jeton OAuth Valence. Laissez vide si vous utilisez les deux cookies de session ci-dessus.','Solo si tu institución proporcionó un token OAuth de Valence. Déjalo vacío si usas las dos cookies de sesión anteriores.'],
+ 'DevTools → Application/Storage → Cookies':['Outils de développement → Application/Stockage → Cookies','Herramientas de desarrollo → Aplicación/Almacenamiento → Cookies'],
+ 'OAuth token: Advanced options.':['Jeton OAuth : options avancées.','Token OAuth: opciones avanzadas.'],
+ 'Username':['Nom d’utilisateur','Nombre de usuario'], 'firstname.lastname':['prenom.nom','nombre.apellido'],
+ 'Password':['Mot de passe','Contraseña'], 'Moodle password':['Mot de passe Moodle','Contraseña de Moodle'],
+ 'College address':['Adresse du cégep','Dirección de la institución'], 'Student number':['Numéro étudiant','Número de estudiante'],
+ 'Omnivox password':['Mot de passe Omnivox','Contraseña de Omnivox'], 'Site address':['Adresse du site','Dirección del sitio'],
+ 'Cookie value':['Valeur du cookie','Valor de la cookie'], 'Checking the connection…':['Vérification de la connexion…','Comprobando la conexión…'],
+ 'Connecting…':['Connexion…','Conectando…'], 'Save changes':['Enregistrer','Guardar cambios'],
+ 'Connection failed':['Échec de la connexion','Error de conexión'], 'Checking connection…':['Vérification de la connexion…','Comprobando la conexión…'],
+ 'Connected':['Connecté','Conectado'], 'Retry':['Réessayer','Reintentar'], 'Change login':['Modifier les identifiants','Cambiar credenciales'],
+ 'Disconnect':['Déconnecter','Desconectar'], 'Identity verification':['Vérification d’identité','Verificación de identidad'],
+ 'Security code (6 digits)':['Code de sécurité (6 chiffres)','Código de seguridad (6 dígitos)'],
+ 'Verifying…':['Vérification…','Verificando…'], 'Verify and connect':['Vérifier et connecter','Verificar y conectar'],
+ 'Send a new code':['Envoyer un nouveau code','Enviar un nuevo código'], 'Cancel verification':['Annuler la vérification','Cancelar verificación'],
+ 'LOCAL LINK':['LIEN LOCAL','ENLACE LOCAL'], 'PUBLIC LINK':['LIEN PUBLIC','ENLACE PÚBLICO'],
+ 'Local link active':['Lien local actif','Enlace local activo'], 'Local link off':['Lien local désactivé','Enlace local desactivado'],
+ 'Public link active':['Lien public actif','Enlace público activo'], 'Copy local link':['Copier le lien local','Copiar enlace local'],
+ 'Copy public link':['Copier le lien public','Copiar enlace público'], 'This can take a few seconds.':['Cela peut prendre quelques secondes.','Esto puede tardar unos segundos.'],
+ 'Public link is off. Turn the switch on to restore your stable HTTPS link through srv.us. No account needed.':['Le lien public est désactivé. Activez-le pour rétablir votre lien HTTPS stable via srv.us. Aucun compte requis.','El enlace público está desactivado. Actívalo para restablecer tu enlace HTTPS estable mediante srv.us. No necesitas una cuenta.'],
+ 'Opening your stable HTTPS link through srv.us.':['Ouverture de votre lien HTTPS stable via srv.us.','Abriendo tu enlace HTTPS estable mediante srv.us.'],
+ 'Reconnecting to srv.us. Your saved link stays the same.':['Reconnexion à srv.us. Votre lien enregistré reste identique.','Reconectando a srv.us. Tu enlace guardado sigue siendo el mismo.'],
+ 'The public link was not created. Turn the switch on to try again.':['Le lien public n’a pas été créé. Activez-le pour réessayer.','No se ha creado el enlace público. Actívalo para volver a intentarlo.'],
+ 'No service is connected yet. Turn the switch on to create the HTTPS link anyway.':['Aucun service n’est encore connecté. Activez le lien pour créer quand même le lien HTTPS.','Todavía no hay servicios conectados. Activa el enlace para crear el enlace HTTPS de todos modos.'],
+ 'Copied':['Copié','Copiado'], 'Request failed':['Échec de la requête','Error en la solicitud'],
+ 'No pending verification':['Aucune vérification en cours','No hay ninguna verificación pendiente'],
+ 'Omnivox is not connected anymore.':['Omnivox n’est plus connecté.','Omnivox ya no está conectado.'],
+ 'Brightspace is not connected anymore.':['Brightspace n’est plus connecté.','Brightspace ya no está conectado.'],
+ 'Moodle is not connected anymore.':['Moodle n’est plus connecté.','Moodle ya no está conectado.'],
+ 'Enter the 6-digit security code sent to your Omnivox Mobile app.':['Saisissez le code de sécurité à 6 chiffres envoyé à l’application Omnivox Mobile.','Introduce el código de seguridad de 6 dígitos enviado a la aplicación Omnivox Mobile.'],
+ 'Enter the 6-digit code from your authenticator or security token.':['Saisissez le code à 6 chiffres de votre application d’authentification ou de votre jeton de sécurité.','Introduce el código de 6 dígitos de tu aplicación de autenticación o token de seguridad.'],
+ 'Enter the 6-digit security code provided by your college.':['Saisissez le code de sécurité à 6 chiffres fourni par votre cégep.','Introduce el código de seguridad de 6 dígitos proporcionado por tu institución.'],
+ 'Enter the 6-digit security code from Omnivox.':['Saisissez le code de sécurité Omnivox à 6 chiffres.','Introduce el código de seguridad de Omnivox de 6 dígitos.'],
+ 'Omnivox blocked further code attempts. Wait a few minutes, then sign in again.':['Omnivox a bloqué les nouvelles tentatives. Attendez quelques minutes, puis reconnectez-vous.','Omnivox bloqueó nuevos intentos. Espera unos minutos y vuelve a iniciar sesión.'],
+ 'The security code is invalid or has expired. Try the latest code or request a new one.':['Le code de sécurité est invalide ou expiré. Essayez le plus récent ou demandez-en un nouveau.','El código de seguridad no es válido o ha caducado. Prueba el más reciente o solicita uno nuevo.'],
+ 'A new code cannot be requested for this verification session.':['Impossible de demander un nouveau code pour cette session de vérification.','No se puede solicitar un nuevo código para esta sesión de verificación.'],
+ 'Omnivox has reached its code resend limit. Wait a few minutes before requesting another code.':['La limite de renvoi de codes Omnivox est atteinte. Attendez quelques minutes avant de réessayer.','Se alcanzó el límite de reenvío de códigos de Omnivox. Espera unos minutos antes de intentarlo de nuevo.'],
+ 'Omnivox did not confirm sending a new code. Try again.':['Omnivox n’a pas confirmé l’envoi d’un nouveau code. Réessayez.','Omnivox no confirmó el envío de un nuevo código. Inténtalo de nuevo.'],
+ 'This Omnivox identity verification method is not supported by the app.':['Cette méthode de vérification Omnivox n’est pas prise en charge.','Esta aplicación no admite este método de verificación de Omnivox.'],
+ 'Connection status unavailable. Retrying…':['État de connexion indisponible. Nouvelle tentative…','Estado de conexión no disponible. Reintentando…'],
+ 'Could not copy the link. Open connection settings and select the link to copy it manually.':['Impossible de copier le lien. Ouvrez les réglages de connexion et sélectionnez le lien pour le copier manuellement.','No se pudo copiar el enlace. Abre los ajustes de conexión y selecciona el enlace para copiarlo manualmente.']
+};
+// Localized UI summaries keyed by stable MCP tool name. MCP names and schemas remain untouched.
+// Keep a summary for every tool returned by /tools/{service}; the browser test checks coverage.
+const toolDescriptions={
+ moodle_status:['Vérifie la connexion Moodle et indique le site et le compte associés au jeton.','Comprueba la conexión a Moodle e indica el sitio y la cuenta asociados al token.'],
+ moodle_my_courses:['Liste les cours inscrits avec leurs identifiants, noms et dates. Les cours masqués ou terminés sont exclus sauf si include_hidden est activé.','Enumera los cursos inscritos con identificadores, nombres y fechas. Excluye los cursos ocultos o finalizados salvo que se active include_hidden.'],
+ moodle_search:['Recherche dans les cours et les documents. Utilisez courseid pour limiter à un cours ; le code du cours dans la recherche fonctionne aussi.','Busca en los cursos y materiales. Usa courseid para limitar a un curso; también puedes incluir el código del curso en la búsqueda.'],
+ moodle_course_content:['Affiche les sections, activités et fichiers d’un cours. query filtre les modules ; utilisez fileurl avec moodle_file pour lire un fichier, sans envoyer le jeton à un outil HTTP externe.','Muestra las secciones, actividades y archivos de un curso. query filtra los módulos; usa fileurl con moodle_file para leer un archivo sin enviar el token a una herramienta HTTP externa.'],
+ moodle_resources:['Liste les pages, fichiers, liens, dossiers et livres d’un cours, sans les sections. Pour trouver une semaine ou un document, privilégiez moodle_course_content.','Enumera páginas, archivos, enlaces, carpetas y libros de un curso, sin secciones. Para encontrar una semana o un documento, usa preferentemente moodle_course_content.'],
+ moodle_file:['Lit un document du cours via fileurl. PDF original par défaut, ou texte et images par pages. Extrait également le texte des fichiers Office/OpenDocument ; page_from/page_to choisissent des blocs. Certains graphiques ou équations peuvent manquer : exportez en PDF pour l’analyse visuelle. Utilisez find pour rechercher et nextPageFrom si le résultat est tronqué. Ne transmettez jamais le jeton Moodle à un autre outil.','Lee un documento del curso mediante fileurl. Devuelve el PDF original por defecto, o texto e imágenes por página. También extrae texto de archivos Office/OpenDocument; page_from/page_to seleccionan bloques. Pueden faltar gráficos o ecuaciones: exporta a PDF para el análisis visual. Usa find para buscar y nextPageFrom si el resultado está truncado. Nunca envíes el token de Moodle a otra herramienta.'],
+ moodle_assignments:['Liste les devoirs visibles, avec filtre facultatif par identifiants de cours.','Enumera las tareas visibles, con un filtro opcional por identificadores de curso.'],
+ moodle_assignment_status:['Affiche l’état du rendu et de la notation d’un devoir, ainsi que les fichiers déposés.','Muestra el estado de entrega y calificación de una tarea, incluidos los archivos enviados.'],
+ moodle_quizzes:['Liste les quiz visibles, avec filtre facultatif par identifiants de cours.','Enumera los cuestionarios visibles, con un filtro opcional por identificadores de curso.'],
+ moodle_quiz_status:['Affiche les tentatives, la meilleure note et les conditions d’accès d’un quiz.','Muestra los intentos, la mejor nota y las condiciones de acceso de un cuestionario.'],
+ moodle_grades:['Affiche les notes utiles à l’étudiant : cours notés sans courseid, ou éléments et notes d’un cours avec courseid.','Muestra las calificaciones relevantes: cursos con notas sin courseid, o elementos y notas de un curso con courseid.'],
+ moodle_calendar:['Affiche le calendrier Moodle à venir, avec filtre facultatif par cours.','Muestra el calendario de Moodle próximo, con un filtro opcional por curso.'],
+ moodle_deadlines:['Rassemble les échéances à venir des devoirs, quiz et événements Moodle, triées par date.','Reúne las próximas fechas límite de tareas, cuestionarios y eventos de Moodle, ordenadas por fecha.'],
+ moodle_announcements:['Affiche les annonces récentes des cours, en texte brut, des plus récentes aux plus anciennes.','Muestra los anuncios recientes de los cursos en texto plano, del más reciente al más antiguo.'],
+ moodle_forums:['Liste les forums des cours, y compris les annonces et les discussions.','Enumera los foros de los cursos, incluidos los de anuncios y debate.'],
+ moodle_forum_discussions:['Liste les discussions récentes d’un forum.','Enumera los debates recientes de un foro.'],
+ moodle_forum_posts:['Lit les messages d’une discussion à l’aide de discussionid.','Lee las publicaciones de un debate mediante discussionid.'],
+ moodle_notifications:['Affiche le nombre de notifications non lues et les notifications Moodle récentes.','Muestra el número de notificaciones sin leer y las notificaciones recientes de Moodle.'],
+ moodle_messages:['Affiche les conversations privées et le nombre de messages non lus.','Muestra las conversaciones privadas y el número de mensajes sin leer.'],
+ moodle_conversation_messages:['Lit les messages d’une conversation privée.','Lee los mensajes de una conversación privada.'],
+ moodle_completion:['Affiche l’état d’achèvement des activités d’un cours.','Muestra el estado de finalización de las actividades de un curso.'],
+ ws_discover:['Recherche les fonctions Web Service Moodle accessibles au jeton, avec leur description et leur type d’accès.','Busca las funciones de servicio web de Moodle accesibles para el token, con su descripción y tipo de acceso.'],
+ ws_schema:['Affiche les paramètres et le type lecture/écriture d’une fonction du catalogue Moodle. Ne prouve pas que le jeton peut l’appeler : vérifiez avec ws_discover ou site_info.','Muestra los parámetros y el tipo de lectura/escritura de una función del catálogo de Moodle. No demuestra que el token pueda usarla: compruébalo con ws_discover o site_info.'],
+ ws_call:['Appelle une fonction Web Service Moodle par son nom exact. Privilégiez les outils moodle_*, puis cherchez avec ws_discover. Peut modifier les données scolaires : demandez confirmation avant toute écriture. Moodle applique aussi les permissions du jeton.','Llama a una función de servicio web de Moodle por su nombre exacto. Usa primero las herramientas moodle_* y busca con ws_discover. Puede modificar datos académicos: pide confirmación antes de escribir. Moodle también aplica los permisos del token.'],
+ moodle_recent_grades:['Dernières notes d’évaluations datées des cours actuels, par ordre chronologique inverse. Exclut les notes sans date et indique les erreurs par cours ; les dates correspondent à la correction, pas à la publication.','Últimas calificaciones de evaluaciones con fecha en cursos actuales, de la más reciente a la más antigua. Excluye notas sin fecha e indica errores por curso; las fechas son de corrección, no de publicación.'],
+ moodle_course_updates:['Modifications des activités d’un cours depuis un horodatage Unix : fichiers, réglages, notes et forums signalés par Moodle. Ne constitue pas un journal complet.','Cambios en las actividades de un curso desde una marca de tiempo Unix: archivos, ajustes, notas y foros registrados por Moodle. No es un registro completo.'],
+ omnivox_status:['Vérifie le compte Omnivox / Léa connecté.','Comprueba la cuenta conectada de Omnivox / Léa.'],
+ omnivox_my_courses:['Liste les cours Omnivox / Léa du trimestre actuel. Les valeurs course_id sont des chaînes, pas des nombres.','Enumera los cursos de Omnivox / Léa del período actual. Los valores de course_id son cadenas, no números.'],
+ omnivox_schedule:['Affiche l’horaire hebdomadaire statique de l’étudiant.','Muestra el horario semanal estático del estudiante.'],
+ omnivox_course_documents:['Liste les métadonnées des documents Léa d’un cours. La lecture de fichiers omnivox_file n’est pas encore disponible.','Enumera los metadatos de los documentos de Léa de un curso. La lectura de archivos omnivox_file aún no está disponible.'],
+ omnivox_assignments:['Liste les devoirs Omnivox. Sans course_id, résume tous les cours.','Enumera las tareas de Omnivox. Sin course_id, resume todos los cursos.'],
+ omnivox_grades:['Affiche les notes Omnivox. Sans course_id, résume tous les cours.','Muestra las notas de Omnivox. Sin course_id, resume todos los cursos.'],
+ omnivox_calendar:['Affiche les congés et échéances publiées dans le calendrier du cégep. Une plage de dates n’est possible que via la passerelle MCP ; aucune agrégation omnivox_deadlines n’existe encore.','Muestra festivos y fechas límite publicadas en el calendario de la institución. El intervalo de fechas solo está disponible mediante la pasarela MCP; aún no existe un agregador omnivox_deadlines.'],
+ brightspace_status:['Vérifie le compte Brightspace / myCourses connecté.','Comprueba la cuenta conectada de Brightspace / myCourses.'],
+ brightspace_my_courses:['Liste une page des cours Brightspace de l’étudiant. Utilisez PagingInfo.Bookmark si HasMoreItems est vrai.','Enumera una página de cursos de Brightspace del estudiante. Usa PagingInfo.Bookmark si HasMoreItems es verdadero.'],
+ brightspace_course_content:['Affiche la table des matières et les ressources d’un cours. Utilisez l’Id d’un sujet fichier (pas celui d’un module) comme topicid dans brightspace_file.','Muestra el índice y los recursos de un curso. Usa el Id de un tema de archivo (no el de un módulo) como topicid en brightspace_file.'],
+ brightspace_file:['Lit un sujet fichier avec courseid et topicid. PDF original par défaut, ou texte et images par pages. Pour Office/OpenDocument, page_from/page_to choisissent des blocs de texte, tableaux et diapositives ; doc/ppt nécessitent antiword/catppt. Des images ou équations peuvent manquer : exportez en PDF. Suivez nextPageFrom si le résultat est tronqué. Les liens externes ne sont pas téléchargés ; cookies et jetons restent privés.','Lee un tema de archivo con courseid y topicid. Devuelve el PDF original por defecto, o texto e imágenes por página. Para Office/OpenDocument, page_from/page_to seleccionan bloques de texto, tablas y diapositivas; doc/ppt requieren antiword/catppt. Pueden faltar imágenes o ecuaciones: exporta a PDF. Sigue nextPageFrom si el resultado está truncado. No descarga enlaces externos; cookies y tokens siguen siendo privados.'],
+ brightspace_grades:['Affiche les notes visibles de l’étudiant dans un cours Brightspace.','Muestra las notas visibles del estudiante en un curso de Brightspace.'],
+ brightspace_assignments:['Liste les dossiers de remise des devoirs d’un cours, avec leurs dates d’échéance. Pour une vue globale, utilisez brightspace_deadlines.','Enumera las carpetas de entrega de tareas de un curso con sus fechas límite. Para una vista general, usa brightspace_deadlines.'],
+ brightspace_assignment_status:['Affiche un dossier de remise, les travaux déposés et les commentaires reçus.','Muestra una carpeta de entrega, los trabajos enviados y los comentarios recibidos.'],
+ brightspace_assignment_submit:['Dépose un fichier dans un dossier de devoir. Fournissez courseid et folderid, puis exactement une source : path (fichier local sur l’hôte student-mcp), content_base64 avec filename, ou text. comment est facultatif. Confirmez avec l’utilisateur avant tout dépôt : cette action est irréversible pour le cours. Maximum 12 Mo.','Entrega un archivo en una carpeta de tareas. Indica courseid y folderid, y exactamente una fuente: path (archivo local en el equipo student-mcp), content_base64 con filename, o text. comment es opcional. Confirma con el usuario antes de entregar: esta acción es irreversible para el curso. Máximo 12 MB.'],
+ brightspace_quizzes:['Liste les quiz d’un cours, avec leurs dates d’échéance, d’ouverture et de clôture.','Enumera los cuestionarios de un curso con sus fechas de vencimiento, inicio y cierre.'],
+ brightspace_quiz_status:['Affiche la définition d’un quiz et les tentatives de l’étudiant si disponibles.','Muestra la definición de un cuestionario y los intentos del estudiante, si están disponibles.'],
+ brightspace_calendar:['Affiche les événements du calendrier à venir. courseid filtre un cours ; days vaut 60 par défaut.','Muestra los próximos eventos del calendario. courseid filtra un curso; days vale 60 por defecto.'],
+ brightspace_deadlines:['Affiche les prochaines échéances des devoirs, quiz et événements, triées par date.','Muestra las próximas fechas límite de tareas, cuestionarios y eventos, ordenadas por fecha.'],
+ brightspace_news:['Liste les annonces d’un cours Brightspace.','Enumera los anuncios de un curso de Brightspace.'],
+ brightspace_api_versions:['Affiche les versions de l’API prises en charge par l’établissement, sans garantir les permissions du compte.','Muestra las versiones de la API compatibles con la institución, sin garantizar los permisos de la cuenta.'],
+ brightspace_discussion_forums:['Liste les forums de discussion visibles d’un cours.','Enumera los foros de debate visibles de un curso.'],
+ brightspace_discussion_topics:['Liste les sujets visibles d’un forum.','Enumera los temas visibles de un foro.'],
+ brightspace_discussion_posts:['Lit une page de messages d’un sujet. pageNumber commence à 1 ; pageSize vaut 50 par défaut (100 maximum). Parcourez les pages suivantes jusqu’à ce qu’elles soient vides.','Lee una página de publicaciones de un tema. pageNumber empieza en 1; pageSize vale 50 por defecto (máximo 100). Recorre las siguientes páginas hasta que estén vacías.'],
+ brightspace_discussion_post:['Lit un message de discussion.','Lee una publicación de un debate.'],
+ brightspace_discussion_post_create:['Publie un nouveau fil ou une réponse (parentpostid). Texte brut uniquement, sans pièces jointes ni messages anonymes ; les sujets de groupe ne sont pas pris en charge. Écriture autorisée requise : demandez confirmation avant de publier.','Publica un nuevo hilo o una respuesta (parentpostid). Solo texto plano, sin adjuntos ni publicaciones anónimas; no admite temas de grupo. Requiere permiso de escritura: pide confirmación antes de publicar.'],
+ brightspace_discussion_post_delete:['Supprime un message si le compte y est autorisé. Action destructive : ne réessayez pas automatiquement ; demandez confirmation.','Elimina una publicación si la cuenta tiene permiso. Acción destructiva: no vuelvas a intentarlo automáticamente; pide confirmación.'],
+ brightspace_discussion_read_status:['Marque un message de discussion comme lu ou non lu (écriture).','Marca una publicación de debate como leída o no leída (escritura).'],
+ brightspace_content_due:['Affiche une page de contenus prévus encore à faire, hors exemptions. Utilisez Next/bookmark pour les pages suivantes.','Muestra una página de contenidos programados aún pendientes, sin exenciones. Usa Next/bookmark para las páginas siguientes.'],
+ brightspace_content_recent:['Liste les sujets de cours récemment consultés.','Enumera los temas del curso visitados recientemente.'],
+ brightspace_content_bookmarks:['Lit les sujets enregistrés en favoris ; ne crée pas de favoris.','Lee los temas guardados como marcadores; no crea marcadores.'],
+ brightspace_content_completion:['Affiche le total des contenus terminés et requis de l’étudiant.','Muestra el total de contenidos completados y obligatorios del estudiante.'],
+ brightspace_course_overview:['Affiche la présentation du cours et les métadonnées de ses pièces jointes.','Muestra el resumen del curso y los metadatos de sus archivos adjuntos.'],
+ brightspace_content_topic:['Affiche les détails d’un sujet de contenu.','Muestra los detalles de un tema de contenido.'],
+ brightspace_search:['Recherche les titres et URL dans la table des matières accessible d’un cours. Ne recherche ni le texte intégral des PDF ni tous les cours.','Busca títulos y URL en el índice accesible de un curso. No busca en el texto completo de los PDF ni en todos los cursos.'],
+ brightspace_grade_final:['Affiche la note finale calculée de l’étudiant, si l’établissement l’a publiée.','Muestra la nota final calculada del estudiante, si la institución la ha publicado.'],
+ brightspace_grade_value:['Affiche la note d’un élément et les commentaires visibles.','Muestra la nota de un elemento y los comentarios visibles.'],
+ brightspace_grade_categories:['Liste les catégories de notes visibles, selon les permissions du compte.','Enumera las categorías de notas visibles, según los permisos de la cuenta.'],
+ brightspace_course_updates:['Affiche les compteurs de nouveautés d’un cours, pas les courriels privés.','Muestra los contadores de novedades de un curso, no los correos privados.'],
+ brightspace_alerts:['Affiche une page des alertes de l’utilisateur, avec pagination. Ne comprend pas les courriels privés.','Muestra una página de alertas del usuario, con paginación. No incluye correos privados.'],
+ brightspace_my_groups:['Affiche une page des groupes de l’étudiant. Nécessite LP 1.64.','Muestra una página de los grupos del estudiante. Requiere LP 1.64.'],
+ brightspace_groups_available:['Affiche une page des groupes ouverts à l’inscription. Nécessite LP 1.64 ; n’inscrit pas l’étudiant.','Muestra una página de grupos disponibles para inscribirse. Requiere LP 1.64; no inscribe al estudiante.'],
+ brightspace_group_categories:['Liste les catégories de groupes visibles d’un cours.','Enumera las categorías de grupos visibles de un curso.'],
+ brightspace_category_groups:['Liste les groupes visibles d’une catégorie et leurs inscriptions, si autorisées.','Enumera los grupos visibles de una categoría y sus inscripciones, si están permitidas.'],
+ brightspace_group_join:['Inscrit uniquement l’étudiant connecté à un groupe, si ses permissions le permettent. L’accès peut être refusé même si le groupe est visible.','Inscribe solo al estudiante conectado en un grupo, si sus permisos lo permiten. Puede denegarse el acceso aunque el grupo sea visible.'],
+ brightspace_group_leave:['Retire uniquement l’inscription de l’étudiant connecté à un groupe, si autorisé (écriture).','Elimina solo la inscripción del estudiante conectado en un grupo, si está permitido (escritura).'],
+ brightspace_my_sections:['Liste les sections du cours auxquelles l’étudiant appartient.','Enumera las secciones del curso a las que pertenece el estudiante.'],
+ brightspace_classlist:['Affiche les participants visibles d’un cours, sous réserve des règles de confidentialité de l’établissement.','Muestra los participantes visibles de un curso, según las reglas de privacidad de la institución.'],
+ brightspace_checklists:['Liste les listes de contrôle d’un cours, sans l’état de validation de l’étudiant.','Enumera las listas de verificación de un curso, sin el estado de progreso del estudiante.'],
+ brightspace_checklist_items:['Liste les éléments d’une liste de contrôle ; ne les marque pas comme terminés.','Enumera los elementos de una lista de verificación; no los marca como completados.'],
+ brightspace_surveys:['Liste les sondages visibles, sans y répondre ni les soumettre.','Enumera las encuestas visibles, sin responderlas ni enviarlas.'],
+ brightspace_news_item:['Lit une annonce complète et les métadonnées de ses pièces jointes.','Lee un anuncio completo y los metadatos de sus archivos adjuntos.'],
+ brightspace_news_dismiss:['Masque une annonce pour l’étudiant connecté (écriture).','Oculta un anuncio para el estudiante conectado (escritura).'],
+ brightspace_news_restore:['Réaffiche une annonce masquée ; ne restaure pas une annonce supprimée du cours.','Vuelve a mostrar un anuncio oculto; no restaura un anuncio eliminado del curso.'],
+ brightspace_course_pin:['Épingle un cours parmi les inscriptions de l’étudiant (écriture).','Fija un curso entre las inscripciones del estudiante (escritura).'],
+ brightspace_course_unpin:['Désépingle un cours parmi les inscriptions de l’étudiant (écriture).','Desfija un curso de las inscripciones del estudiante (escritura).'],
+ brightspace_my_profile:['Affiche le profil personnel de l’étudiant, sans ses identifiants de connexion.','Muestra el perfil personal del estudiante, sin sus credenciales de acceso.'],
+ brightspace_my_locale:['Affiche les préférences de langue et de région du compte.','Muestra las preferencias de idioma y región de la cuenta.'],
+ brightspace_notification_channels:['Liste les canaux disponibles pour recevoir des notifications.','Enumera los canales disponibles para recibir notificaciones.'],
+ brightspace_notification_subscriptions:['Liste les abonnements de l’étudiant pour un canal de notification.','Enumera las suscripciones del estudiante para un canal de notificaciones.'],
+ brightspace_notification_subscribe:['Abonne le compte connecté à un type de message sur un canal de notification (écriture).','Suscribe la cuenta conectada a un tipo de mensaje en un canal de notificaciones (escritura).'],
+ brightspace_notification_unsubscribe:['Désabonne le compte connecté d’un type de message sur un canal de notification (écriture).','Cancela la suscripción de la cuenta conectada a un tipo de mensaje en un canal de notificaciones (escritura).']
+};
+function t(text){
+ if(language==='en')return text;
+ const index=language==='fr'?0:1;
+ if(translations[text])return translations[text][index];
+ const connect=text.match(/^Connect to (Moodle|Omnivox|Brightspace)$/);
+ if(connect)return (index===0?'Se connecter à ':'Conectar con ')+connect[1];
+ const service=text.match(/^(Moodle|Omnivox|Brightspace) (manage connection|connect)$/);
+ if(service)return service[1]+' — '+(service[2]==='connect'?['Se connecter','Conectar'][index]:['Gérer la connexion','Gestionar conexión'][index]);
+ const help=text.match(/^(Hide|Show)( help for)? (.+)$/);
+ if(help)return (help[1]==='Hide'?['Masquer','Ocultar'][index]:['Afficher','Mostrar'][index])+(help[2]?[' l’aide pour ',' ayuda para '][index]:' ')+t(help[3]);
+ const emailPrompt=text.match(/^Enter the 6-digit security code sent by email(?: to (.+))?\.$/);
+ if(emailPrompt)return (index===0?'Saisissez le code de sécurité à 6 chiffres envoyé par courriel':'Introduce el código de seguridad de 6 dígitos enviado por correo')+(emailPrompt[1]?(index===0?' à ':' a ')+emailPrompt[1]:'')+'.';
+ return text;
+}
+function localize(screen){
+ const walker=document.createTreeWalker(screen,NodeFilter.SHOW_TEXT);
+ while(walker.nextNode()){
+  const node=walker.currentNode;
+  if(node.parentElement.closest('.account-row-title,.link-detail,.notice,.hint,[data-server-text]'))continue;
+  const text=node.textContent.trim();
+  if(text)node.textContent=node.textContent.replace(text,t(text));
+ }
+ for(const el of screen.querySelectorAll('[aria-label],[placeholder]'))for(const attr of ['aria-label','placeholder']){
+  if(el.hasAttribute(attr)&&!el.hasAttribute('data-account'))el.setAttribute(attr,t(el.getAttribute(attr)));
+ }
+}
+function updateLanguageControl(){
+ document.documentElement.lang=language;
+ $('language-button').setAttribute('aria-label',t('Change language'));
+ $('language-menu').setAttribute('aria-label',t('Language'));
+ for(const button of document.querySelectorAll('[data-language]'))button.setAttribute('aria-pressed',String(button.dataset.language===language));
+}
+function closeLanguages(restoreFocus=false){$('language-menu').hidden=true;$('language-button').setAttribute('aria-expanded','false');if(restoreFocus)$('language-button').focus()}
+document.addEventListener('click',e=>{
+ const choice=e.target.closest('[data-language]');
+ if(choice){language=choice.dataset.language;try{localStorage.setItem('student-mcp.language',language)}catch{}updateLanguageControl();render();closeLanguages(true);return}
+ if(e.target.closest('#language-button')){const open=$('language-menu').hidden;$('language-menu').hidden=!open;$('language-button').setAttribute('aria-expanded',String(open));if(open)$('language-menu').querySelector('[aria-pressed="true"]').focus();return}
+ if(!e.target.closest('.language-control'))closeLanguages();
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('language-menu').hidden){e.preventDefault();closeLanguages(true)}});
+document.addEventListener('focusin',e=>{if(!e.target.closest('.language-control'))closeLanguages()});
+updateLanguageControl();
 const state={screen:'home',service:'',accountId:'',editing:false,accounts:[],draft:{},visible:{},help:{},tunnel:'Idle',link:'',localLink:'',public:false,local:true,autostart:false,notice:null,busy:false,verification:null,advanced:false,useToken:false,otherSchool:false,copied:false,health:null};
+const toolCatalogs={};
+async function loadTools(service){
+ if(toolCatalogs[service]?.loading||toolCatalogs[service]?.tools)return;
+ toolCatalogs[service]={loading:true};render();
+ try{const result=await api('/tools/'+encodeURIComponent(service));toolCatalogs[service]={tools:result.tools}}
+ catch{toolCatalogs[service]={error:true}}
+ if(state.screen==='tools'&&state.service===service)render();
+}
+function toolsScreen(){
+ const catalog=toolCatalogs[state.service];
+ const content=catalog?.error?`<div class="notice error" role="alert">${t('Could not load tools.')}</div><button class="full-button secondary" data-tools-retry>Retry</button>`:!catalog?.tools?'<p class="busy" role="status">Loading tools…</p>':catalog.tools.length?`<div class="tools-list">${catalog.tools.map(tool=>{
+  const translated=language!=='en'&&toolDescriptions[tool.name]?.[language==='fr'?0:1];
+  return `<article class="tool-card"><h2>${esc(tool.name)}</h2><p lang="${translated?language:'en'}" data-server-text>${esc(translated||tool.description)}</p></article>`
+ }).join('')}</div>`:'<p class="subtitle">No tools available.</p>';
+ return `<section><header class="tools-heading"><button class="back" data-screen="service" aria-label="Back to connection">${icon('back')}</button><h1>MCP tools</h1><p class="subtitle">${names[state.service]}${catalog?.tools?' · '+catalog.tools.length:''}</p></header>${content}</section>`;
+}
 async function api(path,data){const response=await fetch(path,{method:data?'POST':'GET',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:data?JSON.stringify(data):undefined});const value=await response.json();if(!response.ok)throw Error(value.error||'Request failed');return value;}
 const names={moodle:'Moodle',omnivox:'Omnivox',brightspace:'Brightspace'};const subtitles={moodle:'Polytechnique Montréal',omnivox:'Léa / Mio · Read only',brightspace:'myCourses · Read only'};
 function selected(){return state.accounts.find(a=>a.service===state.service&&a.id===state.accountId)}
-function notice(){return state.notice?.error?`<div class="notice error" role="alert">${esc(state.notice.text)}</div>`:''}
+function messageLang(text){return t(text)===text?'en':language}
+function notice(){return state.notice?.error?`<div class="notice error" role="alert" lang="${messageLang(state.notice.text)}">${esc(t(state.notice.text))}</div>`:''}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function icon(name){const paths={copy:'<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 5V4a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h1"/>',check:'<path d="m5 12 4 4L19 6"/>',back:'<path d="m12 5-7 7 7 7M5 12h14"/>',refresh:'<path d="M19 8a8 8 0 1 0 1 7M19 3v5h-5"/>'};return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name]||paths.back}</svg>`}
 function home(){const tiles=['moodle','omnivox','brightspace'].map(s=>{const connected=state.accounts.some(a=>a.service===s);return `<button class="tile ${connected?'connected':''}" data-open="${s}" aria-label="${names[s]} ${connected?'manage connection':'connect'}"><img src="/assets/${s}.png" alt=""><span>${names[s]}</span>${connected?'<i class="dot"></i>':''}</button>`}).join('');const ready=state.tunnel.startsWith('Ready(');let value=ready?state.link:state.tunnel.startsWith('Starting')?'Creating your public link…':state.tunnel.startsWith('Reconnecting')?'Reconnecting your public link…':state.tunnel.startsWith('Failed')?'Public link unavailable — click to retry':state.tunnel==='Stopped'?'Public link off — click to enable':'Connect a service to create your link';return `<section class="home"><div class="tiles">${tiles}</div><div class="link-card"><button class="link-open" data-screen="links"><span class="link-title">AI connection</span><span class="link-value">${esc(value)}</span></button><button class="icon-button copy-home" data-copy="home" aria-label="Copy link" ${ready?'':'disabled'}>${icon('copy')}</button></div><label class="startup-row">Launch at startup<input class="switch" type="checkbox" name="autostart" ${state.autostart?'checked':''} ${state.busy?'disabled':''}></label>${notice()}</section>`}
-function header(service){return `<header class="service-head"><button class="back" data-screen="home" aria-label="Back to services">${icon('back')}</button><div class="logo-frame"><img src="/assets/${service}.png" alt=""></div><h1>${names[service]}</h1><div class="subtitle">${service==='moodle'&&state.otherSchool?'Your Moodle account':subtitles[service]}</div></header>`}
-function accountPicker(){const accounts=state.accounts.filter(a=>a.service===state.service);if(!accounts.length||state.verification||state.editing)return '';return `<div class="account-heading">Accounts</div><div class="account-list">${accounts.map(a=>{const active=a.id===state.accountId;let host;try{host=new URL(a.url).host}catch{host=a.url||names[state.service]}return `<button class="account-row ${active?'active':''}" data-account="${esc(a.id)}" aria-current="${active?'true':'false'}" aria-label="${esc(host)}${active?', selected':''}"><span class="account-row-main"><span class="account-row-title">${esc(host)}</span></span>${active?'<span class="account-mark" aria-hidden="true">✓</span>':''}</button>`}).join('')}<button class="account-row add-account ${selected()?'':'active'}" data-add><span class="plus" aria-hidden="true">+</span><span>Add account</span></button></div>`}
+function header(service){return `<header class="service-head"><button class="back" data-screen="home" aria-label="Back to services">${icon('back')}</button><button class="back tools-entry" data-tools aria-label="${t('MCP tools')}" title="${t('MCP tools')}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6a5 5 0 0 0-6 6l-5 5a2.1 2.1 0 0 0 3 3l5-5a5 5 0 0 0 6-6l-3 3-3-3 3-3Z"/></svg></button><div class="logo-frame"><img src="/assets/${service}.png" alt=""></div><h1>${names[service]}</h1><div class="subtitle">${service==='moodle'&&state.otherSchool?'Your Moodle account':subtitles[service]}</div></header>`}
+function accountHost(account){try{return new URL(account.url).host}catch{return account.url||names[state.service]}}
+function accountChoices(){const accounts=state.accounts.filter(a=>a.service===state.service);if(accounts.length<2)return '';return `<div class="account-choices" role="group" aria-label="${t('Accounts')}">${accounts.map(a=>{const active=a.id===state.accountId,host=accountHost(a);return `<button class="account-row ${active?'active':''}" data-account="${esc(a.id)}" aria-current="${active?'true':'false'}" aria-label="${esc(host+(active?t(', selected'):''))}"><span class="account-row-main"><span class="account-row-title">${esc(host)}</span></span>${active?'<span class="account-mark" aria-hidden="true">✓</span>':''}</button>`}).join('')}</div>`}
 function input(name,label,placeholder,type='text',value='',autofill='',help=''){value=state.draft[name]??value;const secret=type==='password';const open=!!state.help[name];
 const helpBtn=help?`<button type="button" class="icon-button help" data-help="${name}" aria-label="${open?'Hide':'Show'} help for ${label}" aria-expanded="${open?'true':'false'}" aria-controls="help-${name}">⋯</button>`:'';
 const eyeBtn=secret?`<button type="button" class="icon-button eye" data-eye="${name}" aria-label="${state.visible[name]?'Hide':'Show'} ${label}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/><path class="eye-slash" d="M4 4 20 20" ${state.visible[name]?'hidden':''}/></svg></button>`:'';
@@ -138,16 +388,20 @@ function advancedFields(){const a=selected();if(state.service==='moodle')return 
 if(state.service==='omnivox')return input('gateway_url','Omnivox MCP address','http://127.0.0.1:3000','url')+input('token','Access key','accessKey.txt','password','','off')+'<p class="footnote">Run Beat-YT/omnivox-mcp, log in there, then paste its address and access key.</p>';
 if(state.service==='brightspace')return input('token','OAuth access token','Without Bearer prefix','password','','off')+'<p class="footnote">Only if your school issued a Valence OAuth token. Leave empty when using the two session cookies above.</p>';
 return ''}
-function brightspaceCookieHelp(){return `Sign in on the site, then paste cookie <strong>values</strong> only:<ol><li>DevTools → Application/Storage → Cookies</li><li><code>d2lSessionVal</code> → first field</li><li><code>d2lSecureSessionVal</code> → second field</li></ol>OAuth token: Advanced options.`}
+function brightspaceCookieHelp(){
+ const intro={fr:'Connectez-vous au site, puis collez uniquement les <strong>valeurs des cookies</strong> :',es:'Inicia sesión en el sitio y pega solo los <strong>valores de las cookies</strong>:',en:'Sign in on the site, then paste cookie <strong>values</strong> only:'};
+ const first={fr:'premier champ',es:'primer campo',en:'first field'},second={fr:'deuxième champ',es:'segundo campo',en:'second field'};
+ return `${intro[language]}<ol><li>${t('DevTools → Application/Storage → Cookies')}</li><li><code>d2lSessionVal</code> → ${first[language]}</li><li><code>d2lSecureSessionVal</code> → ${second[language]}</li></ol>${t('OAuth token: Advanced options.')}`;
+}
 function brightspaceReady(v,a){const url=!!(v.url||a?.url);if(v.token&&!v.d2l_session&&!v.d2l_secure)return url;return url&&!!v.d2l_session&&!!v.d2l_secure}
 function loginScreenContent(){const a=selected(),s=state.service;let fields='',ready=false;if(s==='moodle'){fields=input('username','Username','firstname.lastname','text','','username')+input('password','Password','Moodle password','password','','current-password');ready=!!state.draft.token||!!state.draft.username&&!!state.draft.password}
 if(s==='omnivox'){fields=input('url','College address','https://cegepxxx.omnivox.ca','url',a?.url||'')+input('username','Student number','0000000','text','','username')+input('password','Password','Omnivox password','password','','current-password');ready=state.draft.token?!!state.draft.gateway_url:!!(state.draft.url||a?.url)&&!!state.draft.username&&!!state.draft.password}
 if(s==='brightspace'){fields=input('url','Site address','https://mycourses2.mcgill.ca','url',a?.url||'')+input('d2l_session','d2lSessionVal','Cookie value','password','','off',brightspaceCookieHelp())+input('d2l_secure','d2lSecureSessionVal','Cookie value','password','','off');ready=brightspaceReady(state.draft,a)}
 return `<form id="connect-form">${fields}${advanced()}${notice()}${state.busy?'<p class="busy">Checking the connection…</p>':''}<button class="full-button primary" ${!ready||state.busy?'disabled':''}>${state.busy?'Connecting…':a?'Save changes':`Connect to ${names[s]}`}</button></form>`}
-function connectionSummary(){if(state.health?.error)return 'Connection failed';if(!state.health)return 'Checking connection…';const text=state.health.text;if(state.service==='moodle'){const user=text.match(/signed in as ([^(]+?)(?:\s*\(Moodle|\.$)/i)?.[1]?.trim();return user?`Connected · ${user}`:'Connected'}return state.service==='omnivox'?'Connected':state.service==='brightspace'?'Connected':esc(text)}
-function manageScreenContent(){return `<div class="card manage-card"><div class="status-row"><span class="manage-status"><i class="status-dot ${state.health?.error?'offline':''}"></i><span class="manage-status-text">${esc(connectionSummary())}</span></span><button class="icon-button" data-action="check" aria-label="Retry">${icon('refresh')}</button></div>${state.health?.error?`<p class="hint">${esc(state.health.text)}</p>`:''}<div class="manage-actions"><button class="secondary" data-action="edit">Change login</button><button class="danger" data-action="disconnect">Disconnect</button></div></div>${notice()}`}
-function serviceScreen(){const a=selected();return `${header(state.service)}<section class="form-screen">${accountPicker()}${state.verification?verifyScreenContent():a&&!state.editing?manageScreenContent():loginScreenContent()}</section>`}
-function verifyScreenContent(){return `<h2>Identity verification</h2><p class="subtitle">${esc(state.verification)}</p><form id="verify-form">${input('code','Security code (6 digits)','000000','text','','one-time-code')}${notice()}<button class="full-button primary" ${state.busy?'disabled':''}>${state.busy?'Verifying…':'Verify and connect'}</button></form><button class="full-button secondary" data-action="resend" ${state.busy?'disabled':''}>Send a new code</button><button class="full-button secondary" data-action="cancel" ${state.busy?'disabled':''}>Cancel verification</button>`}
+function connectionSummary(){if(state.health?.error)return t('Connection failed');if(!state.health)return t('Checking connection…');const text=state.health.text;if(state.service==='moodle'){const user=text.match(/signed in as ([^(]+?)(?:\s*\(Moodle|\.$)/i)?.[1]?.trim();return user?`${t('Connected')} · ${user}`:t('Connected')}return state.service==='omnivox'?t('Connected'):state.service==='brightspace'?t('Connected'):text}
+function manageScreenContent(){return `<div class="card manage-card">${accountChoices()}<div class="status-row"><span class="manage-status"><i class="status-dot ${state.health?.error?'offline':''}"></i><span class="manage-status-copy"><span class="manage-status-text">${esc(connectionSummary())}</span><span class="manage-account-host">${esc(accountHost(selected()))}</span></span></span><button class="icon-button" data-action="check" aria-label="Retry">${icon('refresh')}</button></div>${state.health?.error?`<p class="hint" lang="${messageLang(state.health.text)}">${esc(t(state.health.text))}</p>`:''}<button class="account-row add-account" data-add><span class="plus" aria-hidden="true">+</span><span>Add account</span></button><div class="manage-actions"><button class="secondary" data-action="edit">Change login</button><button class="danger" data-action="disconnect">Disconnect</button></div></div>${notice()}`}
+function serviceScreen(){const a=selected();return `${header(state.service)}<section class="form-screen">${state.verification?verifyScreenContent():a&&!state.editing?manageScreenContent():loginScreenContent()}</section>`}
+function verifyScreenContent(){return `<h2>Identity verification</h2><p class="subtitle" data-server-text lang="${messageLang(state.verification)}">${esc(t(state.verification))}</p><form id="verify-form">${input('code','Security code (6 digits)','000000','text','','one-time-code')}${notice()}<button class="full-button primary" ${state.busy?'disabled':''}>${state.busy?'Verifying…':'Verify and connect'}</button></form><button class="full-button secondary" data-action="resend" ${state.busy?'disabled':''}>Send a new code</button><button class="full-button secondary" data-action="cancel" ${state.busy?'disabled':''}>Cancel verification</button>`}
 function linkScreen(){const publicReady=state.tunnel.startsWith('Ready(');return `
  <button class="back" data-screen="home" aria-label="Back to services">${icon('back')}</button>
  <label class="section-label">LOCAL LINK <input class="switch" type="checkbox" name="local" ${state.local?'checked':''}></label>
@@ -160,9 +414,10 @@ let renderedScreen='',refreshing=false;
 function render(){
  const screen=$('screen'),route=state.screen+':'+state.service;
  const active=document.activeElement;
- const focus=active&&screen.contains(active)?{id:active.id,attr:['data-screen','data-copy','data-action','data-eye','data-help','data-open','name'].find(a=>active.hasAttribute(a)),value:null}:null;
+  const focus=active&&screen.contains(active)?{id:active.id,attr:['data-screen','data-copy','data-action','data-eye','data-help','data-open','data-account','data-add','name'].find(a=>active.hasAttribute(a)),value:null}:null;
  if(focus?.attr)focus.value=active.getAttribute(focus.attr);
- screen.innerHTML=state.screen==='home'?home():state.screen==='links'?linkScreen():serviceScreen();
+  screen.innerHTML=state.screen==='home'?home():state.screen==='links'?linkScreen():state.screen==='tools'?toolsScreen():serviceScreen();
+  localize(screen);
  if(route!==renderedScreen){const heading=screen.querySelector('h1');if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true})}window.scrollTo(0,0)}
  else if(focus){const target=focus.id?document.getElementById(focus.id):focus.attr?[...screen.querySelectorAll('['+focus.attr+']')].find(el=>el.getAttribute(focus.attr)===focus.value):null;target?.focus({preventScroll:true})}
  renderedScreen=route;
@@ -178,7 +433,7 @@ async function refresh(background=false){
   if(!background||state.screen!=='links'){state.local=d.local;state.public=d.public}
   if(!background){state.verification=d.verification;render()}
   else if(changed&&(state.screen==='home'||state.screen==='links'))render();
- }catch(e){if(!background){state.notice={text:e.message,error:true};render()}else $('live').textContent='Connection status unavailable. Retrying…'}
+  }catch(e){if(!background){state.notice={text:e.message,error:true};render()}else $('live').textContent=t('Connection status unavailable. Retrying…')}
  finally{refreshing=false}
 }
 async function checkSelected(){
@@ -189,14 +444,16 @@ async function checkSelected(){
 function openService(service){state.service=service;state.screen='service';state.advanced=false;state.useToken=false;state.otherSchool=false;state.editing=false;state.draft={};state.visible={};state.help={};state.notice=null;state.health=null;const a=state.accounts.find(x=>x.service===service);state.accountId=a?.id||'';if(service==='moodle'&&a&&a.url!=='https://moodle.polymtl.ca')state.otherSchool=true;if(a)checkSelected();render()}
 async function send(data){if(state.busy)return;state.busy=true;render();try{const r=await api('/action',data);state.notice=r.message?{text:r.message}:null;if(r.verification){state.verification=r.verification;state.screen='service'}else if(['connect','verify','cancel','disconnect'].includes(data.action)){state.verification=null;if(data.action==='verify'){state.screen='home';state.editing=false}else if(data.action==='cancel'){state.screen='service'}else state.screen='home'}if(data.action==='connect')state.editing=false;if(r.stop)state.notice={text:'student-mcp stopped'};await refresh()}catch(e){if(data.action==='autostart')state.autostart=!data.enabled;state.notice={text:e.message,error:true}}finally{state.busy=false;render()}}
 document.addEventListener('click',async e=>{
+ if(e.target.closest('[data-tools]')){state.screen='tools';render();loadTools(state.service);return}
+ if(e.target.closest('[data-tools-retry]')){loadTools(state.service);return}
  const copy=e.target.closest('[data-copy]');
  if(copy){
   e.stopPropagation();const local=copy.dataset.copy==='local',url=local?state.localLink:state.link;
   if(!url||(local?!state.local:!state.tunnel.startsWith('Ready(')))return;
    try{
-    await navigator.clipboard.writeText(url);$('live').textContent='Copied';
+    await navigator.clipboard.writeText(url);$('live').textContent=t('Copied');
     const original=copy.innerHTML,aria=copy.getAttribute('aria-label');
-    copy.innerHTML=icon('check');copy.classList.add('copy-confirmed');copy.setAttribute('aria-label','Copied');
+    copy.innerHTML=icon('check');copy.classList.add('copy-confirmed');copy.setAttribute('aria-label',t('Copied'));
     if(!matchMedia('(prefers-reduced-motion: reduce)').matches)copy.querySelector('svg').animate([{opacity:0,transform:'scale(.8)'},{opacity:1,transform:'scale(1)'}],{duration:180,easing:'cubic-bezier(0.23, 1, 0.32, 1)'});
     setTimeout(()=>{if(!copy.isConnected)return;copy.innerHTML=original;copy.classList.remove('copy-confirmed');copy.setAttribute('aria-label',aria)},1300);
    }
@@ -209,7 +466,7 @@ document.addEventListener('click',async e=>{
  const account=e.target.closest('[data-account]');if(account){if(account.dataset.account===state.accountId&&!state.editing)return;state.accountId=account.dataset.account;state.editing=false;state.draft={};state.visible={};state.help={};state.health=null;state.notice=null;state.advanced=false;state.otherSchool=state.service==='moodle'&&!!selected()&&selected().url!=='https://moodle.polymtl.ca';checkSelected();render();return}
  if(e.target.closest('[data-add]')){state.accountId='';state.editing=true;state.draft={};state.visible={};state.help={};state.health=null;state.advanced=false;state.useToken=false;state.otherSchool=false;render();return}
  const eye=e.target.closest('[data-eye]');
- if(eye){const name=eye.dataset.eye;state.visible[name]=!state.visible[name];const field=$('f-'+name);field.type=state.visible[name]?'text':'password';eye.querySelector('.eye-slash').toggleAttribute('hidden',state.visible[name]);eye.setAttribute('aria-label',(state.visible[name]?'Hide ':'Show ')+field.labels[0].textContent);return}
+  if(eye){const name=eye.dataset.eye;state.visible[name]=!state.visible[name];const field=$('f-'+name);field.type=state.visible[name]?'text':'password';eye.querySelector('.eye-slash').toggleAttribute('hidden',state.visible[name]);eye.setAttribute('aria-label',t((state.visible[name]?'Hide ':'Show ')+field.labels[0].textContent));return}
  const help=e.target.closest('[data-help]');
  if(help){const name=help.dataset.help;state.help[name]=!state.help[name];render();return}
  const action=e.target.closest('[data-action]')?.dataset.action;

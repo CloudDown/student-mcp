@@ -84,12 +84,36 @@ pub fn tool_definitions(settings: &Settings) -> Vec<Value> {
         }
     }
     let settings = &available;
+    definitions_for_services(
+        settings.moodle().is_some(),
+        settings.omnivox().is_some(),
+        settings.brightspace().is_some(),
+    )
+}
+
+/// Local UI catalogue, also available before an account is connected.
+pub fn service_tool_definitions(service: &str) -> Option<Vec<Value>> {
+    let (moodle, omnivox, brightspace) = match service {
+        "moodle" => (true, false, false),
+        "omnivox" => (false, true, false),
+        "brightspace" => (false, false, true),
+        _ => return None,
+    };
+    Some(
+        definitions_for_services(moodle, omnivox, brightspace)
+            .into_iter()
+            .filter(|tool| tool["name"] != "student_status")
+            .collect(),
+    )
+}
+
+fn definitions_for_services(moodle: bool, omnivox: bool, brightspace: bool) -> Vec<Value> {
     let mut tools = vec![json!({
         "name": "student_status",
         "description": "Show which student services this connector exposes and the accounts in use.",
         "annotations": { "readOnlyHint": true }
     })];
-    if settings.moodle().is_some() {
+    if moodle {
         let moodle = json!([
             { "name": "moodle_status", "description": "Check the Moodle connection and show which site and account this token belongs to.", "annotations": { "readOnlyHint": true } },
             { "name": "moodle_my_courses", "description": "List enrolled courses as a compact summary (id, names, dates). Hidden and ended courses are omitted unless include_hidden is true.", "inputSchema": { "type": "object", "properties": { "include_hidden": { "type": "boolean", "description": "Include hidden and ended courses." } } }, "annotations": { "readOnlyHint": true } },
@@ -130,10 +154,10 @@ pub fn tool_definitions(settings: &Settings) -> Vec<Value> {
                 "annotations": {"readOnlyHint": true}}),
         ]);
     }
-    if settings.omnivox().is_some() {
+    if omnivox {
         tools.extend(crate::omnivox::tools());
     }
-    if settings.brightspace().is_some() {
+    if brightspace {
         tools.extend(crate::brightspace::tools());
     }
     // inputSchema is required by MCP even when a tool takes no arguments.
@@ -1260,6 +1284,30 @@ mod protocol_tests {
     }
 
     #[test]
+    fn ui_tool_catalogues_are_separate_and_include_moodle_ws_tools() {
+        for service in ["moodle", "omnivox", "brightspace"] {
+            let tools = service_tool_definitions(service).unwrap();
+            assert!(!tools.is_empty());
+            for tool in &tools {
+                let name = tool["name"].as_str().unwrap();
+                assert!(
+                    name.starts_with(&format!("{service}_"))
+                        || (service == "moodle" && name.starts_with("ws_")),
+                    "unexpected {name} in {service}"
+                );
+                assert!(tool["description"].is_string());
+            }
+            if service == "moodle" {
+                for name in ["ws_discover", "ws_schema", "ws_call"] {
+                    assert!(tools.iter().any(|tool| tool["name"] == name));
+                }
+            }
+        }
+        assert!(service_tool_definitions("unknown").is_none());
+        assert_eq!(tool_definitions(&Settings::default()).len(), 1);
+    }
+
+    #[test]
     fn moodle_student_tools_are_advertised() {
         let settings = Settings {
             moodle: Some(MoodleSettings {
@@ -1269,6 +1317,10 @@ mod protocol_tests {
             }),
             ..Default::default()
         };
+        assert_eq!(
+            &tool_definitions(&settings)[1..],
+            service_tool_definitions("moodle").unwrap()
+        );
         let names: Vec<_> = tool_definitions(&settings)
             .into_iter()
             .filter_map(|tool| tool["name"].as_str().map(str::to_string))

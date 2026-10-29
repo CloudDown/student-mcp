@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import socket
 import subprocess
 import sys
@@ -58,13 +59,31 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         assert b"Allow assistant changes" not in page
         assert b'data-action="permissions"' not in page
         home = page.split(b'function home(){', 1)[1].split(b'function header(', 1)[0]
+        manage = page.split(b'function manageScreenContent(){', 1)[1].split(b'function serviceScreen(){', 1)[0]
         links = page.split(b'function linkScreen(){', 1)[1].split(b'function publicMessage(', 1)[0]
         assert b'Launch at startup' in home and b'name="autostart"' in home
         assert b'name="autostart"' not in links
+        assert manage.index(b'class="status-row"') < manage.index(b'data-add') < manage.index(b'class="manage-actions"')
+        assert b'accountChoices()' in manage and b'account-list' not in manage
         assert b'.startup-row .switch:checked{background:var(--blue)' in page
+        translations = page.split(b'const toolDescriptions={', 1)[1].split(b'\n};', 1)[0]
+        translated_tool_names = set(re.findall(
+            rb"^ (\w+):\['[^']{20,}','[^']{20,}'\]", translations, re.M
+        ))
         logo_status, logo = request("/assets/moodle.png", auth=False)
         assert logo_status == 200 and logo.startswith(b"\x89PNG\r\n\x1a\n")
         assert request("/state", auth=False)[0] == 401
+        assert request("/tools/moodle", auth=False)[0] == 401
+        assert request("/tools/unknown")[0] == 404
+        for service in ("moodle", "omnivox", "brightspace"):
+            status, body = request(f"/tools/{service}")
+            assert status == 200
+            tools = json.loads(body)["tools"]
+            assert tools
+            assert all(tool["name"].startswith(service + "_") or
+                       (service == "moodle" and tool["name"].startswith("ws_"))
+                       for tool in tools)
+            assert {tool["name"].encode() for tool in tools} <= translated_tool_names, service
         assert request("/state", origin="https://untrusted.invalid")[0] == 401
         state = json.loads(request("/state")[1])
         assert len(state["accounts"]) == 1
@@ -86,6 +105,10 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         assert request("/state", address=f"http://127.0.0.1:{port}")[0] == 404
         subprocess.run(args, env=env, timeout=5, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         assert process.poll() is None, "reopen stopped original server"
+        deadline = time.monotonic() + 5
+        while not opened.exists() or len(opened.read_text()) < 2:
+            assert time.monotonic() < deadline, "browser reopen did not complete"
+            time.sleep(0.05)
         before = opened.read_text()
         subprocess.run([str(binary), "up", f"--port={port}", "--background"],
                        env=env, timeout=5, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

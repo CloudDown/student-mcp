@@ -205,6 +205,16 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                 json!({"error":"Unauthorized"}).to_string().into_bytes(),
                 false,
             )
+        } else if request.method() == &Method::Get && path.starts_with("/tools/") {
+            match crate::mcp::service_tool_definitions(&path["/tools/".len()..]) {
+                Some(tools) => (
+                    200,
+                    "application/json",
+                    json!({"tools":tools}).to_string().into_bytes(),
+                    false,
+                ),
+                None => (404, "application/json", b"{}".to_vec(), false),
+            }
         } else if request.method() == &Method::Get && path == "/state" {
             let mut accounts = Vec::new();
             for service in ["moodle", "omnivox", "brightspace"] {
