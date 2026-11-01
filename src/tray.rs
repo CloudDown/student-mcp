@@ -137,7 +137,7 @@ mod linux {
 
         #[test]
         fn menu_opens_configuration_and_quits() {
-            assert!(<LinuxTray as ksni::Tray>::MENU_ON_ACTIVATE);
+            const { assert!(<LinuxTray as ksni::Tray>::MENU_ON_ACTIVATE) };
             let (sender, receiver) = channel();
             let mut tray = LinuxTray(Events(sender));
             let menu = tray.menu();
