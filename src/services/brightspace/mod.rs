@@ -18,11 +18,17 @@ pub(crate) use student_tools::dispatch;
 pub struct BrightspaceClient {
     config: BrightspaceConfig,
     agent: ureq::Agent,
+    browser: crate::browser::Connection,
 }
 
 impl BrightspaceClient {
     pub fn new(config: BrightspaceConfig) -> Self {
         Self {
+            browser: crate::browser::Connection::new(
+                "brightspace",
+                &config.base_url,
+                &config.token,
+            ),
             config,
             // Do not forward credentials to login pages or redirected hosts.
             agent: ureq::AgentBuilder::new()
@@ -47,6 +53,17 @@ impl BrightspaceClient {
     }
 
     fn get(&self, path: &str, query: &[(&str, String)]) -> Result<Value, String> {
+        if self.browser.enabled() {
+            let mut url = url::Url::parse(&format!("{}{path}", self.config.base_url))
+                .map_err(|_| "Invalid Brightspace URL.")?;
+            url.query_pairs_mut()
+                .extend_pairs(query.iter().map(|(k, v)| (*k, v)));
+            return self
+                .browser
+                .request("GET", url.as_str(), None, None, false, 2 * 1024 * 1024)?
+                .json()
+                .map(|value| crate::moodle::scrub(value, &self.config.token));
+        }
         let mut request =
             self.authorize(self.agent.get(&format!("{}{path}", self.config.base_url)));
         for (key, value) in query {
@@ -127,33 +144,49 @@ impl BrightspaceClient {
             "{}/d2l/api/le/{LE}/{courseid}/content/topics/{topicid}/file",
             self.config.base_url
         );
-        let response = self.authorize(self.agent.get(&url))
-            .set("Accept", "*/*")
-            .call()
-            .map_err(|error| match error {
-                ureq::Error::Status(401, _) => "Brightspace session or token expired or refused. Reconnect in the app.".to_string(),
-                ureq::Error::Status(403, _) => "Brightspace denied access to this document.".into(),
-                ureq::Error::Status(404, _) => "Brightspace document not found. Use a file topic Id from brightspace_course_content, not a module or external link.".into(),
-                ureq::Error::Status(code, _) => format!("Brightspace file returned HTTP error {code}."),
-                _ => "Cannot download this Brightspace document.".into(),
-            })?;
-        if response.status() != 200 {
-            return Err("Brightspace redirected the file request. Open the document in your browser; credentials were not forwarded.".into());
-        }
-        let mime = response.content_type().to_string();
-        let filename = crate::moodle::filename_from(response.header("Content-Disposition"), &url);
-        const MAX_BYTES: u64 = 12 * 1024 * 1024;
-        let mut bytes = Vec::new();
-        response
-            .into_reader()
-            .take(MAX_BYTES + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|_| "Cannot read this Brightspace document.".to_string())?;
-        if bytes.len() as u64 > MAX_BYTES {
-            return Err(
-                "This document is larger than 12 MB. Open it in Brightspace instead.".into(),
-            );
-        }
+        let (mime, filename, bytes) = if self.browser.enabled() {
+            let reply = self
+                .browser
+                .request("GET", &url, None, None, true, 12 * 1024 * 1024)?;
+            if reply.status != 200 {
+                return Err(format!(
+                    "Brightspace document returned HTTP {}.",
+                    reply.status
+                ));
+            }
+            let filename = crate::moodle::filename_from(Some(&reply.disposition), &url);
+            (reply.mime, filename, reply.bytes)
+        } else {
+            let response = self.authorize(self.agent.get(&url))
+                .set("Accept", "*/*")
+                .call()
+                .map_err(|error| match error {
+                    ureq::Error::Status(401, _) => "Brightspace session or token expired or refused. Reconnect in the app.".to_string(),
+                    ureq::Error::Status(403, _) => "Brightspace denied access to this document.".into(),
+                    ureq::Error::Status(404, _) => "Brightspace document not found. Use a file topic Id from brightspace_course_content, not a module or external link.".into(),
+                    ureq::Error::Status(code, _) => format!("Brightspace file returned HTTP error {code}."),
+                    _ => "Cannot download this Brightspace document.".into(),
+                })?;
+            if response.status() != 200 {
+                return Err("Brightspace redirected the file request. Open the document in your browser; credentials were not forwarded.".into());
+            }
+            let mime = response.content_type().to_string();
+            let filename =
+                crate::moodle::filename_from(response.header("Content-Disposition"), &url);
+            const MAX_BYTES: u64 = 12 * 1024 * 1024;
+            let mut bytes = Vec::new();
+            response
+                .into_reader()
+                .take(MAX_BYTES + 1)
+                .read_to_end(&mut bytes)
+                .map_err(|_| "Cannot read this Brightspace document.".to_string())?;
+            if bytes.len() as u64 > MAX_BYTES {
+                return Err(
+                    "This document is larger than 12 MB. Open it in Brightspace instead.".into(),
+                );
+            }
+            (mime, filename, bytes)
+        };
         // A successful HTTP response can still be an SSO login page or API error.
         let prefix = String::from_utf8_lossy(&bytes[..bytes.len().min(1024)]).to_ascii_lowercase();
         if mime.contains("html")
@@ -255,48 +288,71 @@ impl BrightspaceClient {
             "{}/d2l/api/le/{LE}/{courseid}/dropbox/folders/{folderid}/submissions/mysubmissions/",
             self.config.base_url
         );
-        let response = self
-            .authorize(self.agent.post(&url))
-            .set(
-                "Content-Type",
-                &format!("multipart/mixed; boundary={boundary}"),
+        let (status, raw) = if self.browser.enabled() {
+            let reply = self.browser.request(
+                "POST",
+                &url,
+                Some(&body),
+                Some(&format!("multipart/mixed; boundary={boundary}")),
+                false,
+                512 * 1024,
+            )?;
+            if !(200..300).contains(&reply.status) {
+                return Err(format!(
+                    "Brightspace submission returned HTTP {}. Verify state before retrying.",
+                    reply.status
+                ));
+            }
+            (
+                reply.status,
+                String::from_utf8(reply.bytes)
+                    .map_err(|_| "Invalid submission response. Verify state before retrying.")?,
             )
-            .send_bytes(&body)
-            .map_err(|error| match error {
-                ureq::Error::Status(401, _) => {
-                    "Brightspace session or token expired or refused. Reconnect in the app."
-                        .to_string()
-                }
-                ureq::Error::Status(403, _) => {
-                    "Brightspace denied this submission. The folder may be closed or not accept files from your role."
-                        .into()
-                }
-                ureq::Error::Status(404, _) => {
-                    "Brightspace dropbox folder not found. Use folderid from brightspace_assignments."
-                        .into()
-                }
-                ureq::Error::Status(405, _) => {
-                    "Brightspace refused this submission method for the folder (text-only or on-paper folders cannot take a file this way)."
-                        .into()
-                }
-                ureq::Error::Status(code, _) => {
-                    format!("Brightspace submission returned HTTP error {code}.")
-                }
-                _ => "Cannot submit this Brightspace assignment.".into(),
-            })?;
-        if !(200..300).contains(&response.status()) {
-            return Err(
-                "Brightspace redirected the submission. Credentials were not forwarded to another host."
-                    .into(),
-            );
-        }
-        // Some tenants return empty 200; others return EntityDropbox JSON.
-        let status = response.status();
-        let mut raw = String::new();
-        let _ = response
-            .into_reader()
-            .take(512 * 1024)
-            .read_to_string(&mut raw);
+        } else {
+            let response = self
+                .authorize(self.agent.post(&url))
+                .set(
+                    "Content-Type",
+                    &format!("multipart/mixed; boundary={boundary}"),
+                )
+                .send_bytes(&body)
+                .map_err(|error| match error {
+                    ureq::Error::Status(401, _) => {
+                        "Brightspace session or token expired or refused. Reconnect in the app."
+                            .to_string()
+                    }
+                    ureq::Error::Status(403, _) => {
+                        "Brightspace denied this submission. The folder may be closed or not accept files from your role."
+                            .into()
+                    }
+                    ureq::Error::Status(404, _) => {
+                        "Brightspace dropbox folder not found. Use folderid from brightspace_assignments."
+                            .into()
+                    }
+                    ureq::Error::Status(405, _) => {
+                        "Brightspace refused this submission method for the folder (text-only or on-paper folders cannot take a file this way)."
+                            .into()
+                    }
+                    ureq::Error::Status(code, _) => {
+                        format!("Brightspace submission returned HTTP error {code}.")
+                    }
+                    _ => "Cannot submit this Brightspace assignment.".into(),
+                })?;
+            if !(200..300).contains(&response.status()) {
+                return Err(
+                    "Brightspace redirected the submission. Credentials were not forwarded to another host."
+                        .into(),
+                );
+            }
+            // Some tenants return empty 200; others return EntityDropbox JSON.
+            let status = response.status();
+            let mut raw = String::new();
+            let _ = response
+                .into_reader()
+                .take(512 * 1024)
+                .read_to_string(&mut raw);
+            (status, raw)
+        };
         let result = if raw.trim().is_empty() {
             json!({
                 "ok": true,

@@ -24,6 +24,7 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
                                   "moodle": {"url": "https://example.invalid", "token": "fixture", "allow_write": False}}))
     env = dict(os.environ, STUDENT_MCP_CONFIG_FILE=str(config),
                STUDENT_MCP_BROWSER_MARKER=str(opened), XDG_CONFIG_HOME=str(root / '.config'),
+               STUDENT_MCP_BROWSER=str(root / 'missing-chrome'),
                PATH=f"{root}:{os.environ['PATH']}")
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -104,6 +105,15 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         assert json.loads(request("/state")[1])["accounts"][0]["allow_write"] is True
         assert json.loads(config.read_text())["moodle"]["allow_write"] is False
         assert request("/action", {"action": "verify", "code": "123456"})[0] == 400
+        assert b'id="browser-connect-form"' in page
+        assert b'Connect with browser' in page
+        assert b'Other connection methods' in page
+        assert request("/action", {"action": "browser_connect", "service": "brightspace", "url": "https://school.example"}, auth=False)[0] == 401
+        assert request("/action", {"action": "browser_connect", "service": "moodle", "url": "https://school.example"})[0] == 400
+        assert request("/action", {"action": "browser_connect", "service": "omnivox", "url": "https://other.example"})[0] == 400
+        assert request("/action", {"action": "browser_connect", "service": "brightspace", "url": "https://school.example"})[0] == 400
+        assert request("/action", {"action": "cancel"})[0] == 200
+        assert json.loads(request("/state")[1])["browser_login"] is None
         assert request("/action", {"action": "stop"}, auth=False)[0] == 401
         assert request("/state", address=f"http://127.0.0.1:{port}")[0] == 404
         subprocess.run(args, env=env, timeout=5, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

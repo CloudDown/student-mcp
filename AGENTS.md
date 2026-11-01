@@ -78,9 +78,38 @@ l’app mobile officielle de bout en bout :
 Le cookie `olt` s’écrit avec `Domain=omnivox.ca`, comme le JS MFA officiel,
 pour couvrir un handoff vers un autre sous-domaine.
 
+## Connexion par navigateur persistant
+
+Brightspace et Omnivox peuvent stocker une session dans un profil Chromium
+propre au compte (`src/browser.rs`). Le jeton enregistré est
+`browser-profile:<32 hex>`, jamais un cookie ou un mot de passe. Le profil vit
+à côté de la configuration (`~/.student-mcp.browsers/`, mode `0700` sur Unix) et
+ne doit jamais entrer dans git.
+
+- Seule l’interface locale ouvre une fenêtre visible (`Login::start`). Un appel
+  MCP reprend le profil en headless, puis le referme à la fin de l’outil.
+- Le verrou `profile.lock` sérialise les processus. Ne pas le retirer : deux
+  Chrome sur le même `--user-data-dir` corrompent la session.
+- Les requêtes navigateur sont limitées à l’origine du compte et à
+  `/d2l/api/` ou `/Mobl/`. Pas de redirection suivie, pas de rejeu automatique
+  d’une écriture, taille de réponse bornée.
+- Brightspace : utiliser le jeton CSRF fourni par la page
+  (`D2L…GetXsrfToken`, `XSRF.Token`). Ne pas en fabriquer un.
+- Omnivox : le pont `src/resources/browser/omnivox.js` ne s’injecte que sur un
+  hôte `*.omnivox.ca` en HTTPS. Il doit garder l’User-Agent mobile, les
+  callbacks `…CallBack` et la persistance `device`/`code`. Les lectures passent
+  par `Skytech.Commun.Utils.HttpRequestWorker.PostJSON`, pas par un cookie de
+  session web exporté.
+- Un login annulé ou échoué supprime le profil seulement s’il vient d’être
+  créé ; une reconnexion ne doit jamais effacer la session existante.
+- Ne jamais journaliser ni renvoyer le jeton de profil. Les tests navigateur
+  locaux n’utilisent aucun identifiant réel : voir `tools/BROWSER-AUTH.md`.
+
 ## Layout
 
 - `src/web.rs` / `src/resources/web/index.html` — configuration web locale (hors tunnel)
+- `src/browser.rs` — profils Chromium par compte, CDP, login interactif
+- `src/resources/browser/` — pont mobile Omnivox et requête navigateur
 - `src/services/{moodle,omnivox,brightspace}/mod.rs` — connecteurs par service
 - `src/services/moodle/download.rs` — cache de téléchargements Moodle
 - `src/services/moodle/catalog.rs` / `catalog/` — catalogue des fonctions Moodle et licences

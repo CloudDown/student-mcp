@@ -282,31 +282,55 @@ pub(crate) fn dispatch(
         }
         return Ok(data);
     }
-    let request = client.authorize(
-        client
-            .agent
-            .request(r.method, &format!("{}{path}", client.config.base_url)),
-    );
-    // No automatic retry: even a lost response can follow an accepted POST.
-    let response = match body { Some(body) => request.send_json(body), None => request.call() }
+    let bytes = if client.browser.enabled() {
+        let mut url = url::Url::parse(&format!("{}{path}", client.config.base_url))
+            .map_err(|_| "Invalid Brightspace URL.")?;
+        url.query_pairs_mut()
+            .extend_pairs(query.iter().map(|(key, value)| (*key, value)));
+        let body = body.map(|v| v.to_string());
+        let response = client.browser.request(
+            r.method,
+            url.as_str(),
+            body.as_deref().map(str::as_bytes),
+            body.as_ref().map(|_| "application/json"),
+            false,
+            1024 * 1024,
+        )?;
+        if !(200..300).contains(&response.status) {
+            return Err(format!(
+                "Brightspace refused the action (HTTP {}). Verify state before retrying.",
+                response.status
+            ));
+        }
+        response.bytes
+    } else {
+        let request = client.authorize(
+            client
+                .agent
+                .request(r.method, &format!("{}{path}", client.config.base_url)),
+        );
+        // No automatic retry: even a lost response can follow an accepted POST.
+        let response = match body { Some(body) => request.send_json(body), None => request.call() }
         .map_err(|e| match e {
             ureq::Error::Status(code, _) => format!("Brightspace refused the action (HTTP {code}). Check role permissions, resource availability and session."),
             _ => "Brightspace action outcome is unknown after a transport error. Verify state before retrying.".into(),
         })?;
-    if !(200..300).contains(&response.status()) {
-        return Err("Brightspace redirected the action; credentials were not forwarded. Verify state before retrying.".into());
-    }
-    let mut bytes = Vec::new();
-    response
-        .into_reader()
-        .take(1024 * 1024 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|_| {
-            "Action response could not be read; verify state before retrying.".to_string()
-        })?;
-    if bytes.len() > 1024 * 1024 {
-        return Err("Action response exceeded limit; verify state before retrying.".into());
-    }
+        if !(200..300).contains(&response.status()) {
+            return Err("Brightspace redirected the action; credentials were not forwarded. Verify state before retrying.".into());
+        }
+        let mut bytes = Vec::new();
+        response
+            .into_reader()
+            .take(1024 * 1024 + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|_| {
+                "Action response could not be read; verify state before retrying.".to_string()
+            })?;
+        if bytes.len() > 1024 * 1024 {
+            return Err("Action response exceeded limit; verify state before retrying.".into());
+        }
+        bytes
+    };
     if bytes.is_empty() {
         return Ok(json!({"accepted":true}));
     }

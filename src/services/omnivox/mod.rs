@@ -33,11 +33,13 @@ fn omnivox_cookie_domain(url: &str) -> Option<&'static str> {
 pub struct OmnivoxClient {
     config: OmnivoxConfig,
     agent: ureq::Agent,
+    browser: crate::browser::Connection,
 }
 
 impl OmnivoxClient {
     pub fn new(config: OmnivoxConfig) -> Self {
         Self {
+            browser: crate::browser::Connection::new("omnivox", &config.base_url, &config.token),
             config,
             agent: ureq::AgentBuilder::new()
                 .timeout(Duration::from_secs(30))
@@ -113,31 +115,45 @@ impl OmnivoxClient {
         {
             return Err("Unknown Omnivox path.".into());
         }
-        let response = match self
-            .authorize_college(
-                self.agent
-                    .post(&format!("{}/Mobl/{path}", self.config.base_url)),
-            )
-            .set("Content-Type", "application/json")
-            .send_json(body)
-        {
-            Ok(response) | Err(ureq::Error::Status(_, response)) => response,
-            Err(_) => {
-                return Err(
-                    "Cannot reach Omnivox. Check your Internet connection and try again.".into(),
+        let value: Value = if self.browser.enabled() {
+            self.browser
+                .request(
+                    "POST",
+                    &format!("/Mobl/{path}"),
+                    Some(body.to_string().as_bytes()),
+                    Some("application/json"),
+                    false,
+                    2 * 1024 * 1024,
+                )?
+                .json()?
+        } else {
+            let response = match self
+                .authorize_college(
+                    self.agent
+                        .post(&format!("{}/Mobl/{path}", self.config.base_url)),
                 )
+                .set("Content-Type", "application/json")
+                .send_json(body)
+            {
+                Ok(response) | Err(ureq::Error::Status(_, response)) => response,
+                Err(_) => {
+                    return Err(
+                        "Cannot reach Omnivox. Check your Internet connection and try again."
+                            .into(),
+                    )
+                }
+            };
+            if response.status() != 200 {
+                return Err(match response.status() {
+                    401 | 403 => "Omnivox refused the session. Sign in again in the app.".into(),
+                    300..=399 => "Omnivox redirected the request. Sign in again in the app.".into(),
+                    status => format!("Omnivox returned HTTP {status}. Try again."),
+                });
             }
+            response
+                .into_json()
+                .map_err(|_| "Omnivox did not return JSON. Sign in again in the app.".to_string())?
         };
-        if response.status() != 200 {
-            return Err(match response.status() {
-                401 | 403 => "Omnivox refused the session. Sign in again in the app.".into(),
-                300..=399 => "Omnivox redirected the request. Sign in again in the app.".into(),
-                status => format!("Omnivox returned HTTP {status}. Try again."),
-            });
-        }
-        let value: Value = response
-            .into_json()
-            .map_err(|_| "Omnivox did not return JSON. Sign in again in the app.".to_string())?;
         if value
             .get("NaviguerPage")
             .and_then(Value::as_str)

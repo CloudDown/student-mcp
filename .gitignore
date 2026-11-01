@@ -21,6 +21,7 @@ Thumbs.db
 .env.*
 *.student-mcp.json
 *.student-mcp.ui.json
+*.student-mcp.browsers/
 *.student-mcp.srvus-key
 *.student-mcp.srvus-host
 *.moodle-ws-mcp.json

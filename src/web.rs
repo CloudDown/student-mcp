@@ -132,7 +132,11 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
     let tray = crate::tray::Tray::start();
     let mut tunnel = Tunnel::default();
     let mut pending: Option<(Settings, Box<PendingLogin>)> = None;
+    let mut browser_login: Option<crate::browser::Login> = None;
     loop {
+        if let Some(login) = browser_login.as_mut() {
+            login.poll();
+        }
         match tray.poll() {
             Some(crate::tray::Command::Open) => open_browser(&config_url),
             Some(crate::tray::Command::Quit) => {
@@ -226,7 +230,7 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                     );
                 }
             }
-            (200, "application/json", json!({"accounts":accounts,"verification":pending.as_ref().map(|(_,p)| &p.prompt),"link":mcp_endpoint(tunnel.origin().unwrap_or(&format!("http://127.0.0.1:{port}")), &gateway.token),"local_link":mcp_endpoint(&format!("http://127.0.0.1:{port}"), &gateway.token),"tunnel":format!("{:?}",tunnel.state),"public":current.gateway.public_enabled(),"local":enabled.load(Ordering::SeqCst),"autostart":crate::autostart::enabled().unwrap_or(false)}).to_string().into_bytes(),false)
+            (200, "application/json", json!({"accounts":accounts,"verification":pending.as_ref().map(|(_,p)| &p.prompt),"browser_login":browser_login.as_ref().map(crate::browser::Login::status),"link":mcp_endpoint(tunnel.origin().unwrap_or(&format!("http://127.0.0.1:{port}")), &gateway.token),"local_link":mcp_endpoint(&format!("http://127.0.0.1:{port}"), &gateway.token),"tunnel":format!("{:?}",tunnel.state),"public":current.gateway.public_enabled(),"local":enabled.load(Ordering::SeqCst),"autostart":crate::autostart::enabled().unwrap_or(false)}).to_string().into_bytes(),false)
         } else if request.method() == &Method::Post && path == "/action" {
             let mut bytes = Vec::new();
             let read = request.as_reader().take(16_385).read_to_end(&mut bytes);
@@ -236,7 +240,14 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                 serde_json::from_slice::<Value>(&bytes)
                     .map_err(|_| "Invalid JSON".to_string())
                     .and_then(|args| {
-                        action(&args, &mut pending, &enabled, &mut tunnel, tunnel_port)
+                        action(
+                            &args,
+                            &mut pending,
+                            &mut browser_login,
+                            &enabled,
+                            &mut tunnel,
+                            tunnel_port,
+                        )
                     })
             };
             match result {
@@ -275,6 +286,7 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
 fn action(
     args: &Value,
     pending: &mut Option<(Settings, Box<PendingLogin>)>,
+    browser_login: &mut Option<crate::browser::Login>,
     enabled: &AtomicBool,
     tunnel: &mut Tunnel,
     port: u16,
@@ -304,6 +316,9 @@ fn action(
         }
         "cancel" => {
             *pending = None;
+            if let Some(login) = browser_login.as_mut() {
+                login.cancel();
+            }
             return Ok(json!({"message":"Cancelled"}));
         }
         "verify" | "resend" => {
@@ -328,7 +343,40 @@ fn action(
         get("id").to_owned()
     };
     let mut settings = Settings::load().for_account(service, &id);
+    let saved = match service {
+        "brightspace" => settings.brightspace().map(|c| (c.base_url, c.token)),
+        "omnivox" => settings.omnivox().map(|c| (c.base_url, c.token)),
+        _ => None,
+    };
+    if get("action") == "browser_connect" {
+        if browser_login
+            .as_ref()
+            .is_some_and(|l| l.state == "waiting" || l.running())
+        {
+            return Err("Finish or cancel the current browser sign-in first.".into());
+        }
+        let url = if get("url").is_empty() {
+            saved.as_ref().map(|(url, _)| url.as_str()).unwrap_or("")
+        } else {
+            get("url")
+        };
+        let previous = saved
+            .as_ref()
+            .filter(|(old, _)| old.trim_end_matches('/') == url.trim_end_matches('/'))
+            .map(|(_, token)| token.as_str());
+        *browser_login = Some(crate::browser::Login::start(service, &id, url, previous)?);
+        *pending = None;
+        return Ok(json!({"browser_login":browser_login.as_ref().unwrap().status()}));
+    }
     if get("action") == "disconnect" {
+        if browser_login.as_ref().is_some_and(|l| {
+            l.id == id && l.service == service && (l.state == "waiting" || l.running())
+        }) {
+            return Err("Cancel browser sign-in before disconnecting.".into());
+        }
+        if let Some((_, token)) = &saved {
+            crate::browser::remove(token)?;
+        }
         crate::mcp::disable_service(&mut settings, service)?;
         *pending = None;
         return Ok(json!({"message":"Disconnected"}));
@@ -339,6 +387,12 @@ fn action(
     }
     if get("action") != "connect" {
         return Err("Unknown action".into());
+    }
+    if browser_login
+        .as_ref()
+        .is_some_and(|l| l.state == "waiting" || l.running())
+    {
+        return Err("Finish or cancel browser sign-in before changing credentials.".into());
     }
     *pending = None;
     let message = match service {

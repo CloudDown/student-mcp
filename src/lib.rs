@@ -1,4 +1,5 @@
 mod autostart;
+mod browser;
 mod config;
 mod document;
 mod http;

@@ -42,6 +42,14 @@ automatically when configured. Turn it off to remove the startup entry.
 
 ## 2. Connecting a service
 
+**Brightspace / Omnivox: browser sign-in (experimental).** Enter your school's
+address and choose **Connect with browser**. Chrome, Chromium or Edge opens the
+official sign-in page; complete login and MFA there. A dedicated per-account
+profile retains the session across restarts. If interaction is needed later,
+choose **Change login → Connect with browser**. The account is saved only after
+course access is verified. **Other connection methods** opens the existing
+manual methods described below. See [browser setup, persistence and test status](BROWSER-AUTH.md).
+
 **Moodle.** Two authentication options.
 
 1. *School login*: firstname.lastname + password → the binary calls
