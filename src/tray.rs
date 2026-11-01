@@ -124,7 +124,7 @@ mod linux {
                 .into(),
                 ksni::MenuItem::Separator,
                 StandardItem {
-                    label: "Close".into(),
+                    label: "Quit".into(),
                     activate: Box::new(|tray: &mut Self| tray.0.send(Command::Quit)),
                     ..Default::default()
                 }
@@ -146,7 +146,7 @@ mod linux {
             let menu = tray.menu();
             for (item, label, command) in [
                 (&menu[0], "Open", Command::Open),
-                (&menu[2], "Close", Command::Quit),
+                (&menu[2], "Quit", Command::Quit),
             ] {
                 let ksni::MenuItem::Standard(item) = item else {
                     panic!("expected standard menu item");
@@ -178,7 +178,7 @@ mod desktop {
         pub(super) fn new(sender: Sender<Command>) -> Result<Self, String> {
             let menu = Menu::new();
             let open = MenuItem::new("Open", true, None);
-            let quit = MenuItem::new("Close", true, None);
+            let quit = MenuItem::new("Quit", true, None);
             menu.append_items(&[&open, &quit])
                 .map_err(|error| error.to_string())?;
             let icon = Icon::from_rgba(icon_rgba(), ICON_SIZE, ICON_SIZE)

@@ -1,0 +1,81 @@
+Solutions pour une connexion durable à Omnivox
+============================================
+
+Objectif : accéder à son propre compte depuis le MCP sans demander
+d'intégration à l'établissement, en conservant le parcours normal de
+connexion et de MFA.
+
+Je n'ai pas trouvé de jeton API Omnivox public équivalent à celui de Moodle.
+Une connexion durable reste soumise à l'expiration et au MFA imposés par
+Omnivox. Aucune des solutions ci-dessous ne garantit une connexion permanente.
+
+1. Navigateur persistant — solution la mieux étayée
+-------------------------------------------------
+Un navigateur local conserve son profil, ses cookies et le stockage du site.
+L'utilisateur se connecte normalement une fois, MFA compris ; le MCP utilise
+ensuite cette session.
+
+Le projet Beat-YT/omnivox-mcp utilise déjà Puppeteer et le JavaScript mobile
+officiel. Notre connecteur sait déjà communiquer avec sa passerelle.
+
+Avantages :
+- Pas besoin de sauvegarder le mot de passe.
+- Fonctionnement plus fidèle au client officiel.
+
+Limites :
+- Nécessite Chromium, donc plus lourd.
+- Reconnexion nécessaire si Omnivox expire ou révoque la session.
+
+Source : https://github.com/Beat-YT/omnivox-mcp
+
+2. Compléter la persistance mobile de notre connecteur
+----------------------------------------------------
+Notre code récupère déjà LoginTokenAuthentification, device_id et AuthHash.
+
+Limite constatée dans src/services/omnivox/mod.rs : après le login, les cookies
+sont sauvegardés comme une chaîne fixe. Les appels /Mobl/ ne réintègrent pas
+les nouveaux Set-Cookie. Si Omnivox renouvelle des cookies, ces changements
+sont perdus.
+
+Pistes :
+- Conserver un véritable magasin de cookies après connexion, avec gestion
+  des domaines, chemins, expirations et suppressions.
+- Sauvegarder les renouvellements de cookies.
+- Vérifier le parcours officiel de reprise avec le jeton mobile.
+- Conserver une identité mobile cohérente (device_id et AuthHash).
+
+Cette piste est prometteuse, mais la capacité du jeton mobile à rétablir une
+session expirée reste à démontrer. Son nom ne prouve pas une durée illimitée.
+
+3. Extension de navigateur — alternative pratique
+------------------------------------------------
+Une extension pourrait servir de pont entre le navigateur connecté et le
+MCP local, en exécutant les lectures dans la session du site.
+
+Avantages :
+- Connexion et MFA directement sur Omnivox.
+- Pas de second navigateur à gérer.
+
+Limites :
+- Le navigateur doit être ouvert.
+- La liaison locale et les permissions de l'extension doivent être
+  soigneusement protégées.
+- L'expiration côté serveur demeure applicable.
+
+Recommandation
+--------------
+Tester d'abord la passerelle avec navigateur persistant, déjà compatible
+avec notre MCP. Ensuite, améliorer la persistance Rust pour éviter Chromium
+si le mécanisme mobile le permet.
+
+Un simple keep-alive peut limiter l'expiration par inactivité, mais ne peut
+pas garantir une connexion permanente ni empêcher une révocation serveur.
+
+L'absence d'intégration institutionnelle ne garantit pas que l'automatisation
+soit permise par les conditions d'utilisation. Ces pistes concernent
+uniquement l'accès à son propre compte, sans contourner le MFA.
+
+Sources complémentaires
+-----------------------
+https://github.com/Beat-YT/omnivox-mcp/blob/main/docs/native-bridge.md
+https://github.com/Beat-YT/omnivox-mcp/blob/main/docs/README.md

@@ -1,0 +1,108 @@
+SOLUTIONS DE CONNEXION DURABLE À BRIGHTSPACE
+Date : 1 novembre 2026
+
+CONCLUSION
+
+On peut éviter le copier-coller des cookies sans faire approuver une
+application OAuth. Cependant, aucun token permanent accessible à tout
+étudiant, comparable au token mobile Moodle, n'a été identifié dans cette
+recherche.
+
+Les solutions ci-dessous utilisent la connexion normale de l'utilisateur.
+Elles ne contournent ni les permissions de l'établissement ni le MFA.
+Elles ne sont pas encore implémentées dans student-mcp.
+
+1. NAVIGATEUR AVEC PROFIL PERSISTANT — RECOMMANDÉ POUR NOTRE APP
+
+Ajouter un bouton « Se connecter avec le navigateur » dans student-mcp :
+
+1) L'application ouvre un navigateur dédié.
+2) L'utilisateur se connecte normalement, y compris le MFA.
+3) Le profil de session est conservé localement, sans que student-mcp
+   enregistre lui-même le mot de passe.
+4) Quand Brightspace expire, l'application repasse par le SSO :
+   - si le SSO reconnaît encore l'utilisateur, la reconnexion peut être
+     automatique ;
+   - sinon, l'utilisateur doit se reconnecter ou valider le MFA.
+5) Les nouveaux cookies sont récupérés automatiquement.
+
+Avantages :
+- Plus de DevTools ni de cookies à recopier.
+- Pas d'extension à installer.
+- Application autonome.
+
+Limites :
+- Nécessite un navigateur à embarquer ou à piloter.
+- Le profil contient des secrets de session : protection locale impérative,
+  jamais dans Git, les logs ou les réponses MCP.
+- Une reconnexion interactive reste parfois obligatoire.
+- La compatibilité avec chaque SSO doit être testée.
+
+Playwright documente la conservation et la réutilisation d'un état
+authentifié. Un autre projet Brightspace MCP décrit une approche
+navigateur/SSO : c'est un précédent, pas une preuve que tous les SSO
+fonctionneront.
+
+Sources :
+https://playwright.dev/docs/auth
+https://jhostinaleck.github.io/brightspace-mcp/auth-strategies
+
+2. EXTENSION DANS LE NAVIGATEUR HABITUEL
+
+Une extension, autorisée uniquement sur le site Brightspace choisi,
+pourrait :
+- détecter les changements de cookies ;
+- synchroniser la session avec student-mcp ;
+- proposer d'ouvrir Brightspace lorsqu'une reconnexion est nécessaire.
+
+La communication avec l'application peut rester locale via Native
+Messaging, sans transmettre les cookies par le lien public MCP.
+
+Avantages :
+- Réutilise la session entretenue en consultant les cours.
+- Évite de gérer un navigateur dédié dans l'application.
+
+Limites :
+- Extension à installer et à autoriser sur le domaine concerné.
+- Le navigateur doit être disponible pour resynchroniser la session.
+- L'extension ne peut pas renouveler une session invalidée sans repasser
+  par la connexion normale.
+- Les cookies restent des secrets donnant accès au compte ; les permissions
+  et la communication locale doivent être strictement limitées.
+
+Les API navigateur permettent l'accès autorisé aux cookies, la notification
+de leurs changements et la communication avec une application locale.
+
+Sources :
+https://developer.chrome.com/docs/extensions/reference/api/cookies
+https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging
+
+CE QUI NE RÉSOUT PAS VRAIMENT LE PROBLÈME
+
+- Conserver les cookies plus longtemps sur disque ne prolonge pas leur
+  validité côté serveur.
+- Des requêtes périodiques ne garantissent pas une connexion durable :
+  expiration absolue, révocation et MFA restent applicables.
+- L'ancienne authentification Valence Id/Key demande aussi l'enregistrement
+  d'une application ; ce n'est pas une alternative générale sans intervention
+  administrative.
+- Brightspace Pulse utilise OAuth2, mais cela ne fournit pas à student-mcp
+  un client OAuth librement réutilisable.
+
+Sources :
+https://docs.valence.desire2learn.com/basic/oauth2.html
+https://community.d2l.com/brightspace/discussion/8054/request-for-guidance-on-brightspace-api-id-key-authentication-integration
+https://community.d2l.com/brightspace/kb/articles/4603-sign-into-brightspace-pulse
+
+CHOIX RECOMMANDÉ
+
+Pour une application autonome : navigateur dédié avec profil persistant et
+reconnexion SSO assistée.
+
+Pour une application plus légère : extension synchronisant le navigateur
+habituel.
+
+Dans les deux cas : pas d'approbation OAuth institutionnelle à demander
+pour ce mécanisme, plus de copier-coller, mais aucune promesse de connexion
+éternelle ni de suppression du MFA. L'utilisation reste soumise aux règles
+de l'établissement et la compatibilité avec son SSO doit être vérifiée.
