@@ -39,9 +39,12 @@ impl Tray {
     }
 }
 
-/// Graduation smiley (flat emoji style), 64×64 RGBA.
+/// Graduation smiley, 64×64 straight RGBA; macOS tints the template's alpha.
 const ICON_SIZE: u32 = 64;
+#[cfg(not(target_os = "macos"))]
 const ICON_RGBA: &[u8] = include_bytes!("resources/assets/app-icon-64.rgba");
+#[cfg(target_os = "macos")]
+const ICON_RGBA: &[u8] = include_bytes!("resources/assets/app-icon-template-64.rgba");
 
 fn icon_rgba() -> Vec<u8> {
     debug_assert_eq!(ICON_RGBA.len(), (ICON_SIZE * ICON_SIZE * 4) as usize);
@@ -227,10 +230,26 @@ mod tests {
         assert!(pixels.as_chunks::<4>().0.iter().any(|p| p[3] == 255));
         assert!(pixels.as_chunks::<4>().0.iter().any(|p| p[3] == 0));
         // Yellow face present (graduation smiley).
+        #[cfg(not(target_os = "macos"))]
         assert!(pixels
             .as_chunks::<4>()
             .0
             .iter()
             .any(|p| p[0] > 200 && p[1] > 150 && p[2] < 40 && p[3] == 255));
+    }
+
+    #[test]
+    fn macos_template_keeps_the_expression_when_tinted() {
+        // Test on every platform: macOS discards RGB and only uses alpha.
+        let pixels = include_bytes!("resources/assets/app-icon-template-64.rgba");
+        assert_eq!(pixels.len(), (ICON_SIZE * ICON_SIZE * 4) as usize);
+        let alpha = |x: usize, y: usize| pixels[(y * ICON_SIZE as usize + x) * 4 + 3];
+        for (x, y) in [(25, 36), (39, 36), (32, 48)] {
+            // Eyes and smile are cut out, allowing minor antialiasing residue.
+            assert!(alpha(x, y) < 8);
+        }
+        assert_eq!(alpha(32, 38), 255); // Face stays opaque.
+        assert_eq!(alpha(32, 16), 255); // Cap stays opaque.
+        assert_eq!(alpha(0, 0), 0); // Background stays transparent.
     }
 }

@@ -72,6 +72,9 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         ))
         logo_status, logo = request("/assets/moodle.png", auth=False)
         assert logo_status == 200 and logo.startswith(b"\x89PNG\r\n\x1a\n")
+        icon_status, icon = request("/assets/app-icon.png", auth=False)
+        assert icon_status == 200 and icon.startswith(b"\x89PNG\r\n\x1a\n")
+        assert b'<link rel="icon" type="image/png" href="/assets/app-icon.png">' in page
         assert request("/state", auth=False)[0] == 401
         assert request("/tools/moodle", auth=False)[0] == 401
         assert request("/tools/unknown")[0] == 404

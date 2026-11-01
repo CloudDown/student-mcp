@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>student-mcp — smiling graduate</title>
+  <defs>
+    <radialGradient id="face" cx=".34" cy=".23" r=".84">
+      <stop stop-color="#fff18b"/>
+      <stop offset=".48" stop-color="#ffda46"/>
+      <stop offset="1" stop-color="#ffb923"/>
+    </radialGradient>
+    <linearGradient id="cap" x1="0" y1="0" x2=".8" y2="1">
+      <stop stop-color="#647493"/>
+      <stop offset="1" stop-color="#303c58"/>
+    </linearGradient>
+    <linearGradient id="band" x2="0" y2="1">
+      <stop stop-color="#222c43"/>
+      <stop offset="1" stop-color="#43516e"/>
+    </linearGradient>
+    <linearGradient id="tassel" x2=".7" y2="1">
+      <stop stop-color="#ffca48"/>
+      <stop offset="1" stop-color="#f59020"/>
+    </linearGradient>
+  </defs>
+  <!-- Broad shapes and generous transparent margins keep the mark clear at 16 px. -->
+  <circle cx="128" cy="153" r="87" fill="url(#face)"/>
+  <path d="M66 101 Q128 78 190 101 L188 116 Q128 100 68 116Z" fill="#df8a19" opacity=".18"/>
+  <ellipse cx="78" cy="171" rx="13" ry="8" fill="#f79435" opacity=".28"/>
+  <ellipse cx="178" cy="171" rx="13" ry="8" fill="#f79435" opacity=".28"/>
+  <g fill="#343044">
+    <ellipse cx="99" cy="146" rx="10" ry="12"/>
+    <ellipse cx="157" cy="146" rx="10" ry="12"/>
+  </g>
+  <path d="M97 178 C109 198 147 198 159 178" fill="none" stroke="#343044" stroke-width="11" stroke-linecap="round"/>
+  <path d="M65 69 H191 V98 Q128 121 65 98Z" fill="url(#band)"/>
+  <path d="M24 59 123 22 Q128 20 133 22 L232 59 Q240 62 232 65 L133 103 Q128 105 123 103 L24 65 Q16 62 24 59Z" fill="url(#cap)" stroke="#8b99b2" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M128 61 62 85 V120" fill="none" stroke="#202b43" stroke-opacity=".2" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M128 58 59 82 V119" fill="none" stroke="#ffd462" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <ellipse cx="128" cy="58" rx="8" ry="5" fill="#ffdc77"/>
+  <path d="M52 119 Q59 114 66 119 L70 143 Q70 148 65 149 H53 Q48 148 48 143Z" fill="url(#tassel)"/>
+  <path d="M53 120 H65" stroke="#e99728" stroke-width="4" stroke-linecap="round"/>
+</svg>

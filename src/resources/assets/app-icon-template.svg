@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>student-mcp — macOS menu bar template</title>
+  <defs>
+    <!-- macOS tints alpha, not RGB: the face must be cut out of the silhouette. -->
+    <mask id="expression" maskUnits="userSpaceOnUse" x="0" y="0" width="256" height="256">
+      <rect width="256" height="256" fill="white"/>
+      <g fill="black">
+        <ellipse cx="99" cy="146" rx="10" ry="12"/>
+        <ellipse cx="157" cy="146" rx="10" ry="12"/>
+      </g>
+      <path d="M97 178 C109 198 147 198 159 178" fill="none" stroke="black" stroke-width="12" stroke-linecap="round"/>
+      <path d="M58 100 Q128 129 198 100" fill="none" stroke="black" stroke-width="9"/>
+    </mask>
+  </defs>
+  <g fill="black" mask="url(#expression)">
+    <circle cx="128" cy="153" r="87"/>
+    <path d="M65 69 H191 V98 Q128 121 65 98Z"/>
+    <path d="M24 59 123 22 Q128 20 133 22 L232 59 Q240 62 232 65 L133 103 Q128 105 123 103 L24 65 Q16 62 24 59Z"/>
+  </g>
+  <path d="M59 78 V119" fill="none" stroke="black" stroke-width="8" stroke-linecap="round"/>
+  <path d="M52 119 Q59 114 66 119 L70 143 Q70 148 65 149 H53 Q48 148 48 143Z"/>
+</svg>

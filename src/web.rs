@@ -186,6 +186,7 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
             )
         } else if request.method() == &Method::Get && path.starts_with("/assets/") {
             let image: Option<&'static [u8]> = match path.as_str() {
+                "/assets/app-icon.png" => Some(include_bytes!("resources/assets/app-icon-64.png")),
                 "/assets/moodle.png" => Some(include_bytes!("resources/assets/moodle-icon.png")),
                 "/assets/omnivox.png" => Some(include_bytes!("resources/assets/omnivox-icon.png")),
                 "/assets/brightspace.png" => {
