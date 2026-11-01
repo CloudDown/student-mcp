@@ -7,9 +7,9 @@ No password or MFA code is passed through the MCP tools.
 
 ## Browser and lifecycle
 
-- Install Chrome, Chromium or Edge. The application discovers common installation
-  paths on Linux, Windows and macOS. For a non-standard installation, set
-  `STUDENT_MCP_BROWSER` to the absolute executable path before starting the app.
+- Uses the default Chromium-based browser (Chrome, Edge, Brave, Helium, …) in a
+  private profile. Safari and Firefox cannot drive this session. Override with
+  `STUDENT_MCP_BROWSER` set to an absolute executable path.
 - No Node.js, Playwright, extension, or separate gateway is required at runtime.
   Rust uses Chrome DevTools Protocol over a loopback connection.
 - Each account has a dedicated browser profile, separate from ordinary browsing.

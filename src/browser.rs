@@ -73,18 +73,240 @@ struct Profile {
     identity: Option<String>,
 }
 
+fn is_chromium_browser(path: &Path) -> bool {
+    let name = path
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_ascii_lowercase();
+    let name = name.replace(['-', '_', ' '], "");
+    [
+        "chrome",
+        "chromium",
+        "msedge",
+        "edgedev",
+        "brave",
+        "vivaldi",
+        "opera",
+        "helium",
+        "ungoogled",
+        "thorium",
+        "iridium",
+        "cromite",
+    ]
+    .iter()
+    .any(|marker| name.contains(marker))
+        && !name.contains("firefox")
+        && !name.contains("safari")
+}
+
+fn parse_desktop_exec(contents: &str) -> Option<String> {
+    contents
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("Exec=").and_then(split_command))
+}
+
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn parse_reg_sz(output: &str) -> Option<String> {
+    output.lines().find_map(|line| {
+        line.split_once("REG_SZ")
+            .map(|(_, value)| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    })
+}
+
+fn split_command(command: &str) -> Option<String> {
+    let command = command.trim();
+    if let Some(rest) = command.strip_prefix('"') {
+        let end = rest.find('"')?;
+        return Some(rest[..end].into());
+    }
+    command
+        .split_whitespace()
+        .next()
+        .map(str::to_string)
+        .filter(|value| !value.is_empty())
+}
+
+fn resolve_command(command: &str) -> Option<PathBuf> {
+    let path = PathBuf::from(command);
+    if path.is_absolute() {
+        return path.is_file().then_some(path);
+    }
+    std::env::split_paths(&std::env::var_os("PATH")?)
+        .map(|dir| dir.join(command))
+        .find(|path| path.is_file())
+}
+
+fn prefer_real_chromium(path: PathBuf) -> PathBuf {
+    let Ok(target) = path.canonicalize() else {
+        return path;
+    };
+    let Some(dir) = target.parent() else {
+        return path;
+    };
+    for name in [
+        "helium",
+        "chrome",
+        "chrome.exe",
+        "chromium",
+        "msedge",
+        "msedge.exe",
+    ] {
+        let candidate = dir.join(name);
+        if candidate.is_file() && candidate != target {
+            return candidate;
+        }
+    }
+    path
+}
+
+fn command_stdout(bin: &str, args: &[&str]) -> Option<String> {
+    let output = Command::new(bin).args(args).output().ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn linux_desktop_file(id: &str) -> Option<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(home) = std::env::var_os("XDG_DATA_HOME") {
+        dirs.push(PathBuf::from(home));
+    } else if let Some(home) = std::env::var_os("HOME") {
+        dirs.push(PathBuf::from(home).join(".local/share"));
+    }
+    dirs.push(PathBuf::from("/usr/share/omarchy"));
+    if let Some(data) = std::env::var_os("XDG_DATA_DIRS") {
+        dirs.extend(std::env::split_paths(&data));
+    } else {
+        dirs.extend([
+            PathBuf::from("/usr/local/share"),
+            PathBuf::from("/usr/share"),
+        ]);
+    }
+    dirs.into_iter()
+        .map(|dir| dir.join("applications").join(id))
+        .find(|path| path.is_file())
+}
+
+fn default_https_browser() -> Option<PathBuf> {
+    #[cfg(target_os = "linux")]
+    {
+        let mut ids = Vec::new();
+        for (bin, args) in [
+            ("omarchy-cmd-default-browser", &[] as &[&str]),
+            ("xdg-settings", &["get", "default-web-browser"]),
+        ] {
+            if let Some(id) = command_stdout(bin, args) {
+                if id.ends_with(".desktop") && !ids.contains(&id) {
+                    ids.push(id);
+                }
+            }
+        }
+        for id in ids {
+            let Some(file) = linux_desktop_file(&id) else {
+                continue;
+            };
+            let Ok(text) = fs::read_to_string(file) else {
+                continue;
+            };
+            let Some(command) = parse_desktop_exec(&text) else {
+                continue;
+            };
+            let Some(path) = resolve_command(&command) else {
+                continue;
+            };
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+            if name.contains("omarchy-launch-browser") || name.contains("xdg-open") {
+                continue;
+            }
+            if is_chromium_browser(&path) {
+                return Some(prefer_real_chromium(path));
+            }
+        }
+        None
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let script = r#"ObjC.import("AppKit"); const app = $.NSWorkspace.sharedWorkspace.URLForApplicationToOpenURL($.NSURL.URLWithString("https:")); app ? app.path.js : """#;
+        let path = command_stdout("osascript", &["-l", "JavaScript", "-e", script])?;
+        let path = PathBuf::from(path.trim_end_matches('/'));
+        let binary = if path.extension().is_some_and(|ext| ext == "app") {
+            let macos = path.join("Contents/MacOS");
+            [
+                "Google Chrome",
+                "Chromium",
+                "Microsoft Edge",
+                "Brave Browser",
+                "Helium",
+                "Vivaldi",
+                "Opera",
+            ]
+            .into_iter()
+            .map(|name| macos.join(name))
+            .find(|candidate| candidate.is_file())
+            .or_else(|| {
+                fs::read_dir(macos)
+                    .ok()?
+                    .flatten()
+                    .map(|e| e.path())
+                    .find(|p| p.is_file())
+            })?
+        } else {
+            path
+        };
+        is_chromium_browser(&binary).then_some(prefer_real_chromium(binary))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let progid = parse_reg_sz(&command_stdout(
+            "reg",
+            &[
+                "query",
+                r"HKCU\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice",
+                "/v",
+                "ProgId",
+            ],
+        )?)?;
+        let command = parse_reg_sz(&command_stdout(
+            "reg",
+            &[
+                "query",
+                &format!(r"HKCR\{progid}\shell\open\command"),
+                "/ve",
+            ],
+        )?)?;
+        let path = PathBuf::from(split_command(&command)?);
+        path.is_file()
+            .then_some(path)
+            .filter(|path| is_chromium_browser(path))
+            .map(prefer_real_chromium)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        None
+    }
+}
+
 fn executable() -> Result<PathBuf, String> {
     if let Some(path) = std::env::var_os("STUDENT_MCP_BROWSER") {
         let path = PathBuf::from(path);
         return if path.is_absolute() && path.is_file() {
             Ok(path)
         } else {
-            Err("STUDENT_MCP_BROWSER must be an absolute path to Chrome, Chromium or Edge.".into())
+            Err("STUDENT_MCP_BROWSER must be an absolute path to a Chromium-based browser.".into())
         };
+    }
+    if let Some(path) = default_https_browser() {
+        return Ok(path);
     }
     let mut candidates = vec![
         PathBuf::from("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
         PathBuf::from("/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"),
+        PathBuf::from("/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"),
+        PathBuf::from("/Applications/Helium.app/Contents/MacOS/Helium"),
         PathBuf::from("/Applications/Chromium.app/Contents/MacOS/Chromium"),
     ];
     for root in ["PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"] {
@@ -92,6 +314,7 @@ fn executable() -> Result<PathBuf, String> {
             for name in [
                 "Google/Chrome/Application/chrome.exe",
                 "Microsoft/Edge/Application/msedge.exe",
+                "BraveSoftware/Brave-Browser/Application/brave.exe",
             ] {
                 candidates.push(PathBuf::from(&root).join(name));
             }
@@ -100,21 +323,31 @@ fn executable() -> Result<PathBuf, String> {
     if let Some(paths) = std::env::var_os("PATH") {
         for path in std::env::split_paths(&paths) {
             for name in [
+                "helium-browser",
+                "helium",
                 "chromium",
                 "chromium-browser",
                 "google-chrome",
                 "google-chrome-stable",
+                "brave-browser",
+                "vivaldi",
                 "microsoft-edge",
+                "microsoft-edge-stable",
                 "chrome.exe",
                 "msedge.exe",
+                "brave.exe",
             ] {
                 candidates.push(path.join(name));
             }
         }
     }
-    candidates.into_iter().find(|p| p.is_file()).ok_or_else(|| {
-        "Install Chrome, Chromium or Edge to connect with the browser, then try again.".into()
-    })
+    candidates
+        .into_iter()
+        .find(|path| path.is_file() && is_chromium_browser(path))
+        .map(prefer_real_chromium)
+        .ok_or_else(|| {
+            "Set Chrome, Edge, Brave or Helium as your default browser, then try again.".into()
+        })
 }
 
 pub struct Reply {
@@ -920,6 +1153,47 @@ pub fn remove(token: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_browser_detection_accepts_chromium_family_only() {
+        assert!(is_chromium_browser(Path::new("/usr/bin/helium-browser")));
+        assert!(is_chromium_browser(Path::new(
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe"
+        )));
+        assert!(is_chromium_browser(Path::new(
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        )));
+        assert!(!is_chromium_browser(Path::new("/usr/bin/firefox")));
+        assert!(!is_chromium_browser(Path::new(
+            "/Applications/Safari.app/Contents/MacOS/Safari"
+        )));
+        assert_eq!(
+            parse_desktop_exec("[Desktop Entry]\nName=Browser\nExec=helium-browser %U\n"),
+            Some("helium-browser".into())
+        );
+        assert_eq!(
+            parse_desktop_exec("Exec=\"/opt/helium-browser-bin/helium-wrapper\" %U\n"),
+            Some("/opt/helium-browser-bin/helium-wrapper".into())
+        );
+        assert_eq!(
+            parse_desktop_exec("Name=Browser\nExec=omarchy-launch-browser %U\n"),
+            Some("omarchy-launch-browser".into())
+        );
+        assert_eq!(
+            parse_reg_sz("    ProgId    REG_SZ    ChromeHTML\r\n"),
+            Some("ChromeHTML".into())
+        );
+        assert_eq!(
+            split_command(
+                r#""C:\Program Files\Google\Chrome\Application\chrome.exe" --single-argument %1"#
+            ),
+            Some(r"C:\Program Files\Google\Chrome\Application\chrome.exe".into())
+        );
+        if let Some(path) = default_https_browser() {
+            assert!(path.is_file(), "{path:?}");
+            assert!(is_chromium_browser(&path), "{path:?}");
+        }
+    }
 
     #[test]
     fn browser_login_rejects_incompatible_services_and_origins_before_launch() {
