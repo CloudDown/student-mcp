@@ -7,10 +7,23 @@ import pathlib
 import plistlib
 import shutil
 import subprocess
+import struct
 import tempfile
 import tomllib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+ICON = ROOT / "src/resources/assets/app-icon.png"
+
+
+def png_icon(output, kind):
+    """Wrap the bundled 256px PNG in a native Windows or macOS icon container."""
+    image = ICON.read_bytes()
+    if kind == "ico":
+        header = struct.pack("<HHHBBBBHHII", 0, 1, 1, 0, 0, 0, 0, 1, 32, len(image), 22)
+        output.write_bytes(header + image)
+    else:
+        output.write_bytes(b"icns" + struct.pack(">I", len(image) + 16) + b"ic08" +
+                           struct.pack(">I", len(image) + 8) + image)
 
 
 def checksum(artifact):
@@ -34,6 +47,9 @@ def macos_bundle(directory, binary, launcher, version):
     contents = app / "Contents"
     executables = contents / "MacOS"
     executables.mkdir(parents=True)
+    resources = contents / "Resources"
+    resources.mkdir()
+    png_icon(resources / "student-mcp.icns", "icns")
     for source, name in ((binary, "student-mcp"), (launcher, "student-mcp-desktop")):
         destination = executables / name
         shutil.copy2(source, destination)
@@ -44,6 +60,7 @@ def macos_bundle(directory, binary, launcher, version):
             "CFBundleDisplayName": "student-mcp",
             "CFBundleIdentifier": "com.clouddown.student-mcp",
             "CFBundleExecutable": "student-mcp-desktop",
+            "CFBundleIconFile": "student-mcp.icns",
             "CFBundlePackageType": "APPL",
             "CFBundleShortVersionString": version,
             "CFBundleVersion": version,
@@ -107,13 +124,16 @@ def package_windows(args, version, output):
         pathlib.Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)"))
         / "Inno Setup 6/ISCC.exe"
     )
-    subprocess.run([
-        compiler,
-        f"/DAppVersion={version}", f"/DX64Binary={args.x64_binary}",
-        f"/DX64Launcher={args.x64_launcher}", f"/DArm64Binary={args.arm64_binary}",
-        f"/DArm64Launcher={args.arm64_launcher}", f"/DOutputDir={output}",
-        str(ROOT / "tools/packaging/windows.iss"),
-    ], check=True)
+    with tempfile.TemporaryDirectory(prefix="student-mcp-icon-") as temporary:
+        icon = pathlib.Path(temporary) / "student-mcp.ico"
+        png_icon(icon, "ico")
+        subprocess.run([
+            compiler,
+            f"/DAppVersion={version}", f"/DX64Binary={args.x64_binary}",
+            f"/DX64Launcher={args.x64_launcher}", f"/DArm64Binary={args.arm64_binary}",
+            f"/DArm64Launcher={args.arm64_launcher}", f"/DOutputDir={output}",
+            f"/DAppIcon={icon}", str(ROOT / "tools/packaging/windows.iss"),
+        ], check=True)
     return output / "student-mcp-setup.exe"
 
 

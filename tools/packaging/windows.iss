@@ -18,16 +18,18 @@ SolidCompression=yes
 WizardStyle=modern
 CloseApplications=yes
 RestartApplications=no
-UninstallDisplayIcon={app}\student-mcp-desktop.exe
+SetupIconFile={#AppIcon}
+UninstallDisplayIcon={app}\student-mcp.ico
 
 [Files]
+Source: "{#AppIcon}"; DestDir: "{app}"; DestName: "student-mcp.ico"; Flags: ignoreversion
 Source: "{#X64Binary}"; DestDir: "{app}"; DestName: "student-mcp.exe"; Flags: ignoreversion; Check: not IsArm64
 Source: "{#X64Launcher}"; DestDir: "{app}"; DestName: "student-mcp-desktop.exe"; Flags: ignoreversion; Check: not IsArm64
 Source: "{#Arm64Binary}"; DestDir: "{app}"; DestName: "student-mcp.exe"; Flags: ignoreversion; Check: IsArm64
 Source: "{#Arm64Launcher}"; DestDir: "{app}"; DestName: "student-mcp-desktop.exe"; Flags: ignoreversion; Check: IsArm64
 
 [Icons]
-Name: "{autoprograms}\student-mcp"; Filename: "{app}\student-mcp-desktop.exe"
+Name: "{autoprograms}\student-mcp"; Filename: "{app}\student-mcp-desktop.exe"; IconFilename: "{app}\student-mcp.ico"
 
 [Run]
 Filename: "{app}\student-mcp-desktop.exe"; Description: "Open student-mcp"; Flags: nowait postinstall skipifsilent

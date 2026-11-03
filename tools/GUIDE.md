@@ -21,7 +21,9 @@ The installers are not yet publisher-signed/notarized; OS security checks may
 warn or block them. Do not disable those checks. See
 [release maintenance](#release-maintenance) for build and signing requirements.
 Linux uses `tools/packaging/install.sh`, as described in the
-[README](../README.md#install). No ZIPs are published.
+[README](../README.md#install). It adds student-mcp and its icon to the user's
+application menu. Downloading the raw binary alone does not create a launcher.
+No ZIPs are published.
 
 ## 1. What you see when it opens
 

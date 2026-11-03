@@ -100,6 +100,51 @@ else
   mkdir -p "$install_dir"
   cp "$binary" "$install_dir/student-mcp"
   chmod +x "$install_dir/student-mcp"
+  if [ "$system" = linux ]; then
+    # New releases embed the icon; older verified binaries get it from the
+    # same commit as this installer (without coupling to the moving main branch).
+    data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
+    case "$data_home" in /*) ;; *) data_home="$HOME/.local/share" ;; esac
+    case "$HOME$data_home" in *$'\n'*|*$'\r'*) printf 'Cannot create a launcher for a path containing a newline.\n' >&2; exit 1 ;; esac
+    applications="$data_home/applications"
+    icon_dir="$data_home/icons/hicolor/256x256/apps"
+    mkdir -p "$applications" "$icon_dir"
+    if ! "$install_dir/student-mcp" --app-icon > "$tmp/app-icon.png" 2>/dev/null; then
+      icon_base='https://raw.githubusercontent.com/CloudDown/student-mcp/3b24a2035f5730fe0aced08a70ee989138797985/src/resources/assets'
+      curl --fail --location --silent --show-error --retry 2 --proto '=https' --proto-redir '=https' "$icon_base/app-icon.png" -o "$tmp/app-icon.png"
+      expected_icon='a0e17c386817469405d848dac74d33a92cb47e088911ad1f2f819cd68dc35b62'
+      if command -v sha256sum >/dev/null 2>&1; then
+        actual_icon="$(sha256sum "$tmp/app-icon.png")"
+      else
+        actual_icon="$(shasum -a 256 "$tmp/app-icon.png")"
+      fi
+      if [ "${actual_icon%% *}" != "$expected_icon" ]; then
+        printf 'The application icon does not match its SHA-256 checksum.\n' >&2
+        exit 1
+      fi
+    fi
+    cp "$tmp/app-icon.png" "$icon_dir/student-mcp.png"
+    # Desktop Entry Exec uses double-quoted arguments, not shell quoting.
+    exec_path="${install_dir}/student-mcp"
+    exec_path="${exec_path//\\/\\\\}"
+    exec_path="${exec_path//\"/\\\"}"
+    exec_path="${exec_path//\$/\\\$}"
+    exec_path="${exec_path//\`/\\\`}"
+    exec_path="${exec_path//%/%%}"
+    cat > "$applications/student-mcp.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=student-mcp
+Comment=Connect your student services to your AI assistant
+Exec="$exec_path" up
+Icon=student-mcp
+Terminal=false
+Categories=Education;
+EOF
+    if command -v update-desktop-database >/dev/null 2>&1; then
+      update-desktop-database "$applications" >/dev/null 2>&1 || true
+    fi
+  fi
   nohup "$install_dir/student-mcp" up > "$HOME/.student-mcp/window.log" 2>&1 &
   printf "The student-mcp window is opening. Installed file: %s\n" "$install_dir/student-mcp"
 fi

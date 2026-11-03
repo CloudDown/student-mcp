@@ -62,6 +62,12 @@ class DesktopTests(unittest.TestCase):
                         b"x64-launcher-fixture+arm64-launcher-fixture",
                     )
                     self.assertTrue((resources / "install-macos.sh").is_file())
+                    app_contents = resources / "student-mcp.app/Contents"
+                    with (app_contents / "Info.plist").open("rb") as source:
+                        self.assertEqual(plistlib.load(source)["CFBundleIconFile"], "student-mcp.icns")
+                    icon = (app_contents / "Resources/student-mcp.icns").read_bytes()
+                    self.assertEqual(icon[:4], b"icns")
+                    self.assertEqual(icon[16:], desktop.ICON.read_bytes())
                     with (installer / "Contents/Info.plist").open("rb") as source:
                         self.assertEqual(
                             plistlib.load(source)["CFBundleIdentifier"],
@@ -110,6 +116,15 @@ class DesktopTests(unittest.TestCase):
                 self.assertIn(definition, command)
             self.assertTrue(run.call_args.kwargs["check"])
             self.assertEqual(artifact.name, "student-mcp-setup.exe")
+            self.assertTrue(any(definition.startswith("/DAppIcon=") for definition in command))
+
+    def test_windows_icon_contains_the_app_artwork(self):
+        with tempfile.TemporaryDirectory() as directory:
+            icon = pathlib.Path(directory) / "student-mcp.ico"
+            desktop.png_icon(icon, "ico")
+            self.assertEqual(icon.read_bytes()[22:], desktop.ICON.read_bytes())
+            script = (ROOT / "tools/packaging/windows.iss").read_text()
+            self.assertIn('IconFilename: "{app}\\student-mcp.ico"', script)
 
     def test_failed_native_packaging_does_not_emit_checksum(self):
         with tempfile.TemporaryDirectory() as directory:

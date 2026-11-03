@@ -17,6 +17,15 @@ fn main() {
         }
         Some("install") => run_web(None, true),
         Some("version" | "--version" | "-V") => println!("student-mcp {VERSION}"),
+        Some("--app-icon") => {
+            use std::io::Write;
+            if std::io::stdout()
+                .write_all(include_bytes!("resources/assets/app-icon.png"))
+                .is_err()
+            {
+                std::process::exit(1);
+            }
+        }
         Some("--licenses") => print!(
             "{}\n{}\n{}",
             include_str!("../LICENSE"),

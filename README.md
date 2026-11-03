@@ -22,7 +22,9 @@ Download **[student-mcp.dmg](https://github.com/CloudDown/student-mcp/releases/l
 curl -fsSL https://raw.githubusercontent.com/CloudDown/student-mcp/main/tools/packaging/install.sh | bash
 ```
 
-Or take `student-mcp-linux-x64` / `student-mcp-linux-arm64` from the same release page.
+The installer adds student-mcp to your application launcher. The raw
+`student-mcp-linux-x64` / `student-mcp-linux-arm64` binaries are also available
+from the release page, but do not install a launcher by themselves.
 
 Windows/macOS builds are not yet publisher-signed. [Details](tools/GUIDE.md#installation).
 

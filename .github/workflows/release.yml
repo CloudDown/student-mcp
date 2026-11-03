@@ -229,10 +229,14 @@ jobs:
             $process = Start-Process $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$destination`"" -Wait -PassThru
             if ($process.ExitCode -ne 0) { throw "Installation failed: $($process.ExitCode)" }
             $files = @(Get-ChildItem $destination -File | Select-Object -ExpandProperty Name)
-            if (@($files | Where-Object { $_ -notin @('student-mcp.exe', 'student-mcp-desktop.exe', 'unins000.exe', 'unins000.dat') }).Count -gt 0) {
+            if (@($files | Where-Object { $_ -notin @('student-mcp.exe', 'student-mcp-desktop.exe', 'student-mcp.ico', 'unins000.exe', 'unins000.dat') }).Count -gt 0) {
               throw "Unexpected installed files: $files"
             }
             if (-not (Test-Path "$destination/student-mcp-desktop.exe")) { throw 'Desktop launcher missing' }
+            $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'student-mcp.lnk'
+            if (-not (Test-Path $shortcut)) { throw 'Start menu shortcut missing' }
+            $link = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcut)
+            if ($link.IconLocation -notlike "*$destination\student-mcp.ico*") { throw 'Start menu icon missing' }
             $expectedMachine = if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -eq 'Arm64') { 0xAA64 } else { 0x8664 }
             foreach ($name in @('student-mcp.exe', 'student-mcp-desktop.exe')) {
               $bytes = [System.IO.File]::ReadAllBytes((Join-Path $destination $name))
@@ -288,6 +292,7 @@ jobs:
             /bin/bash "$installer/Contents/Resources/install-macos.sh" \
               "$installer/Contents/Resources/student-mcp.app"
             codesign --verify --deep --strict /Applications/student-mcp.app
+            test -f /Applications/student-mcp.app/Contents/Resources/student-mcp.icns
             /Applications/student-mcp.app/Contents/MacOS/student-mcp --version
           done
 
