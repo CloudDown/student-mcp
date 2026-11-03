@@ -31,7 +31,7 @@ Windows/macOS builds are not yet publisher-signed. [Details](tools/GUIDE.md#inst
 <table>
   <tr>
     <td width="33%" align="center"><img src="src/resources/assets/moodle-icon.png" width="48" alt="Moodle logo" /><br /><b>Moodle</b><br /><sub>Courses, deadlines, grades &amp; PDFs</sub></td>
-    <td width="33%" align="center"><img src="src/resources/assets/omnivox-icon.png" width="48" alt="Omnivox logo" /><br /><b>Omnivox</b><br /><sub>Léa · Grades, documents &amp; schedule</sub></td>
+    <td width="33%" align="center"><img src="src/resources/assets/omnivox-icon.png" width="48" alt="Omnivox logo" /><br /><b>Omnivox</b><br /><sub>Léa &amp; MIO · Courses, grades, documents, calendar and messaging</sub></td>
     <td width="33%" align="center"><img src="src/resources/assets/brightspace-icon.png" width="48" alt="Brightspace logo" /><br /><b>Brightspace</b><br /><sub>myCourses · Courses, content &amp; grades</sub></td>
   </tr>
 </table>
@@ -39,6 +39,6 @@ Windows/macOS builds are not yet publisher-signed. [Details](tools/GUIDE.md#inst
 Sign in on the local page → copy the link → add it to your assistant's **MCP connectors**.
 Keep the computer online. Closing the tab leaves a tray icon; quit from there or from the page.
 
-**v0.6.6:** Improves document delivery, connection management and Moodle deadline reporting. Moodle and Brightspace remain the stable connectors; Omnivox is still experimental on some college sites.
+**v0.6.6:** Adds curated Omnivox tools for Léa, calendars, documents and MIO, including explicitly annotated write actions. Also improves document delivery, connection management and Moodle deadline reporting. Availability can vary by college and account permissions.
 
 <p align="center"><a href="tools/GUIDE.md">Docs</a> · <a href="tools/GUIDE.md#4-automatic-public-link-for-web-ai">Privacy &amp; relay</a> · MIT code; <a href="src/services/moodle/catalog/LICENSE.md">GPL-3.0+ Moodle catalogue</a></p>
