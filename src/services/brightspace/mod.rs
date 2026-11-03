@@ -1,4 +1,4 @@
-//! Brightspace Valence API (read tools plus gated student writes such as dropbox submit).
+//! Brightspace Valence API (read tools and student writes such as dropbox submit).
 //! Session cookies pasted from the browser after SSO, or an OAuth token if the school issued one.
 //! https://docs.valence.desire2learn.com/
 use crate::config::BrightspaceConfig;
@@ -62,7 +62,7 @@ impl BrightspaceClient {
                 .browser
                 .request("GET", url.as_str(), None, None, false, 2 * 1024 * 1024)?
                 .json()
-                .map(|value| crate::moodle::scrub(value, &self.config.token));
+                .map(|value| crate::redact::scrub(value, &self.config.token));
         }
         let mut request =
             self.authorize(self.agent.get(&format!("{}{path}", self.config.base_url)));
@@ -103,7 +103,7 @@ impl BrightspaceClient {
         }
         let value: Value = serde_json::from_slice(&bytes)
             .map_err(|_| "Brightspace did not return JSON. Check the site address.".to_string())?;
-        Ok(crate::moodle::scrub(value, &self.config.token))
+        Ok(crate::redact::scrub(value, &self.config.token))
     }
 
     pub fn whoami(&self) -> Result<Value, String> {
@@ -134,7 +134,7 @@ impl BrightspaceClient {
         &self,
         courseid: i64,
         topicid: i64,
-        query: &crate::moodle::FileQuery,
+        query: &crate::delivery::FileQuery,
     ) -> Result<Value, String> {
         if courseid <= 0 || topicid <= 0 {
             return Err("Provide integer courseid and topicid > 0.".into());
@@ -154,7 +154,7 @@ impl BrightspaceClient {
                     reply.status
                 ));
             }
-            let filename = crate::moodle::filename_from(Some(&reply.disposition), &url);
+            let filename = crate::delivery::filename_from(Some(&reply.disposition), &url);
             (reply.mime, filename, reply.bytes)
         } else {
             let response = self.authorize(self.agent.get(&url))
@@ -172,7 +172,7 @@ impl BrightspaceClient {
             }
             let mime = response.content_type().to_string();
             let filename =
-                crate::moodle::filename_from(response.header("Content-Disposition"), &url);
+                crate::delivery::filename_from(response.header("Content-Disposition"), &url);
             const MAX_BYTES: u64 = 12 * 1024 * 1024;
             let mut bytes = Vec::new();
             response
@@ -196,7 +196,7 @@ impl BrightspaceClient {
         {
             return Err("Brightspace returned a web page or API response instead of a file. Reconnect or open this topic in your browser.".into());
         }
-        let mut result = crate::moodle::MoodleClient::read_document(
+        let mut result = crate::delivery::read_document(
             &filename,
             &mime,
             Arc::new(bytes),
@@ -365,7 +365,7 @@ impl BrightspaceClient {
                 "folderid": folderid,
                 "filename": filename,
                 "bytes": bytes.len(),
-                "submission": crate::moodle::scrub(value, &self.config.token),
+                "submission": crate::redact::scrub(value, &self.config.token),
             })
         } else {
             json!({
@@ -1065,7 +1065,7 @@ mod tests {
         let (config, worker) =
             server_with_mime(vec![(200, "Read chapter five.".into())], "text/plain");
         let result = BrightspaceClient::new(config)
-            .download_file(42, 17, &crate::moodle::FileQuery::default())
+            .download_file(42, 17, &crate::delivery::FileQuery::default())
             .unwrap();
         assert_eq!(result["text"], "Read chapter five.");
         let requests = worker.join().unwrap();
@@ -1096,7 +1096,7 @@ mod tests {
         ] {
             let (config, worker) = server_with_mime(vec![(status, body)], mime);
             let error = BrightspaceClient::new(config)
-                .download_file(42, 17, &crate::moodle::FileQuery::default())
+                .download_file(42, 17, &crate::delivery::FileQuery::default())
                 .unwrap_err();
             assert!(!error.contains("test-private-token"));
             assert_eq!(worker.join().unwrap().len(), 1);
@@ -1276,7 +1276,7 @@ mod tests {
             activate(&mut settings, &config.base_url, &config.token, true).unwrap();
             let saved = crate::config::Settings::load();
             assert_eq!(saved.brightspace().unwrap().token, config.token);
-            assert!(saved.brightspace().unwrap().allow_write);
+            assert_eq!(saved.brightspace.as_ref().unwrap().allow_write, None);
             assert_eq!(saved.services_active(), vec!["brightspace"]);
             assert!(crate::mcp::tool_definitions(&saved)
                 .iter()

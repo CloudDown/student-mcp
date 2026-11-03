@@ -89,7 +89,7 @@ fn download(args: &Value) -> Result<Download, String> {
 pub(super) fn read(
     client: &OmnivoxClient,
     args: &Value,
-    query: &crate::moodle::FileQuery,
+    query: &crate::delivery::FileQuery,
 ) -> Result<Value, String> {
     // Validate every selector before resolving a term or contacting the school.
     let mut download = download(args)?;
@@ -118,7 +118,7 @@ pub(super) fn read(
                 reply.status
             ));
         }
-        let filename = crate::moodle::filename_from(Some(&reply.disposition), url.as_str());
+        let filename = crate::delivery::filename_from(Some(&reply.disposition), url.as_str());
         (reply.mime, filename, reply.bytes)
     } else {
         let request = client.agent.get(url.as_str()).set("Accept", "*/*");
@@ -139,7 +139,7 @@ pub(super) fn read(
         }
         let mime = response.content_type().to_string();
         let filename =
-            crate::moodle::filename_from(response.header("Content-Disposition"), url.as_str());
+            crate::delivery::filename_from(response.header("Content-Disposition"), url.as_str());
         let mut bytes = Vec::new();
         response
             .into_reader()
@@ -162,7 +162,7 @@ pub(super) fn read(
     if bytes.is_empty() {
         return Err("Omnivox returned an empty file.".into());
     }
-    let mut result = crate::moodle::MoodleClient::read_document(
+    let mut result = crate::delivery::read_document(
         &filename,
         &mime,
         Arc::new(bytes),

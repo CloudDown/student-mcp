@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 const TTL: Duration = Duration::from_secs(3 * 60 * 60);
 const MAX_BYTES: usize = 24 * 1024 * 1024;
+const MAX_FILES: usize = 128;
 static ADDRESS: Mutex<(u16, Option<String>)> = Mutex::new((0, None));
 static FILES: Mutex<Vec<Artifact>> = Mutex::new(Vec::new());
 #[cfg(test)]
@@ -42,6 +43,17 @@ pub(crate) fn publish_bytes(
     text: &str,
     _pages: u32,
 ) -> Option<String> {
+    let mut files = FILES.lock().ok()?;
+    publish_into(&mut files, filename, mime, bytes, text)
+}
+
+fn publish_into(
+    files: &mut Vec<Artifact>,
+    filename: &str,
+    mime: &str,
+    bytes: Arc<Vec<u8>>,
+    text: &str,
+) -> Option<String> {
     let size = bytes.len().checked_add(text.len())?;
     if bytes.is_empty() || size > MAX_BYTES {
         return None;
@@ -58,9 +70,10 @@ pub(crate) fn publish_bytes(
             }
         })
         .collect();
-    let mut files = FILES.lock().ok()?;
     files.retain(|f| f.expires > Instant::now());
-    while files.len() >= 4
+    // Never invalidate a live capability to admit a new file. Callers fall back
+    // to inline delivery when the bounded store is full.
+    if files.len() >= MAX_FILES
         || files
             .iter()
             .map(|f| f.bytes.len() + f.text.len())
@@ -68,7 +81,7 @@ pub(crate) fn publish_bytes(
             + size
             > MAX_BYTES
     {
-        files.remove(0);
+        return None;
     }
     files.push(Artifact {
         id: id.clone(),
@@ -149,6 +162,55 @@ pub(crate) fn route(method: &str, path: &str) -> Option<Reply> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn capacity_never_evicts_a_live_link_and_expiry_reclaims_space() {
+        let mut files = Vec::new();
+        let bytes = Arc::new(vec![1]);
+        let mut ids = Vec::new();
+        for _ in 0..MAX_FILES {
+            ids.push(
+                publish_into(
+                    &mut files,
+                    "notes.pdf",
+                    "application/pdf",
+                    bytes.clone(),
+                    "",
+                )
+                .unwrap(),
+            );
+        }
+        assert!(
+            publish_into(&mut files, "new.pdf", "application/pdf", bytes.clone(), "").is_none()
+        );
+        assert_eq!(
+            files.iter().map(|f| &f.id).collect::<Vec<_>>(),
+            ids.iter().collect::<Vec<_>>()
+        );
+        files[0].expires = Instant::now();
+        assert!(publish_into(&mut files, "new.pdf", "application/pdf", bytes, "").is_some());
+        assert!(!files.iter().any(|f| f.id == ids[0]));
+        assert!(files.iter().any(|f| f.id == ids[1]));
+
+        let mut files = Vec::new();
+        let id = publish_into(
+            &mut files,
+            "large.pdf",
+            "application/pdf",
+            Arc::new(vec![0; MAX_BYTES]),
+            "",
+        )
+        .unwrap();
+        assert!(publish_into(
+            &mut files,
+            "extra.pdf",
+            "application/pdf",
+            Arc::new(vec![1]),
+            ""
+        )
+        .is_none());
+        assert_eq!(files[0].id, id);
+    }
     #[test]
     fn original_and_optional_text_only() {
         let _guard = LINK_LOCK.lock().unwrap();

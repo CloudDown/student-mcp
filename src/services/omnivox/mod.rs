@@ -109,7 +109,7 @@ impl OmnivoxClient {
         let value: Value = response.into_json().map_err(|_| {
             "Omnivox MCP did not return a tool catalog. Check the address.".to_string()
         })?;
-        Ok(crate::moodle::scrub(value, &self.config.token))
+        Ok(crate::redact::scrub(value, &self.config.token))
     }
 
     fn mobl(&self, path: &str, body: Value) -> Result<Value, String> {
@@ -194,7 +194,7 @@ impl OmnivoxClient {
                     .into(),
             );
         }
-        Ok(reads::without_credentials(crate::moodle::scrub(
+        Ok(reads::without_credentials(crate::redact::scrub(
             value,
             &self.config.token,
         )))
@@ -209,7 +209,7 @@ impl OmnivoxClient {
             // The HTTP agent refuses redirects and performs no application retry.
             self.mobl(path, body)
         };
-        result.map(|value| reads::without_credentials(crate::moodle::scrub(value, &self.config.token)))
+        result.map(|value| reads::without_credentials(crate::redact::scrub(value, &self.config.token)))
             .map_err(|error| format!("{error} Write outcome is not confirmed. Check Omnivox before retrying; this action was not replayed."))
     }
 
@@ -236,7 +236,7 @@ impl OmnivoxClient {
             .map_err(|_| "Omnivox MCP returned an unreadable response.".to_string())?;
         let value =
             serde_json::from_str::<Value>(&text).unwrap_or_else(|_| json!({ "text": text }));
-        Ok(crate::moodle::scrub(value, &self.config.token))
+        Ok(crate::redact::scrub(value, &self.config.token))
     }
 
     pub fn status(&self) -> Result<Value, String> {

@@ -7,6 +7,24 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const DEFAULT_PORT: u16 = 8420;
 static SAVE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+// Keep this file in place: unlinking it would let two processes lock different inodes.
+fn lock_config() -> std::io::Result<std::fs::File> {
+    let path = config_path().with_extension("lock");
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true).write(true).create(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let file = options.open(path)?;
+    fs2::FileExt::lock_exclusive(&file)?;
+    Ok(file)
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GatewaySettings {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -36,7 +54,8 @@ pub struct MoodleSettings {
     pub url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Legacy input only. Approval belongs to the MCP client; omit on next save.
+    #[serde(skip_serializing)]
     pub allow_write: Option<bool>,
 }
 
@@ -79,8 +98,8 @@ impl std::fmt::Debug for OmnivoxSettings {
 pub struct BrightspaceSettings {
     pub url: Option<String>,
     pub token: Option<String>,
-    /// When true, write tools (assignment submit, …) may change Brightspace data.
-    /// MCP clients still see readOnlyHint=false and can require confirmation.
+    /// Legacy input only. Approval belongs to the MCP client; omit on next save.
+    #[serde(skip_serializing)]
     pub allow_write: Option<bool>,
 }
 
@@ -108,6 +127,9 @@ pub struct Settings {
     pub scale: Option<f32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub accounts: Vec<Account>,
+    /// Connected services can be temporarily hidden from MCP without deleting credentials.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disabled_services: Vec<String>,
     #[serde(skip)]
     pub account_scope: Option<(String, String)>,
     /// Set when the file on disk could not be read or parsed. Saves refuse to
@@ -235,12 +257,14 @@ impl Settings {
 
     pub fn save(&self) -> std::io::Result<()> {
         let _guard = SAVE_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let _file_guard = lock_config()?;
         self.save_unlocked()
     }
 
     /// Apply a small change to the latest root state, under the same lock as saves.
     pub fn update(edit: impl FnOnce(&mut Self)) -> std::io::Result<Self> {
         let _guard = SAVE_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let _file_guard = lock_config()?;
         let mut settings = Self::load();
         edit(&mut settings);
         settings.save_unlocked()?;
@@ -327,6 +351,12 @@ impl Settings {
             return Gateway { port, token };
         }
         let _guard = SAVE_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let Ok(_file_guard) = lock_config() else {
+            return Gateway {
+                port,
+                token: String::new(),
+            };
+        };
         let mut root = Self::load();
         root.account_scope = None;
         let port = root.gateway.port.unwrap_or(port);
@@ -379,10 +409,38 @@ impl Settings {
         }
     }
 
+    pub fn service_enabled(&self, service: &str) -> bool {
+        !self
+            .disabled_services
+            .iter()
+            .any(|disabled| disabled == service)
+    }
+
+    /// Persist service availability without touching any saved account credentials.
+    pub fn set_service_enabled(service: &str, enabled: bool) -> Result<Self, String> {
+        if !["moodle", "omnivox", "brightspace"].contains(&service) {
+            return Err("Unknown service".into());
+        }
+        Self::update(|settings| {
+            if enabled {
+                settings
+                    .disabled_services
+                    .retain(|disabled| disabled != service);
+            } else if !settings
+                .disabled_services
+                .iter()
+                .any(|disabled| disabled == service)
+            {
+                settings.disabled_services.push(service.to_string());
+            }
+        })
+        .map_err(|error| error.to_string())
+    }
+
     pub fn services_active(&self) -> Vec<String> {
         ["moodle", "omnivox", "brightspace"]
             .into_iter()
-            .filter(|id| !self.account_list(id).is_empty())
+            .filter(|id| self.service_enabled(id) && !self.account_list(id).is_empty())
             .map(str::to_string)
             .collect()
     }
@@ -642,6 +700,92 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn legacy_permissions_are_removed_without_losing_credentials() {
+        with_temp_config(|| {
+            std::fs::write(config_path(), r#"{"moodle":{"url":"https://school.example","token":"fixture","allow_write":false},"brightspace":{"url":"https://school.example","token":"fixture2","allow_write":true}}"#).unwrap();
+            let settings = Settings::load();
+            assert_eq!(settings.moodle.as_ref().unwrap().allow_write, Some(false));
+            settings.save().unwrap();
+            let text = std::fs::read_to_string(config_path()).unwrap();
+            assert!(!text.contains("allow_write"));
+            assert_eq!(Settings::load().moodle().unwrap().token, "fixture");
+            assert_eq!(Settings::load().brightspace().unwrap().token, "fixture2");
+        });
+    }
+
+    // Invoked in a separate test process by the regression below.
+    #[test]
+    fn config_writer_process() {
+        let Ok(path) = std::env::var("STUDENT_MCP_TEST_LOCK_CONFIG") else {
+            return;
+        };
+        let index = std::env::var("STUDENT_MCP_TEST_LOCK_INDEX").unwrap();
+        let path = PathBuf::from(path);
+        *CONFIG_OVERRIDE.lock().unwrap() = Some(path.clone());
+        std::fs::write(path.with_extension(format!("ready-{index}")), b"ready").unwrap();
+        Settings::update(|settings| {
+            settings.accounts.push(Account {
+                id: index,
+                service: "moodle".into(),
+                moodle: Some(MoodleSettings {
+                    url: Some("https://school.example".into()),
+                    token: Some("fixture".into()),
+                    ..Default::default()
+                }),
+                omnivox: None,
+                brightspace: None,
+            });
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn independent_processes_wait_for_config_transaction_and_preserve_updates() {
+        with_temp_config(|| {
+            Settings::default().save().unwrap();
+            let lock = lock_config().unwrap();
+            let mut children: Vec<_> = (0..4)
+                .map(|index| {
+                    std::process::Command::new(std::env::current_exe().unwrap())
+                        .args([
+                            "--exact",
+                            "config::tests::config_writer_process",
+                            "--nocapture",
+                        ])
+                        .env("STUDENT_MCP_TEST_LOCK_CONFIG", config_path())
+                        .env("STUDENT_MCP_TEST_LOCK_INDEX", index.to_string())
+                        .stdout(std::process::Stdio::null())
+                        .spawn()
+                        .unwrap()
+                })
+                .collect();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            for index in 0..4 {
+                while !config_path()
+                    .with_extension(format!("ready-{index}"))
+                    .exists()
+                {
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "child startup timeout"
+                    );
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let blocked = children
+                .iter_mut()
+                .all(|child| child.try_wait().unwrap().is_none());
+            drop(lock);
+            for mut child in children {
+                assert!(child.wait().unwrap().success());
+            }
+            assert!(blocked, "a writer bypassed the inter-process lock");
+            assert_eq!(Settings::load().accounts.len(), 4);
+        });
+    }
+
+    #[test]
     fn token_generates_once_and_persists() {
         with_temp_config(|| {
             let first = Settings::load().gateway();
@@ -671,6 +815,37 @@ pub(crate) mod tests {
             settings.disable("moodle");
             settings.save().unwrap();
             assert!(Settings::load().moodle().is_none());
+        });
+    }
+
+    #[test]
+    fn service_can_be_toggled_without_removing_saved_credentials() {
+        with_temp_config(|| {
+            let mut settings = Settings::load();
+            settings.omnivox = Some(OmnivoxSettings {
+                url: Some("https://college.omnivox.ca".into()),
+                token: Some("browser-profile:0123456789abcdef0123456789abcdef".into()),
+                device_id: Some("a".repeat(40)),
+                auth_hash: Some("private-auth-hash".into()),
+            });
+            settings.save().unwrap();
+
+            let disabled = Settings::set_service_enabled("omnivox", false).unwrap();
+            assert!(!disabled.service_enabled("omnivox"));
+            assert!(disabled.services_active().is_empty());
+            assert_eq!(
+                disabled.omnivox.as_ref().unwrap().token.as_deref(),
+                Some("browser-profile:0123456789abcdef0123456789abcdef")
+            );
+            assert!(disabled.omnivox().is_some());
+
+            let reenabled = Settings::set_service_enabled("omnivox", true).unwrap();
+            assert!(reenabled.service_enabled("omnivox"));
+            assert_eq!(reenabled.services_active(), vec!["omnivox"]);
+            assert_eq!(
+                reenabled.omnivox.as_ref().unwrap().token,
+                settings.omnivox.as_ref().unwrap().token
+            );
         });
     }
 
@@ -711,7 +886,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn multiple_accounts_keep_credentials_permissions_and_gateway_separate() {
+    fn multiple_accounts_keep_credentials_and_gateway_separate() {
         with_temp_config(|| {
             let mut original = Settings::default();
             original.gateway.token = Some("shared-link-token".into());
@@ -731,10 +906,10 @@ pub(crate) mod tests {
             let loaded = Settings::load();
             assert_eq!(loaded.account_list("moodle").len(), 2);
             assert_eq!(loaded.moodle().unwrap().token, "first-token");
-            assert!(!loaded.moodle().unwrap().allow_write);
+            assert_eq!(loaded.moodle.as_ref().unwrap().allow_write, None);
             let mut selected = loaded.for_account("moodle", "second-account");
             assert_eq!(selected.moodle().unwrap().token, "second-token");
-            assert!(selected.moodle().unwrap().allow_write);
+            assert_eq!(selected.moodle.as_ref().unwrap().allow_write, None);
             selected.disable("moodle");
             selected.save().unwrap();
             let loaded = Settings::load();
@@ -775,7 +950,7 @@ pub(crate) mod tests {
             settings.save().unwrap();
             let mut loaded = Settings::load();
             assert_eq!(loaded.brightspace().unwrap().token, "private-token");
-            assert!(loaded.brightspace().unwrap().allow_write);
+            assert_eq!(loaded.brightspace.as_ref().unwrap().allow_write, None);
             assert_eq!(loaded.services_active(), vec!["brightspace"]);
             assert!(!format!("{:?}", loaded.brightspace).contains("private-token"));
             loaded.disable("brightspace");

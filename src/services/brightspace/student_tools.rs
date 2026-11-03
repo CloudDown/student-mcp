@@ -334,7 +334,7 @@ pub(crate) fn dispatch(
     let Some(data) = crate::services::write_response::brightspace(&bytes)? else {
         return Ok(json!({"accepted":true}));
     };
-    Ok(crate::moodle::scrub(data, &client.config.token))
+    Ok(crate::redact::scrub(data, &client.config.token))
 }
 
 fn collect_matches(value: &Value, needle: &str, out: &mut Vec<Value>) {

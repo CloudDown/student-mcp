@@ -109,6 +109,27 @@ API 1.82.
 Saved accounts have check, reconnect and disconnect actions. Omnivox and
 Brightspace both expose reads and writes; write approval is left to the MCP
 client, with no extra server-side permission switch.
+Legacy `allow_write` fields are accepted when loading old configurations but
+removed on the next save; they no longer represent a permission setting.
+
+Connection checks and manual sign-ins run in a background worker. The local
+status page, link settings and Quit remain available while the school responds.
+Only one connection operation runs at a time.
+
+Browser-backed tools keep one browser for all requests within the tool and
+close it afterwards. Concurrent calls for the same profile wait up to two
+minutes for its OS lock, without launching competing browsers. Cancelling a
+browser sign-in also interrupts its lock wait.
+
+Document links last up to three hours while the app is running. The shared
+store is bounded to 128 links and 24 MiB; when full, new PDFs are attached
+inline rather than evicting links that were already issued.
+
+`moodle_deadlines` reports `partial` and per-source `errors` when some sources
+fail. Action events are paged (up to 500 per call); a remaining cursor is returned
+as `actionEventsNextAfterEventId` for `ws_call` with
+`core_calendar_get_action_events_by_timesort`. The upcoming-calendar source
+remains subject to the school's own calendar window.
 
 ### Additional Brightspace workflows
 

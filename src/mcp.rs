@@ -85,9 +85,9 @@ pub fn tool_definitions(settings: &Settings) -> Vec<Value> {
     }
     let settings = &available;
     definitions_for_services(
-        settings.moodle().is_some(),
-        settings.omnivox().is_some(),
-        settings.brightspace().is_some(),
+        settings.service_enabled("moodle") && settings.moodle().is_some(),
+        settings.service_enabled("omnivox") && settings.omnivox().is_some(),
+        settings.service_enabled("brightspace") && settings.brightspace().is_some(),
     )
 }
 
@@ -208,6 +208,11 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
     };
     let mut selected = None;
     if let Some(service) = service {
+        if !settings.service_enabled(service) {
+            return tool_error(&format!(
+                "The {service} service is disabled. Re-enable it in the student-mcp window."
+            ));
+        }
         let accounts = settings.account_list(service);
         let requested = args.get("account_id").and_then(Value::as_str);
         let id =
@@ -478,21 +483,8 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
     match outcome {
         Ok(data) => {
             if matches!(name, "moodle_file" | "brightspace_file" | "omnivox_file") {
-                let mut content = crate::moodle::mcp_content_for_file(data);
-                if name != "moodle_file" {
-                    let prefix = if name == "omnivox_file" {
-                        "omnivox://"
-                    } else {
-                        "brightspace://"
-                    };
-                    for item in &mut content {
-                        if let Some(uri) = item.pointer_mut("/resource/uri") {
-                            if let Some(value) = uri.as_str() {
-                                *uri = json!(value.replacen("moodle://", prefix, 1));
-                            }
-                        }
-                    }
-                }
+                let content =
+                    crate::delivery::mcp_content_for_file(data, service.unwrap_or("student-mcp"));
                 return json!({ "content": content, "isError": false });
             }
             // Keep pretty text for human/LLM clients and structuredContent for
@@ -555,8 +547,8 @@ fn require_integer(args: &Value, key: &str) -> Result<i64, String> {
         .ok_or(format!("Provide an integer {key} > 0."))
 }
 
-pub(crate) fn file_query(args: &Value) -> Result<crate::moodle::FileQuery, String> {
-    use crate::moodle::FileFormat;
+pub(crate) fn file_query(args: &Value) -> Result<crate::delivery::FileQuery, String> {
+    use crate::delivery::FileFormat;
     let format = match args.get("format") {
         Some(Value::String(value)) => match value.as_str() {
             "file" => FileFormat::File,
@@ -581,7 +573,7 @@ pub(crate) fn file_query(args: &Value) -> Result<crate::moodle::FileQuery, Strin
     {
         return Err("Use format=text or images when selecting pages or searching.".into());
     }
-    Ok(crate::moodle::FileQuery {
+    Ok(crate::delivery::FileQuery {
         format,
         page_from: optional_page_number(args.get("page_from"))?,
         page_to: optional_page_number(args.get("page_to"))?,
@@ -641,7 +633,8 @@ fn student_status(settings: &Settings) -> ToolResult {
                     json!({
                         "account_id": id,
                         "service": service,
-                        "url": url
+                        "url": url,
+                        "enabled": settings.service_enabled(service)
                     })
                 })
         })
@@ -1371,6 +1364,32 @@ mod protocol_tests {
                 "missing {required}"
             );
         }
+    }
+
+    #[test]
+    fn disabled_service_is_not_advertised_or_callable_but_status_keeps_credentials() {
+        let settings = Settings {
+            moodle: Some(MoodleSettings {
+                url: Some("https://moodle.example.org".into()),
+                token: Some("saved-token".into()),
+                allow_write: None,
+            }),
+            disabled_services: vec!["moodle".into()],
+            ..Default::default()
+        };
+        let tools = tool_definitions(&settings);
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0]["name"], "student_status");
+        let status = student_status(&settings).unwrap();
+        assert_eq!(status["services"], json!([]));
+        assert_eq!(status["accounts"][0]["enabled"], false);
+        let call = dispatch_tool(&settings, "moodle_status", &json!({}));
+        assert_eq!(call["isError"], true);
+        assert!(call["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("service is disabled"));
+        assert!(settings.moodle().is_some());
     }
 
     #[test]

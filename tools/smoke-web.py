@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Linux browser-UI smoke test using an isolated config and a stub browser."""
 import json
+from concurrent.futures import ThreadPoolExecutor
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import os
 from pathlib import Path
 import re
@@ -8,6 +10,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -20,8 +23,32 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
     opener.write_text('#!/bin/sh\nprintf x >> "$STUDENT_MCP_BROWSER_MARKER"\n')
     opener.chmod(0o700)
     config = root / "settings.json"
+    school_started = threading.Event()
+    school_release = threading.Event()
+
+    class School(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            school_started.set()
+            school_release.wait(10)
+            body = json.dumps({"userid": 1, "username": "Student", "sitename": "Local school"}).encode()
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
+    school = ThreadingHTTPServer(("127.0.0.1", 0), School)
+    threading.Thread(target=school.serve_forever, daemon=True).start()
+    school_url = f"http://127.0.0.1:{school.server_port}"
     config.write_text(json.dumps({"gateway": {"public_enabled": False, "local_enabled": True},
-                                  "moodle": {"url": "https://example.invalid", "token": "fixture", "allow_write": False}}))
+                                  "moodle": {"url": school_url, "token": "fixture", "allow_write": False}}))
     env = dict(os.environ, STUDENT_MCP_CONFIG_FILE=str(config),
                STUDENT_MCP_BROWSER_MARKER=str(opened), XDG_CONFIG_HOME=str(root / '.config'),
                STUDENT_MCP_BROWSER=str(root / 'missing-chrome'),
@@ -59,6 +86,8 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         assert status == 200
         assert b"Allow assistant changes" not in page
         assert b'data-action="permissions"' not in page
+        assert b'L\xc3\xa9a / Mio \xc2\xb7 Read only' not in page
+        assert b'myCourses \xc2\xb7 Read only' not in page
         home = page.split(b'function home(){', 1)[1].split(b'function header(', 1)[0]
         manage = page.split(b'function manageScreenContent(){', 1)[1].split(b'function serviceScreen(){', 1)[0]
         links = page.split(b'function linkScreen(){', 1)[1].split(b'function publicMessage(', 1)[0]
@@ -91,6 +120,26 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         assert request("/state", origin="https://untrusted.invalid")[0] == 401
         state = json.loads(request("/state")[1])
         assert len(state["accounts"]) == 1
+        assert state["accounts"][0]["enabled"] is True
+        saved_token = json.loads(config.read_text())["moodle"]["token"]
+        status, body = request("/action", {"action": "service_enabled", "service": "moodle",
+                                             "id": "moodle", "enabled": False})
+        assert status == 200 and json.loads(body)["enabled"] is False
+        disabled_state = json.loads(request("/state")[1])
+        assert disabled_state["accounts"][0]["enabled"] is False
+        assert json.loads(config.read_text())["moodle"]["token"] == saved_token
+        connector_path = "/mcp/" + disabled_state["local_link"].rsplit("/", 1)[-1]
+        status, body = request(connector_path, {"jsonrpc": "2.0", "id": 1, "method": "tools/list",
+                                                "params": {"_meta": {
+                                                    "io.modelcontextprotocol/protocolVersion": "2026-07-28"}}},
+                               auth=False, address=f"http://127.0.0.1:{port}")
+        assert status == 200
+        assert [tool["name"] for tool in json.loads(body)["result"]["tools"]] == ["student_status"]
+        status, body = request("/action", {"action": "service_enabled", "service": "moodle",
+                                             "id": "moodle", "enabled": True})
+        assert status == 200 and json.loads(body)["enabled"] is True
+        assert json.loads(request("/state")[1])["accounts"][0]["enabled"] is True
+        assert json.loads(config.read_text())["moodle"]["token"] == saved_token
         assert state["autostart"] is False
         assert request("/action", {"action": "autostart", "enabled": True}, auth=False)[0] == 401
         status, body = request("/action", {"action": "autostart", "enabled": True})
@@ -130,11 +179,35 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         assert opened.read_text() == before, "background startup reopened the browser"
         status = Path(f"/proc/{process.pid}/status").read_text()
         print(next(line for line in status.splitlines() if line.startswith("VmRSS:")))
-        assert request("/action", {"action": "stop"})[0] == 200
-        assert process.wait(timeout=5) == 0
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            check = pool.submit(request, "/action", {"action": "check", "service": "moodle", "id": "moodle"})
+            try:
+                assert school_started.wait(3), "check never reached the fixture"
+                start = time.monotonic()
+                assert request("/state")[0] == 200
+                assert time.monotonic() - start < 2, "slow school blocked status"
+                assert request("/action", {"action": "disconnect", "service": "moodle", "id": "moodle"})[0] == 400
+                assert request("/action", {"action": "links", "local": True, "public": False})[0] == 200
+            finally:
+                school_release.set()
+            code, result = check.result(timeout=5)
+            assert code == 200 and "Student" in json.loads(result)["message"], (code, result)
+
+            school_started.clear()
+            school_release.clear()
+            check = pool.submit(request, "/action", {"action": "check", "service": "moodle", "id": "moodle"})
+            try:
+                assert school_started.wait(3)
+                assert request("/action", {"action": "stop"})[0] == 200
+                assert process.wait(timeout=3) == 0, "slow school blocked shutdown"
+            finally:
+                school_release.set()
         assert not discovery.exists()
-        print("Web smoke passed: auth, autostart toggle, quiet startup, listener isolation, reopen, stop")
+        print("Web smoke passed: auth, autostart, listener isolation, reopen, slow-school responsiveness and stop")
     finally:
+        school_release.set()
+        school.shutdown()
+        school.server_close()
         if process.poll() is None:
             process.terminate()
             process.wait(timeout=5)

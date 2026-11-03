@@ -440,6 +440,26 @@ impl Connection {
     }
 }
 
+fn wait_for_profile(lock: &File, cancelled: &AtomicBool, timeout: Duration) -> Result<(), String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if cancelled.load(Ordering::SeqCst) {
+            return Err("Browser sign-in cancelled.".into());
+        }
+        match lock.try_lock_exclusive() {
+            Ok(()) => return Ok(()),
+            Err(error) if error.raw_os_error() == fs2::lock_contended_error().raw_os_error() => {}
+            Err(_) => {
+                return Err("Cannot lock browser profile. Check its storage permissions.".into())
+            }
+        }
+        if Instant::now() >= deadline {
+            return Err("This account's browser is still busy after waiting. Finish its sign-in or wait for the current tool, then try again.".into());
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
 struct Browser {
     socket: Option<WebSocket<TcpStream>>,
     child: Child,
@@ -452,6 +472,16 @@ struct Browser {
 
 impl Browser {
     fn launch(token: &str, service: &str, origin: &str, visible: bool) -> Result<Self, String> {
+        Self::launch_cancellable(token, service, origin, visible, &AtomicBool::new(false))
+    }
+
+    fn launch_cancellable(
+        token: &str,
+        service: &str,
+        origin: &str,
+        visible: bool,
+        cancelled: &AtomicBool,
+    ) -> Result<Self, String> {
         let exe = executable()?;
         let dir = profile_path(token)?;
         private_dir(dir.parent().unwrap()).map_err(|_| "Cannot create browser storage.")?;
@@ -463,15 +493,10 @@ impl Browser {
             .write(true)
             .open(dir.join("profile.lock"))
             .map_err(|_| "Cannot lock browser profile.")?;
-        let until = Instant::now() + Duration::from_secs(30);
-        while lock.try_lock_exclusive().is_err() {
-            if Instant::now() >= until {
-                return Err(
-                    "This account's browser is busy. Finish its sign-in and try again.".into(),
-                );
-            }
-            std::thread::sleep(Duration::from_millis(100));
-        }
+        // A normal tool can take longer than 30s (startup + school request).
+        // Queue behind it without launching another Chrome. Keep a deadline so
+        // an abandoned interactive sign-in cannot block all callers forever.
+        wait_for_profile(&lock, cancelled, Duration::from_secs(120))?;
         let metadata = dir.join("session.json");
         let profile = if metadata.exists() {
             let profile: Profile = serde_json::from_slice(
@@ -1082,8 +1107,13 @@ impl Login {
         let service_owned = service.to_string();
         let worker = std::thread::spawn(move || {
             let outcome = (|| {
-                let mut browser =
-                    Browser::launch(&worker_token, &service_owned, &worker_origin, true)?;
+                let mut browser = Browser::launch_cancellable(
+                    &worker_token,
+                    &service_owned,
+                    &worker_origin,
+                    true,
+                    &stop,
+                )?;
                 browser.wait_ready(&stop, Duration::from_secs(300))?;
                 Ok((worker_token, browser.profile.origin.clone()))
             })();
@@ -1212,6 +1242,60 @@ pub fn remove(token: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn profile_wait_serializes_callers_and_can_be_cancelled_or_expire() {
+        crate::config::tests::with_temp_config(|| {
+            let path = crate::config::config_path().with_extension("profile-lock-test");
+            let first = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .open(&path)
+                .unwrap();
+            first.lock_exclusive().unwrap();
+            let second = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&path)
+                .unwrap();
+            let (tx, rx) = mpsc::channel();
+            let worker = std::thread::spawn(move || {
+                let result =
+                    wait_for_profile(&second, &AtomicBool::new(false), Duration::from_secs(2));
+                tx.send(result).unwrap();
+            });
+            assert!(rx.recv_timeout(Duration::from_millis(80)).is_err());
+            drop(first);
+            assert!(rx.recv_timeout(Duration::from_secs(2)).unwrap().is_ok());
+            worker.join().unwrap();
+
+            let owner = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&path)
+                .unwrap();
+            owner.lock_exclusive().unwrap();
+            let waiting = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&path)
+                .unwrap();
+            let start = Instant::now();
+            assert!(
+                wait_for_profile(&waiting, &AtomicBool::new(true), Duration::from_secs(120))
+                    .unwrap_err()
+                    .contains("cancelled")
+            );
+            assert!(start.elapsed() < Duration::from_secs(1));
+            assert!(
+                wait_for_profile(&waiting, &AtomicBool::new(false), Duration::from_millis(20))
+                    .unwrap_err()
+                    .contains("busy")
+            );
+        });
+    }
 
     #[test]
     fn default_browser_detection_accepts_chromium_family_only() {

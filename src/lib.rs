@@ -1,10 +1,12 @@
 mod autostart;
 mod browser;
 mod config;
+mod delivery;
 mod document;
 mod http;
 mod mcp;
 mod pdf;
+mod redact;
 mod services;
 mod session;
 mod share;

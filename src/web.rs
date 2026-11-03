@@ -9,7 +9,7 @@ use std::{
     io::Read,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        mpsc, Arc,
     },
     time::Duration,
 };
@@ -133,7 +133,19 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
     let mut tunnel = Tunnel::default();
     let mut pending: Option<(Settings, Box<PendingLogin>)> = None;
     let mut browser_login: Option<crate::browser::Login> = None;
+    let mut action_job: Option<mpsc::Receiver<ActionReply>> = None;
     loop {
+        if let Some(job) = &action_job {
+            match job.try_recv() {
+                Ok((request, result, next_pending)) => {
+                    pending = next_pending;
+                    respond_action(request, result);
+                    action_job = None;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => action_job = None,
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
         if let Some(login) = browser_login.as_mut() {
             login.poll();
         }
@@ -224,28 +236,61 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
             let mut accounts = Vec::new();
             for service in ["moodle", "omnivox", "brightspace"] {
                 for (id, url) in current.account_list(service) {
-                    accounts.push(json!({"service":service,"id":id,"url":url}));
+                    accounts.push(json!({"service":service,"id":id,"url":url,"enabled":current.service_enabled(service)}));
                 }
             }
             (200, "application/json", json!({"accounts":accounts,"verification":pending.as_ref().map(|(_,p)| &p.prompt),"browser_login":browser_login.as_ref().map(crate::browser::Login::status),"link":mcp_endpoint(tunnel.origin().unwrap_or(&format!("http://127.0.0.1:{port}")), &gateway.token),"local_link":mcp_endpoint(&format!("http://127.0.0.1:{port}"), &gateway.token),"tunnel":format!("{:?}",tunnel.state),"public":current.gateway.public_enabled(),"local":enabled.load(Ordering::SeqCst),"autostart":crate::autostart::enabled().unwrap_or(false)}).to_string().into_bytes(),false)
         } else if request.method() == &Method::Post && path == "/action" {
             let mut bytes = Vec::new();
             let read = request.as_reader().take(16_385).read_to_end(&mut bytes);
-            let result = if read.is_err() || bytes.len() > 16_384 {
+            let parsed = if read.is_err() || bytes.len() > 16_384 {
                 Err("Request too large or unreadable".into())
             } else {
-                serde_json::from_slice::<Value>(&bytes)
-                    .map_err(|_| "Invalid JSON".to_string())
-                    .and_then(|args| {
-                        action(
-                            &args,
-                            &mut pending,
-                            &mut browser_login,
-                            &enabled,
-                            &mut tunnel,
-                            tunnel_port,
-                        )
-                    })
+                serde_json::from_slice::<Value>(&bytes).map_err(|_| "Invalid JSON".to_string())
+            };
+            let result = parsed.and_then(|args| {
+                let name = args["action"].as_str().unwrap_or("");
+                if action_job.is_some() && !matches!(name, "stop" | "links" | "autostart") {
+                    return Err(
+                        "A connection operation is in progress. Wait for it to finish.".into(),
+                    );
+                }
+                if background_action(name) {
+                    if browser_login
+                        .as_ref()
+                        .is_some_and(|login| login.state == "waiting" || login.running())
+                    {
+                        return Err("Finish or cancel browser sign-in first.".into());
+                    }
+                    // Return the owned request to the loop after completion. The UI
+                    // remains responsive and the existing action response contract
+                    // stays synchronous for callers.
+                    return Ok(ActionDispatch::Background(args));
+                }
+                action(
+                    &args,
+                    &mut pending,
+                    &mut browser_login,
+                    &enabled,
+                    &mut tunnel,
+                    tunnel_port,
+                )
+                .map(ActionDispatch::Reply)
+            });
+            let result = match result {
+                Ok(ActionDispatch::Background(args)) => {
+                    let next_pending = pending.take();
+                    let (tx, rx) = mpsc::channel();
+                    std::thread::spawn(move || {
+                        let mut next_pending = next_pending;
+                        let result = connection_action(&args, &mut next_pending);
+                        let _ = tx.send((request, result, next_pending));
+                    });
+                    action_job = Some(rx);
+                    continue;
+                }
+                Ok(ActionDispatch::Reply(value)) => Ok(value),
+                Err(error) => Err(error),
             };
             match result {
                 Ok(value) => {
@@ -278,6 +323,37 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
             return Ok(());
         }
     }
+}
+
+type Pending = Option<(Settings, Box<PendingLogin>)>;
+type ActionReply = (tiny_http::Request, Result<Value, String>, Pending);
+
+enum ActionDispatch {
+    Reply(Value),
+    Background(Value),
+}
+
+fn background_action(action: &str) -> bool {
+    matches!(
+        action,
+        "connect" | "check" | "verify" | "resend" | "disconnect"
+    )
+}
+
+fn respond_action(request: tiny_http::Request, result: Result<Value, String>) {
+    let (status, value) = match result {
+        Ok(value) => (200, value),
+        Err(error) => (400, json!({"error": error})),
+    };
+    let mut response = Response::from_string(value.to_string()).with_status_code(status);
+    for (name, value) in [
+        ("Content-Type", "application/json"),
+        ("Cache-Control", "no-store"),
+        ("X-Content-Type-Options", "nosniff"),
+    ] {
+        response.add_header(Header::from_bytes(name, value).unwrap());
+    }
+    let _ = request.respond(response);
 }
 
 fn action(
@@ -318,28 +394,25 @@ fn action(
             }
             return Ok(json!({"message":"Cancelled"}));
         }
-        "verify" | "resend" => {
-            let (settings, challenge) = pending.as_mut().ok_or("No pending verification")?;
-            if get("action") == "resend" {
-                challenge.resend()?;
-                return Ok(json!({"verification":challenge.prompt,"message":"Code sent"}));
-            }
-            let message = challenge.verify(settings, get("code"))?;
-            *pending = None;
-            return Ok(json!({"message":message}));
-        }
         _ => {}
     }
     let service = get("service");
     if !["moodle", "omnivox", "brightspace"].contains(&service) {
         return Err("Unknown service".into());
     }
+    if get("action") == "service_enabled" {
+        if Settings::load().account_list(service).is_empty() {
+            return Err("Connect this service before changing its enabled state.".into());
+        }
+        let updated = Settings::set_service_enabled(service, args["enabled"] == true)?;
+        return Ok(json!({"enabled":updated.service_enabled(service)}));
+    }
     let id = if get("id").is_empty() {
         random_hex(8)
     } else {
         get("id").to_owned()
     };
-    let mut settings = Settings::load().for_account(service, &id);
+    let settings = Settings::load().for_account(service, &id);
     let saved = match service {
         "brightspace" => settings.brightspace().map(|c| (c.base_url, c.token)),
         "omnivox" => settings.omnivox().map(|c| (c.base_url, c.token)),
@@ -365,12 +438,40 @@ fn action(
         *pending = None;
         return Ok(json!({"browser_login":browser_login.as_ref().unwrap().status()}));
     }
-    if get("action") == "disconnect" {
-        if browser_login.as_ref().is_some_and(|l| {
-            l.id == id && l.service == service && (l.state == "waiting" || l.running())
-        }) {
-            return Err("Cancel browser sign-in before disconnecting.".into());
+    Err("Unknown action".into())
+}
+
+// Called only by the single connection worker, after the UI loop has checked
+// that no interactive browser login is running. Owns the MFA challenge while
+// working; never owns the UI server, tray or tunnel.
+fn connection_action(args: &Value, pending: &mut Pending) -> Result<Value, String> {
+    let get = |key| args.get(key).and_then(Value::as_str).unwrap_or("");
+    if matches!(get("action"), "verify" | "resend") {
+        let (settings, challenge) = pending.as_mut().ok_or("No pending verification")?;
+        if get("action") == "resend" {
+            challenge.resend()?;
+            return Ok(json!({"verification":challenge.prompt,"message":"Code sent"}));
         }
+        let message = challenge.verify(settings, get("code"))?;
+        *pending = None;
+        return Ok(json!({"message":message}));
+    }
+    let service = get("service");
+    if !["moodle", "omnivox", "brightspace"].contains(&service) {
+        return Err("Unknown service".into());
+    }
+    let id = if get("id").is_empty() {
+        random_hex(8)
+    } else {
+        get("id").to_owned()
+    };
+    let mut settings = Settings::load().for_account(service, &id);
+    if get("action") == "disconnect" {
+        let saved = match service {
+            "brightspace" => settings.brightspace().map(|c| (c.base_url, c.token)),
+            "omnivox" => settings.omnivox().map(|c| (c.base_url, c.token)),
+            _ => None,
+        };
         if let Some((_, token)) = &saved {
             crate::browser::remove(token)?;
         }
@@ -384,12 +485,6 @@ fn action(
     }
     if get("action") != "connect" {
         return Err("Unknown action".into());
-    }
-    if browser_login
-        .as_ref()
-        .is_some_and(|l| l.state == "waiting" || l.running())
-    {
-        return Err("Finish or cancel browser sign-in before changing credentials.".into());
     }
     *pending = None;
     let message = match service {
