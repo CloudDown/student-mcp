@@ -133,7 +133,7 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
     let mut tunnel = Tunnel::default();
     let mut pending: Option<(Settings, Box<PendingLogin>)> = None;
     let mut browser_login: Option<crate::browser::Login> = None;
-    let mut action_job: Option<mpsc::Receiver<ActionReply>> = None;
+    let mut action_job: Option<(mpsc::Receiver<ActionReply>, bool)> = None;
     let updater = crate::update::Updater::default();
     #[cfg(target_os = "linux")]
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
@@ -158,7 +158,7 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                 return Ok(());
             }
         }
-        if let Some(job) = &action_job {
+        if let Some((job, _)) = &action_job {
             match job.try_recv() {
                 Ok((request, result, next_pending)) => {
                     pending = next_pending;
@@ -280,7 +280,10 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
             };
             let result = parsed.and_then(|args| {
                 let name = args["action"].as_str().unwrap_or("");
-                if action_job.is_some() && !matches!(name, "stop" | "links" | "autostart") {
+                if action_job
+                    .as_ref()
+                    .is_some_and(|(_, checking)| !action_allowed_during_job(name, *checking))
+                {
                     return Err(
                         "A connection operation is in progress. Wait for it to finish.".into(),
                     );
@@ -325,6 +328,7 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
             });
             let result = match result {
                 Ok(ActionDispatch::Background(args)) => {
+                    let checking = args["action"] == "check";
                     let next_pending = pending.take();
                     let (tx, rx) = mpsc::channel();
                     std::thread::spawn(move || {
@@ -332,7 +336,7 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                         let result = connection_action(&args, &mut next_pending);
                         let _ = tx.send((request, result, next_pending));
                     });
-                    action_job = Some(rx);
+                    action_job = Some((rx, checking));
                     continue;
                 }
                 Ok(ActionDispatch::Reply(value)) => Ok(value),
@@ -384,6 +388,23 @@ fn background_action(action: &str) -> bool {
         action,
         "connect" | "check" | "verify" | "resend" | "disconnect"
     )
+}
+
+fn action_allowed_during_job(action: &str, checking: bool) -> bool {
+    matches!(action, "stop" | "links" | "autostart") || (checking && action == "service_enabled")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::action_allowed_during_job;
+
+    #[test]
+    fn service_can_be_toggled_during_connection_check_only() {
+        assert!(action_allowed_during_job("service_enabled", true));
+        assert!(!action_allowed_during_job("service_enabled", false));
+        assert!(!action_allowed_during_job("disconnect", true));
+        assert!(!action_allowed_during_job("check", true));
+    }
 }
 
 fn respond_action(request: tiny_http::Request, result: Result<Value, String>) {
