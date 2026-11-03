@@ -46,6 +46,6 @@ the official installer to finish installation. Connected accounts are preserved.
 Sign in on the local page → copy the link → add it to your assistant's **MCP connectors**.
 Keep the computer online. Closing the tab leaves a tray icon; quit from there or from the page.
 
-**v0.6.6:** Adds curated Omnivox tools for Léa, calendars, documents and MIO, including explicitly annotated write actions. Also improves document delivery, connection management and Moodle deadline reporting. Availability can vary by college and account permissions.
+**v0.6.7:** Adds in-app update checks and verified downloads, plus application icons in desktop installers and the Linux application launcher. Includes curated Omnivox tools for Léa and MIO, improved document delivery and connection management, and more complete Moodle deadline reporting. Availability can vary by college and account permissions.
 
 <p align="center"><a href="tools/GUIDE.md">Docs</a> · <a href="tools/GUIDE.md#4-automatic-public-link-for-web-ai">Privacy &amp; relay</a> · MIT code; <a href="src/services/moodle/catalog/LICENSE.md">GPL-3.0+ Moodle catalogue</a></p>
