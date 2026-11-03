@@ -33,7 +33,7 @@ of the local page, opposite the language button. Click it to download and verify
 the update automatically. Linux updates in place and restarts; Windows/macOS open
 the official installer to finish installation. Connected accounts are preserved.
 
-<p align="center"><img src="tools/screens/moodle.png" width="100%" alt="Moodle sign-in on the local configuration page" /></p>
+<p align="center"><img src="tools/screens/omnivox.png" width="100%" alt="Omnivox browser sign-in on the local configuration page" /></p>
 
 <table>
   <tr>
