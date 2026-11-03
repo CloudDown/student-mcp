@@ -163,6 +163,24 @@ fn definitions_for_services(moodle: bool, omnivox: bool, brightspace: bool) -> V
     // inputSchema is required by MCP even when a tool takes no arguments.
     // A strict client can reject the entire tools/list result if one is missing.
     for tool in &mut tools {
+        // Hints for host-side approval, never a server authorization gate.
+        // ws_call is conservatively a write-capable tool, including when a
+        // particular invocation selects a read-only Moodle function.
+        let annotations = tool["annotations"]
+            .as_object_mut()
+            .expect("tool definitions carry annotations");
+        let read_only = annotations
+            .get("readOnlyHint")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        annotations.insert("openWorldHint".into(), json!(true));
+        if read_only {
+            annotations.insert("destructiveHint".into(), json!(false));
+            annotations.entry("idempotentHint").or_insert(json!(true));
+        } else {
+            annotations.insert("destructiveHint".into(), json!(true));
+            annotations.entry("idempotentHint").or_insert(json!(false));
+        }
         tool.as_object_mut()
             .expect("tool definitions are objects")
             .entry("inputSchema")
@@ -212,13 +230,7 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
     let settings = selected.as_ref().unwrap_or(settings);
     let outcome = match name {
         "student_status" => student_status(settings),
-        "omnivox_status"
-        | "omnivox_my_courses"
-        | "omnivox_course_documents"
-        | "omnivox_assignments"
-        | "omnivox_grades"
-        | "omnivox_schedule"
-        | "omnivox_calendar" => omnivox_tool(settings, name, args),
+        name if name.starts_with("omnivox_") => omnivox_tool(settings, name, args),
         name if name.starts_with("brightspace_") => brightspace_tool(settings, name, args),
         "moodle_status" => moodle_tool(settings, |config| {
             let client = MoodleClient::new(config);
@@ -465,13 +477,18 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
     };
     match outcome {
         Ok(data) => {
-            if name == "moodle_file" || name == "brightspace_file" {
+            if matches!(name, "moodle_file" | "brightspace_file" | "omnivox_file") {
                 let mut content = crate::moodle::mcp_content_for_file(data);
-                if name == "brightspace_file" {
+                if name != "moodle_file" {
+                    let prefix = if name == "omnivox_file" {
+                        "omnivox://"
+                    } else {
+                        "brightspace://"
+                    };
                     for item in &mut content {
                         if let Some(uri) = item.pointer_mut("/resource/uri") {
                             if let Some(value) = uri.as_str() {
-                                *uri = json!(value.replacen("moodle://", "brightspace://", 1));
+                                *uri = json!(value.replacen("moodle://", prefix, 1));
                             }
                         }
                     }
@@ -485,11 +502,25 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                     "type": "text",
                     "text": serde_json::to_string_pretty(&data).unwrap_or_default()
                 }],
-                "structuredContent": data,
+                // MCP requires structuredContent to be an object, even when
+                // the school's native JSON result is an array or scalar.
+                "structuredContent": if data.is_object() { data } else { json!({"items":data}) },
                 "isError": false
             })
         }
         Err(message) => {
+            let write_capable = service
+                .and_then(service_tool_definitions)
+                .is_some_and(|tools| {
+                    tools.iter().any(|tool| {
+                        tool["name"] == name && tool["annotations"]["readOnlyHint"] == false
+                    })
+                });
+            let message = if write_capable {
+                format!("{message}\nIf the request reached the school, inspect the current state before retrying; an error does not prove that no change was applied.")
+            } else {
+                message
+            };
             json!({ "content": [{ "type": "text", "text": message }], "isError": true })
         }
     }
@@ -524,7 +555,7 @@ fn require_integer(args: &Value, key: &str) -> Result<i64, String> {
         .ok_or(format!("Provide an integer {key} > 0."))
 }
 
-fn file_query(args: &Value) -> Result<crate::moodle::FileQuery, String> {
+pub(crate) fn file_query(args: &Value) -> Result<crate::moodle::FileQuery, String> {
     use crate::moodle::FileFormat;
     let format = match args.get("format") {
         Some(Value::String(value)) => match value.as_str() {
@@ -610,8 +641,7 @@ fn student_status(settings: &Settings) -> ToolResult {
                     json!({
                         "account_id": id,
                         "service": service,
-                        "url": url,
-                        "allowWrite": service == "moodle" || service == "brightspace"
+                        "url": url
                     })
                 })
         })
@@ -619,15 +649,7 @@ fn student_status(settings: &Settings) -> ToolResult {
     Ok(json!({
         "version": VERSION,
         "services": settings.services_active(),
-        "accounts": accounts,
-        "moodleAllowWrite": accounts.iter().any(|account| {
-            account.get("service").and_then(Value::as_str) == Some("moodle")
-                && account.get("allowWrite").and_then(Value::as_bool) == Some(true)
-        }),
-        "brightspaceAllowWrite": accounts.iter().any(|account| {
-            account.get("service").and_then(Value::as_str) == Some("brightspace")
-                && account.get("allowWrite").and_then(Value::as_bool) == Some(true)
-        })
+        "accounts": accounts
     }))
 }
 
@@ -871,9 +893,9 @@ pub fn test_service(settings: &Settings, id: &str) -> Result<String, String> {
             let college = crate::config::is_omnivox_host(&config.base_url);
             crate::omnivox::OmnivoxClient::new(config).status()?;
             Ok(if college {
-                "Omnivox connected (read only).".into()
+                "Omnivox connected.".into()
             } else {
-                "Omnivox connected (read only, through the MCP gateway).".into()
+                "Omnivox connected (through the MCP gateway).".into()
             })
         }
         "brightspace" => {
@@ -931,7 +953,7 @@ mod protocol_tests {
         };
         let status = student_status(&settings).unwrap();
         assert_eq!(status["accounts"].as_array().unwrap().len(), 2);
-        assert_eq!(status["moodleAllowWrite"], true);
+        assert!(status["accounts"][0].get("allowWrite").is_none());
         assert!(!status.to_string().contains("secret"));
         for args in [
             json!({"courseid": 1}),
@@ -1124,7 +1146,11 @@ mod protocol_tests {
             assert_eq!(
                 tools.len(),
                 1 + if enabled & 1 != 0 { 26 } else { 0 }
-                    + if enabled & 2 != 0 { 7 } else { 0 }
+                    + if enabled & 2 != 0 {
+                        crate::omnivox::tools().len()
+                    } else {
+                        0
+                    }
                     + if enabled & 4 != 0 {
                         crate::brightspace::tools().len()
                     } else {
@@ -1378,9 +1404,13 @@ mod protocol_tests {
     }
 
     #[test]
-    fn omnivox_tools_are_read_only_and_require_a_connection() {
+    fn omnivox_tools_require_a_connection_and_mark_writes() {
         for tool in crate::omnivox::tools() {
-            assert_eq!(tool["annotations"]["readOnlyHint"], true);
+            assert!(tool["annotations"]["readOnlyHint"].is_boolean());
+            if tool["annotations"]["readOnlyHint"] == false {
+                assert_eq!(tool["annotations"]["destructiveHint"], true);
+                assert_eq!(tool["annotations"]["idempotentHint"], false);
+            }
             let reply = dispatch_tool(
                 &Settings::default(),
                 tool["name"].as_str().unwrap(),
@@ -1389,6 +1419,25 @@ mod protocol_tests {
             assert_eq!(reply["isError"], true);
         }
         assert!(test_service(&Settings::default(), "omnivox").is_err());
+    }
+
+    #[test]
+    fn tool_annotations_are_complete_and_conservative() {
+        let tools = definitions_for_services(true, true, true);
+        assert!(tools.len() > 1);
+        for tool in tools {
+            let name = &tool["name"];
+            let annotations = tool["annotations"]
+                .as_object()
+                .unwrap_or_else(|| panic!("{name} has no annotations"));
+            assert!(annotations["readOnlyHint"].is_boolean(), "{name}");
+            assert!(annotations["destructiveHint"].is_boolean(), "{name}");
+            assert!(annotations["idempotentHint"].is_boolean(), "{name}");
+            assert_eq!(annotations["openWorldHint"], true, "{name}");
+            if annotations["readOnlyHint"] == false {
+                assert_eq!(annotations["destructiveHint"], true, "{name}");
+            }
+        }
     }
 }
 

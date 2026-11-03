@@ -1,4 +1,4 @@
-//! Read-only Omnivox client.
+//! Omnivox client with curated student read and write workflows.
 //! College login talks to the official site and the `/Mobl/` JSON endpoints.
 //! A self-hosted [omnivox-mcp](https://github.com/Beat-YT/omnivox-mcp) gateway remains supported.
 use crate::config::{is_omnivox_host, OmnivoxConfig};
@@ -6,6 +6,10 @@ use crate::session;
 use cookie_store::CookieStore;
 use serde_json::{json, Value};
 use std::time::Duration;
+
+mod files;
+mod reads;
+mod writes;
 
 const REQUIRED_TOOL: &str = "get-courses-summary";
 
@@ -127,11 +131,17 @@ impl OmnivoxClient {
                 )?
                 .json()?
         } else {
-            let response = match self
-                .authorize_college(
-                    self.agent
-                        .post(&format!("{}/Mobl/{path}", self.config.base_url)),
-                )
+            let request = self
+                .agent
+                .post(&format!("{}/Mobl/{path}", self.config.base_url));
+            let request = if self.is_college() {
+                self.authorize_college(request)
+            } else {
+                // The optional gateway exposes a same-session /Mobl/ proxy.
+                self.authorize(request)
+                    .set("User-Agent", session::BROWSER_UA)
+            };
+            let response = match request
                 .set("Content-Type", "application/json")
                 .send_json(body)
             {
@@ -150,21 +160,57 @@ impl OmnivoxClient {
                     status => format!("Omnivox returned HTTP {status}. Try again."),
                 });
             }
+            let mut bytes = Vec::new();
+            use std::io::Read;
             response
-                .into_json()
+                .into_reader()
+                .take(2 * 1024 * 1024 + 1)
+                .read_to_end(&mut bytes)
+                .map_err(|_| "Cannot read the Omnivox response.".to_string())?;
+            if bytes.len() > 2 * 1024 * 1024 {
+                return Err("Omnivox response exceeded 2 MB. Use a smaller page.".into());
+            }
+            serde_json::from_slice(&bytes)
                 .map_err(|_| "Omnivox did not return JSON. Sign in again in the app.".to_string())?
         };
         if value
             .get("NaviguerPage")
             .and_then(Value::as_str)
-            .is_some_and(|page| page.to_ascii_lowercase().contains("error"))
+            .is_some_and(|page| !page.is_empty())
         {
             return Err(
                 "Omnivox blocked the request. Complete any required document or survey in the portal, then retry."
                     .into(),
             );
         }
-        Ok(crate::moodle::scrub(value, &self.config.token))
+        if value.get("IsPeriodeArret").and_then(Value::as_bool) == Some(true) {
+            return Err(
+                "Omnivox is temporarily unavailable for maintenance. Try again later.".into(),
+            );
+        }
+        if value.get("IsAvailable").and_then(Value::as_bool) == Some(false) {
+            return Err(
+                "This Omnivox module is unavailable or requires an access code in the portal."
+                    .into(),
+            );
+        }
+        Ok(reads::without_credentials(crate::moodle::scrub(
+            value,
+            &self.config.token,
+        )))
+    }
+
+    fn mobl_write(&self, path: &str, body: Value) -> Result<Value, String> {
+        let result = if self.browser.enabled() {
+            self.browser
+                .mobile_write(&format!("/Mobl/{path}"), &body)
+                .and_then(|reply| reply.json())
+        } else {
+            // The HTTP agent refuses redirects and performs no application retry.
+            self.mobl(path, body)
+        };
+        result.map(|value| reads::without_credentials(crate::moodle::scrub(value, &self.config.token)))
+            .map_err(|error| format!("{error} Write outcome is not confirmed. Check Omnivox before retrying; this action was not replayed."))
     }
 
     fn call(&self, tool: &str, body: Value) -> Result<Value, String> {
@@ -220,6 +266,20 @@ impl OmnivoxClient {
             return self.mobl("LeaCommun/GetDefaultModel", json!({ "AnSession": "" }));
         }
         self.call("get-courses-summary", json!({}))
+    }
+
+    fn resolve_term(&self, requested: &str) -> Result<String, String> {
+        if !requested.is_empty() {
+            return Ok(requested.into());
+        }
+        let courses = self.mobl("LeaCommun/GetDefaultModel", json!({"AnSession":""}))?;
+        courses.get("AnSession")
+            .and_then(Value::as_str)
+            .filter(|term| !term.is_empty())
+            .or_else(|| courses.pointer("/AnSessionDisponible/AnSessionDefault").and_then(Value::as_str))
+            .filter(|term| term.len() == 5 && term.bytes().all(|c| c.is_ascii_digit()))
+            .map(str::to_string)
+            .ok_or_else(|| "Omnivox did not provide the current academic term. Call omnivox_terms and supply term explicitly.".into())
     }
 
     pub fn documents(&self, course_id: &str) -> Result<Value, String> {
@@ -587,9 +647,9 @@ fn persist(
     })?;
     *settings = updated;
     Ok(if is_omnivox_host(base_url) {
-        "Omnivox connected (read only).".into()
+        "Omnivox connected.".into()
     } else {
-        "Omnivox connected (read only, through the MCP gateway).".into()
+        "Omnivox connected (through the MCP gateway).".into()
     })
 }
 
@@ -1147,18 +1207,62 @@ pub fn tools() -> Vec<Value> {
         json!({"name":"omnivox_status","description":"Check the connected Omnivox / Léa account."}),
         json!({"name":"omnivox_my_courses","description":"List the connected student's Omnivox / Léa courses for the current term. course_id values are strings (e.g. 2434K5EM.1011), not integers."}),
         json!({"name":"omnivox_schedule","description":"Get the connected student's static weekly Omnivox timetable."}),
-        json!({"name":"omnivox_course_documents","description":"List Léa documents for one Omnivox course. Returns metadata only; there is no omnivox_file reader yet.","inputSchema":{"type":"object","properties":{"course_id":{"type":"string","description":"String course id from omnivox_my_courses, e.g. 2434K5EM.1011."}},"required":["course_id"]}}),
+        json!({"name":"omnivox_course_documents","description":"List Léa documents for one Omnivox course. Use IdDocCoursDocument as file_id with omnivox_file to read a document.","inputSchema":{"type":"object","properties":{"course_id":{"type":"string","description":"String course id from omnivox_my_courses, e.g. 2434K5EM.1011."}},"required":["course_id"]}}),
         json!({"name":"omnivox_assignments","description":"List Omnivox assignments. Omit course_id for a summary of every course.","inputSchema":{"type":"object","properties":{"course_id":{"type":"string","description":"String course id from omnivox_my_courses."}}}}),
-        json!({"name":"omnivox_grades","description":"Get Omnivox grades. Omit course_id for a summary of every course.","inputSchema":{"type":"object","properties":{"course_id":{"type":"string","description":"String course id from omnivox_my_courses."}}}}),
+        json!({"name":"omnivox_grades","description":"Get Omnivox grades. Omit course_id for a summary of every course. Direct mobile per-evaluation numeric grades, points and weights use fixed-point x100 (8840 = 88.40); null and 2147483647/-2147483648 mean no value, not a grade.","inputSchema":{"type":"object","properties":{"course_id":{"type":"string","description":"String course id from omnivox_my_courses."}}}}),
         json!({"name":"omnivox_calendar","description":"College calendar page: holidays and posted deadlines. Optional range is supported only via the MCP gateway; omit it for a direct college login. Prefer this for posted dates; there is no omnivox_deadlines aggregator yet.","inputSchema":{"type":"object","properties":{"range":{"type":"string","enum":["today","week","month","all"]}}}}),
     ];
     for tool in &mut tools {
+        let name = tool["name"].as_str().unwrap_or("");
+        if matches!(
+            name,
+            "omnivox_my_courses"
+                | "omnivox_course_documents"
+                | "omnivox_assignments"
+                | "omnivox_grades"
+                | "omnivox_schedule"
+        ) {
+            if tool.get("inputSchema").is_none() {
+                tool["inputSchema"] = json!({"type":"object","properties":{}});
+            }
+            tool["inputSchema"]["properties"]["term"] = reads::term_schema();
+        }
+    }
+    tools.extend(reads::tools());
+    tools.push(files::tool());
+    for tool in &mut tools {
         tool["annotations"] = json!({"readOnlyHint":true});
     }
+    tools.extend(writes::tools());
     tools
 }
 
 pub fn dispatch(client: &OmnivoxClient, name: &str, args: &Value) -> Result<Value, String> {
+    if let Some(result) = writes::dispatch(client, name, args) {
+        return result;
+    }
+    if name == "omnivox_file" {
+        return files::read(client, args, &crate::mcp::file_query(args)?);
+    }
+    if let Some((path, mut body)) = reads::request(name, args)? {
+        // Several mobile endpoints do not interpret an empty term as current.
+        // Resolve the actual server-selected term instead of guessing its cycle.
+        if path != "LeaCommun/GetDefaultModel" {
+            for key in ["AnSession", "anSession"] {
+                if body.get(key).and_then(Value::as_str) == Some("") {
+                    body[key] = json!(client.resolve_term("")?);
+                }
+            }
+        }
+        let value = client.mobl(path, body)?;
+        return if name == "omnivox_terms" {
+            Ok(
+                json!({"current_term":value.get("AnSession"),"available_terms":value.get("AnSessionDisponible")}),
+            )
+        } else {
+            Ok(value)
+        };
+    }
     match name {
         "omnivox_status" => client.status(),
         "omnivox_my_courses" => client.courses(),
@@ -1242,6 +1346,123 @@ pub(crate) mod tests {
 
     fn catalog_body() -> String {
         r#"{"tools":[{"name":"get-courses-summary"},{"name":"get-college-list"}]}"#.into()
+    }
+
+    #[test]
+    fn mcp_structured_content_wraps_native_arrays_and_scalars_but_preserves_text() {
+        for value in [
+            json!([{"title":"News"}]),
+            json!(true),
+            json!("OK"),
+            Value::Null,
+            json!({"courses":[]}),
+        ] {
+            let (config, worker) = server(vec![(200, value.to_string())]);
+            let settings = crate::config::Settings {
+                omnivox: Some(crate::config::OmnivoxSettings {
+                    url: Some(config.base_url),
+                    token: Some(config.token),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+            let reply = crate::mcp::dispatch_tool(&settings, "omnivox_my_courses", &json!({}));
+            assert_eq!(reply["isError"], false);
+            assert!(reply["structuredContent"].is_object());
+            assert_eq!(
+                reply["structuredContent"],
+                if value.is_object() {
+                    value.clone()
+                } else {
+                    json!({"items":value})
+                }
+            );
+            assert_eq!(
+                serde_json::from_str::<Value>(reply["content"][0]["text"].as_str().unwrap())
+                    .unwrap(),
+                value
+            );
+            worker.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn extended_tools_dispatch_through_mobile_and_gateway_proxy_without_leaking_auth() {
+        let args = json!({"term":"20263","course_id":"course.group","assignment_id":"assignment","teacher_id":"teacher","message_id":"message","query":"exam","month_start":1793480400000_i64,"week_start":1793570400000_i64});
+        for college in [false, true] {
+            for tool in reads::tools() {
+                let name = tool["name"].as_str().unwrap();
+                let (path, expected_body) = reads::request(name, &args).unwrap().unwrap();
+                let (mut config, worker) = server(vec![(200, json!({"ok":true,"AuthHash":"hidden-code","InfosAutoLoginCvir":{"SID":"hidden-sid"},"JsonWebToken":"hidden-jwt","AnSession":"20263"}).to_string())]);
+                if college {
+                    config.token = "SidLea=private;Mobile_AuthentificationASPX=session".into();
+                    config.device_id = Some("a".repeat(40));
+                    config.auth_hash = Some("device-code".into());
+                }
+                let settings = crate::config::Settings {
+                    omnivox: Some(crate::config::OmnivoxSettings {
+                        url: Some(config.base_url),
+                        token: Some(config.token.clone()),
+                        device_id: config.device_id,
+                        auth_hash: config.auth_hash,
+                    }),
+                    ..Default::default()
+                };
+                let reply = crate::mcp::dispatch_tool(&settings, name, &args);
+                assert_eq!(reply["isError"], false, "{name}: {reply}");
+                for secret in ["hidden-code", "hidden-sid", "hidden-jwt", &config.token] {
+                    assert!(!reply.to_string().contains(secret), "{name} leaked auth");
+                }
+                let requests = worker.join().unwrap();
+                assert!(
+                    requests[0].starts_with(&format!("POST /Mobl/{path} ")),
+                    "{name}: {}",
+                    requests[0]
+                );
+                assert!(requests[0].ends_with(&expected_body.to_string()));
+                let headers = requests[0].to_ascii_lowercase();
+                if college {
+                    assert!(headers.contains("x-user-agent-ovx: ovx "));
+                    assert!(headers.contains("cookie: sidlea=private;"));
+                    assert!(!headers.contains("authorization: bearer"));
+                } else {
+                    assert!(headers.contains("authorization: bearer test-private-token"));
+                    assert!(headers.contains("x-mcp-auth: test-private-token"));
+                    assert!(!headers.contains("cookie:"));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn extended_reads_resolve_current_term_and_handle_module_blocks() {
+        let (config, worker) = server(vec![
+            (
+                200,
+                json!({"AnSessionDisponible":{"AnSessionDefault":"20263"}}).to_string(),
+            ),
+            (200, json!({"ListeSommaire":[]}).to_string()),
+        ]);
+        assert!(dispatch(&OmnivoxClient::new(config), "omnivox_absences", &json!({})).is_ok());
+        let requests = worker.join().unwrap();
+        assert!(requests[0].starts_with("POST /Mobl/LeaCommun/GetDefaultModel "));
+        assert!(requests[1].ends_with(r#"{"anSession":"20263"}"#));
+        for body in [
+            json!({"IsPeriodeArret":true}),
+            json!({"IsAvailable":false}),
+            json!({"NaviguerPage":"Other.Interception"}),
+        ] {
+            let (config, worker) = server(vec![(200, body.to_string())]);
+            assert!(dispatch(&OmnivoxClient::new(config), "omnivox_forms", &json!({})).is_err());
+            worker.join().unwrap();
+        }
+        let (config, worker) = server(vec![(200, "{}".into())]);
+        assert!(
+            dispatch(&OmnivoxClient::new(config), "omnivox_absences", &json!({}))
+                .unwrap_err()
+                .contains("current academic term")
+        );
+        assert_eq!(worker.join().unwrap().len(), 1);
     }
 
     // Sanitized shape of the current Maisonneuve login HTML and MFA SPA/API.

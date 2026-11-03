@@ -48,3 +48,65 @@ test('reads use the official mobile worker and refuse a changed origin',async()=
   assert.equal((await context.browserRequest(input)).error,'reconnect');
   assert.equal(calls,1);
 });
+
+function writePage(fetchImpl) {
+  const calls=[],codes=[];
+  const context={location:{origin:'https://college.omnivox.ca'},AbortSignal,TextDecoder,Uint8Array,
+    userAgentRequete:'OVX InfoDevice=test AppVer=3.8.9 IdAppareil=device Code=code',
+    Skytech:{Commun:{Utils:{
+      LocalStorage:{GetData:(key,fallback)=>({'X-K':'site-generated-challenge','X-T':{LEA:'site-generated-access'}}[key] ?? fallback)},
+      HttpRequestWorker:{PostJSON:()=>assert.fail('a write must not use a retry-capable worker')}
+    }}},
+    Ovx:{Storage:{SetCodeUserAgent:code=>codes.push(code)}},
+    fetch:async(url,options)=>{calls.push({url,options});return await fetchImpl(url,options)}
+  };
+  context.window=context;
+  vm.createContext(context);vm.runInContext(request,context);
+  const input={origin:context.location.origin,path:'/Mobl/Mio/SendMessage',method:'POST',body:{To:'recipient',Message:'Hello'},mobile:true,mobileWrite:true,contentType:'application/json',binary:false,limit:1024};
+  return {context,calls,codes,input};
+}
+
+test('writes use site-produced tokens and one redirect-refusing fetch, not the official retry wrapper',async()=>{
+  const page=writePage(async()=>new Response('true',{headers:{'Content-Type':'application/json','X-AuthHash':'rotated-code'}}));
+  const result=await page.context.browserRequest(page.input);
+  assert.equal(result.status,200);assert.equal(result.text,'true');
+  assert.equal(page.calls.length,1);
+  const {url,options}=page.calls[0];
+  assert.equal(url,'/Mobl/Mio/SendMessage');
+  assert.equal(options.method,'POST');
+  assert.equal(options.redirect,'manual');
+  assert.equal(options.credentials,'same-origin');
+  assert.equal(options.headers['X-K'],'site-generated-challenge');
+  assert.equal(options.headers['X-T'],'LEA=site-generated-access');
+  assert.match(options.headers['X-User-Agent-Ovx'],/^OVX /);
+  assert.deepEqual(JSON.parse(options.body),page.input.body);
+  assert.deepEqual(page.codes,['rotated-code']);
+  assert.ok(!JSON.stringify(result).includes('site-generated-challenge'));
+});
+
+test('write challenge expiry, redirects, transport failure and response limits never trigger a second attempt',async()=>{
+  for (const [makeResponse,error] of [
+    [()=>new Response('true',{headers:{'X-KE':'expired-challenge'}}),'challenge'],
+    [()=>({type:'opaqueredirect'}),'redirect'],
+    [()=>{throw new Error('timeout')},'transport'],
+    [()=>new Response('x'.repeat(1025)),'limit'],
+  ]) {
+    const page=writePage(async()=>makeResponse());
+    const result=await page.context.browserRequest(page.input);
+    assert.equal(result.error,error);
+    assert.equal(page.calls.length,1);
+  }
+  const page=writePage(async()=>new Response('false',{status:403}));
+  assert.equal((await page.context.browserRequest(page.input)).status,403);
+  assert.equal(page.calls.length,1);
+});
+
+test('writes stop before sending if the origin changes or the official session storage is unavailable',async()=>{
+  const page=writePage(async()=>assert.fail('must not make a request'));
+  page.context.location.origin='https://other.example';
+  assert.equal((await page.context.browserRequest(page.input)).error,'reconnect');
+  page.context.location.origin=page.input.origin;
+  delete page.context.Skytech.Commun.Utils.LocalStorage;
+  assert.equal((await page.context.browserRequest(page.input)).error,'reconnect');
+  assert.equal(page.calls.length,0);
+});

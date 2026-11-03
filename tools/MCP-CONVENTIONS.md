@@ -60,7 +60,9 @@ Keep descriptions under a short paragraph. Put long procedure notes in
 
 Write-tool approvals belong to the MCP client. Annotations describe the risk,
 but clients other than Claude may not prompt automatically; confirm the user's
-intent before performing irreversible actions.
+intent before performing irreversible actions. Definitions are normalized so
+every `readOnlyHint:false` tool also carries `destructiveHint:true`,
+`openWorldHint:true` and an explicit `idempotentHint` (default `false`).
 
 ## Prefer / avoid matrix
 
@@ -68,7 +70,7 @@ intent before performing irreversible actions.
 |-----|--------|------------------------|
 | “What is due?” | `*_deadlines` | Combining calendar + assignments + quizzes by hand |
 | Find a TD / file | `moodle_search` or course content + query | Blind full course dumps |
-| Read a PDF/Office doc | `moodle_file` / `brightspace_file` | Generic HTTP fetch of school URLs |
+| Read a PDF/Office doc | `moodle_file` / `brightspace_file` / `omnivox_file` | Generic HTTP fetch of school URLs |
 | Rare Moodle action | dedicated tool, else `ws_discover` → `ws_call` | `ws_call` for everyday reads |
 | Account routing | `student_status` then `account_id` | Guessing which account |
 
@@ -83,15 +85,19 @@ intent before performing irreversible actions.
 - Scrub secrets from every payload before return.
 - Keep responses compact: drop hidden/ended noise unless the caller opted in.
 
-## Security gates
+## Capability boundaries
+
+There is **no server-side write permission switch**. Annotations describe the
+risk; the MCP client decides whether to ask for confirmation or run the action.
+student-mcp still enforces technical boundaries:
 
 1. Dedicated student tools first; no open URL/path proxy.
-2. `ws_call` when Moodle writes are off:
-   - allow only catalogue-classified **read** functions;
-   - refuse catalogue **write** functions;
-   - refuse **unclassified** functions (plugins / unknown names).
+2. `ws_call` accepts only functions the token advertises. Moodle still enforces
+   the token's own capabilities and role permissions.
 3. Brightspace writes use fixed routes owned by the server, never caller URLs.
-4. Omnivox stays read-only.
+4. Omnivox writes use fixed mobile endpoints with explicit payload validation.
+5. A write whose response is ambiguous reports "not confirmed" instead of
+   pretending success. No write is retried automatically.
 
 ## Adding a tool checklist
 
@@ -99,8 +105,8 @@ intent before performing irreversible actions.
 2. `inputSchema` is always an object; required keys listed under `required`.
 3. Description says prefer/avoid and ID provenance.
 4. Annotations match mutation behaviour.
-5. Dispatch path resolves `account_id` and write gates.
-6. Fixture test covers success + auth/write refusal.
+5. Dispatch path resolves `account_id` and validates arguments.
+6. Fixture test covers success and auth/refusal.
 7. Update `tools/GUIDE.md` only if the workflow is user-visible.
 
 ## Intentional platform differences
@@ -110,6 +116,7 @@ intent before performing irreversible actions.
 | Course id key | `courseid` (int) | `courseid` (int) | `course_id` (string) |
 | News | `moodle_announcements` | `brightspace_news` | calendar/docs only |
 | Search | cross-course materials | TOC titles/URLs in one course | none yet |
-| File read | `moodle_file` + `fileurl` | `brightspace_file` + topic id | list only today |
+| File read | `moodle_file` + `fileurl` | `brightspace_file` + topic id | `omnivox_file` + category/id |
 | Escape hatch | `ws_*` | fixed `student_tools` routes | none |
-| Writes | opt-in + catalogue class | opt-in + route method | no |
+| Writes | dedicated tools + `ws_call` (token capabilities) | fixed routes, method from the route | fixed mobile endpoints |
+| Write result | Moodle JSON exception/errorcode | empty 2xx or JSON without error fields | explicit confirmation fields |

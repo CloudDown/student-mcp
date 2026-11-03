@@ -224,10 +224,7 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
             let mut accounts = Vec::new();
             for service in ["moodle", "omnivox", "brightspace"] {
                 for (id, url) in current.account_list(service) {
-                    let allow_write = service == "moodle" || service == "brightspace";
-                    accounts.push(
-                        json!({"service":service,"id":id,"url":url,"allow_write":allow_write}),
-                    );
+                    accounts.push(json!({"service":service,"id":id,"url":url}));
                 }
             }
             (200, "application/json", json!({"accounts":accounts,"verification":pending.as_ref().map(|(_,p)| &p.prompt),"browser_login":browser_login.as_ref().map(crate::browser::Login::status),"link":mcp_endpoint(tunnel.origin().unwrap_or(&format!("http://127.0.0.1:{port}")), &gateway.token),"local_link":mcp_endpoint(&format!("http://127.0.0.1:{port}"), &gateway.token),"tunnel":format!("{:?}",tunnel.state),"public":current.gateway.public_enabled(),"local":enabled.load(Ordering::SeqCst),"autostart":crate::autostart::enabled().unwrap_or(false)}).to_string().into_bytes(),false)

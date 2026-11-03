@@ -62,8 +62,20 @@ Mobile fragment login tokens are handled using the existing connector convention
 After login, the connector verifies access to Léa. Read requests use the site's
 `Skytech.Commun.Utils.HttpRequestWorker.PostJSON`, rather than exporting a web
 session and assuming `/Mobl/` accepts it. Device identity and mobile storage are
-retained with the profile. This does not add new Omnivox tools or implement the
-whole native app bridge.
+retained with the profile. The [46 Omnivox tools](OMNIVOX-TOOLS.md) reuse this
+session. Binary file downloads use same-origin GET with the profile's mobile
+identity; redirects are refused and responses are capped at 12 MB. The whole
+native app bridge is not implemented.
+
+Write requests deliberately do **not** use `PostJSON`, `PostJSONWithRetry` or
+the app's `SendMessage` wrapper: the inspected client can replay a request on
+an expired challenge or a send timeout. The dedicated write transport reuses
+`X-K`/`X-T` values already produced by the site's session code, plus the mobile
+identity, in one same-origin fetch with `redirect: manual`. It does not invent
+tokens or evaluate returned challenge code. An `X-KE` expiry, redirect, timeout
+or unconfirmed response returns an error; inspect the action state before
+deciding whether to retry. A returned `X-AuthHash` is persisted through the
+existing native bridge. Client confirmation policies remain in the MCP client.
 
 **Other connection methods** still provides manual login, the existing gateway,
 and Brightspace cookie/OAuth input. Moodle keeps its mobile token flow.

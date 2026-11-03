@@ -102,12 +102,14 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         assert not entry.exists()
         assert json.loads(request("/state")[1])["autostart"] is False
         assert request("/action", {"action": "permissions", "service": "moodle", "id": "moodle", "allow_write": True})[0] == 400
-        assert json.loads(request("/state")[1])["accounts"][0]["allow_write"] is True
-        assert json.loads(config.read_text())["moodle"]["allow_write"] is False
+        assert "allow_write" not in json.loads(request("/state")[1])["accounts"][0]
         assert request("/action", {"action": "verify", "code": "123456"})[0] == 400
         assert b'id="browser-connect-form"' in page
         assert b'Connect with browser' in page
         assert b'Other connection methods' in page
+        assert b'Advanced options' not in page
+        assert b'function advancedFields' not in page
+        assert b'gateway_url' not in page
         assert request("/action", {"action": "browser_connect", "service": "brightspace", "url": "https://school.example"}, auth=False)[0] == 401
         assert request("/action", {"action": "browser_connect", "service": "moodle", "url": "https://school.example"})[0] == 400
         assert request("/action", {"action": "browser_connect", "service": "omnivox", "url": "https://other.example"})[0] == 400

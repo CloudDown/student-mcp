@@ -410,6 +410,23 @@ impl Connection {
         binary: bool,
         limit: usize,
     ) -> Result<Reply, String> {
+        self.with_browser(|browser| {
+            browser.request(method, path, body, content_type, binary, limit)
+        })
+    }
+
+    /// Single-attempt Omnivox writes must not use PostJSON's challenge replay.
+    pub fn mobile_write(&self, path: &str, body: &Value) -> Result<Reply, String> {
+        if self.service != "omnivox" {
+            return Err("Mobile writes are only supported for Omnivox.".into());
+        }
+        self.with_browser(|browser| browser.mobile_write(path, body))
+    }
+
+    fn with_browser<T>(
+        &self,
+        action: impl FnOnce(&mut Browser) -> Result<T, String>,
+    ) -> Result<T, String> {
         let mut guard = self
             .browser
             .lock()
@@ -419,10 +436,7 @@ impl Connection {
             browser.wait_ready(&AtomicBool::new(false), Duration::from_secs(25))?;
             *guard = Some(browser);
         }
-        guard
-            .as_mut()
-            .unwrap()
-            .request(method, path, body, content_type, binary, limit)
+        action(guard.as_mut().unwrap())
     }
 }
 
@@ -867,6 +881,37 @@ impl Browser {
         binary: bool,
         limit: usize,
     ) -> Result<Reply, String> {
+        let input = self.request_input(method, path, body, content_type, binary, limit)?;
+        self.perform_request(input, binary, limit)
+    }
+
+    fn mobile_write(&mut self, path: &str, body: &Value) -> Result<Reply, String> {
+        if self.profile.service != "omnivox" {
+            return Err("Mobile writes are only supported for Omnivox.".into());
+        }
+        let bytes = body.to_string();
+        let limit = 2 * 1024 * 1024;
+        let mut input = self.request_input(
+            "POST",
+            path,
+            Some(bytes.as_bytes()),
+            Some("application/json"),
+            false,
+            limit,
+        )?;
+        input["mobileWrite"] = json!(true);
+        self.perform_request(input, false, limit)
+    }
+
+    fn request_input(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&[u8]>,
+        content_type: Option<&str>,
+        binary: bool,
+        limit: usize,
+    ) -> Result<Value, String> {
         let url = url::Url::parse(&self.profile.origin)
             .map_err(|_| "Invalid account origin.")?
             .join(path)
@@ -894,14 +939,28 @@ impl Browser {
         };
         let mut input = json!({"origin":self.profile.origin,"method":method,"path":target,"binary":binary,"limit":limit,"mobile":mobile,"contentType":content_type});
         if mobile {
-            if method != "POST" {
+            if method == "GET" && binary && body.is_none() {
+                // Files are native GET downloads, not JSON calls. Keep the
+                // profile's mobile UA/headers and same-origin redirect guard.
+                input["mobile"] = json!(false);
+            } else if method != "POST" || binary {
                 return Err("Unsupported mobile request.".into());
+            } else {
+                input["body"] = serde_json::from_slice(body.unwrap_or(b"{}"))
+                    .map_err(|_| "Invalid mobile request body.")?;
             }
-            input["body"] = serde_json::from_slice(body.unwrap_or(b"{}"))
-                .map_err(|_| "Invalid mobile request body.")?;
         } else if let Some(body) = body {
             input["bodyBase64"] = json!(base64::engine::general_purpose::STANDARD.encode(body));
         }
+        Ok(input)
+    }
+
+    fn perform_request(
+        &mut self,
+        input: Value,
+        binary: bool,
+        limit: usize,
+    ) -> Result<Reply, String> {
         let value = self.evaluate(format!(
             "{}\nbrowserRequest({input})",
             include_str!("resources/browser/request.js")
@@ -909,9 +968,9 @@ impl Browser {
         if let Some(error) = value["error"].as_str() {
             return Err(match error {
                 "reconnect" | "redirect" => RECONNECT.into(),
+                "challenge" => "Omnivox requested a new session challenge. The request was not replayed; refresh with a read tool before deciding whether to retry.".into(),
                 "limit" => "School response exceeded the size limit.".into(),
-                _ => "School request failed or timed out. Verify action state before retrying."
-                    .into(),
+                _ => "School request failed or timed out.".into(),
             });
         }
         let bytes = if binary {
@@ -1370,7 +1429,7 @@ mod tests {
                             "{}".into()
                         }
                         "/d2l/api/cookie" => json!({"cookie":cookie}).to_string(),
-                        "/d2l/api/file" => {
+                        "/d2l/api/file" | "/Mobl/file" => {
                             headers.push(("Content-Type", "application/pdf"));
                             "%PDF-fixture".into()
                         }
@@ -1383,6 +1442,33 @@ mod tests {
                         "/d2l/api/should-not-replay" => {
                             counted.fetch_add(100, Ordering::SeqCst);
                             "{}".into()
+                        }
+                        "/Mobl/redirect" => {
+                            status = 302;
+                            headers.push(("Location", "/d2l/api/should-not-replay"));
+                            String::new()
+                        }
+                        "/Mobl/write" | "/Mobl/write-challenge" | "/Mobl/write-redirect" => {
+                            counted.fetch_add(1, Ordering::SeqCst);
+                            assert_eq!(request.method().as_str(), "POST");
+                            assert!(request
+                                .headers()
+                                .iter()
+                                .any(|h| h.field.equiv("X-K")
+                                    && h.value.as_str() == "site-challenge"));
+                            assert!(request
+                                .headers()
+                                .iter()
+                                .any(|h| h.field.equiv("X-User-Agent-Ovx")
+                                    && h.value.as_str().starts_with("OVX ")));
+                            if request.url() == "/Mobl/write-challenge" {
+                                headers.push(("X-KE", "expired"));
+                            } else if request.url() == "/Mobl/write-redirect" {
+                                status = 307;
+                                headers.push(("Location", "/d2l/api/should-not-replay"));
+                            }
+                            headers.push(("Content-Type", "application/json"));
+                            "true".into()
                         }
                         "/d2l/api/forbidden" => {
                             counted.fetch_add(1, Ordering::SeqCst);
@@ -1448,6 +1534,56 @@ mod tests {
                     .request("GET", "/d2l/api/file", None, None, true, 1024)
                     .unwrap();
                 assert_eq!(file.bytes, b"%PDF-fixture");
+                // Mobile JSON stays on the official worker; only binary GET
+                // downloads may use fetch in the same profile and origin.
+                browser.profile.service = "omnivox".into();
+                let file = browser
+                    .request("GET", "/Mobl/file", None, None, true, 1024)
+                    .unwrap();
+                assert_eq!(file.bytes, b"%PDF-fixture");
+                assert!(browser
+                    .request("GET", "/Mobl/file", None, None, true, 2)
+                    .is_err());
+                assert!(browser
+                    .request("GET", "/Mobl/file", None, None, false, 1024)
+                    .is_err());
+                assert!(browser
+                    .request("POST", "/Mobl/file", Some(b"{}"), None, true, 1024)
+                    .is_err());
+                assert!(browser
+                    .request(
+                        "GET",
+                        "https://other.example/Mobl/file",
+                        None,
+                        None,
+                        true,
+                        1024
+                    )
+                    .is_err());
+                assert!(browser
+                    .request("GET", "/Mobl/redirect", None, None, true, 1024)
+                    .is_err());
+                browser.evaluate("window.userAgentRequete='OVX fixture';window.Skytech={Commun:{Utils:{LocalStorage:{GetData:(key,fallback)=>key==='X-K'?'site-challenge':fallback}}}};true".into()).unwrap();
+                assert_eq!(
+                    browser
+                        .mobile_write("/Mobl/write", &json!({"action":"fixture"}))
+                        .unwrap()
+                        .json()
+                        .unwrap(),
+                    true
+                );
+                assert!(browser
+                    .mobile_write("/Mobl/write-challenge", &json!({}))
+                    .err()
+                    .unwrap()
+                    .contains("not replayed"));
+                assert!(browser
+                    .mobile_write("/Mobl/write-redirect", &json!({}))
+                    .is_err());
+                assert!(browser
+                    .mobile_write("https://other.example/Mobl/write", &json!({}))
+                    .is_err());
+                browser.profile.service = "brightspace".into();
                 assert!(browser
                     .request("GET", "/d2l/api/file", None, None, true, 2)
                     .is_err());
@@ -1473,7 +1609,7 @@ mod tests {
                 );
                 assert_eq!(
                     writes.load(Ordering::SeqCst),
-                    2,
+                    5,
                     "writes must never be replayed"
                 );
                 drop(browser);

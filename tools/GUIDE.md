@@ -51,14 +51,11 @@ choose **Change login → Connect with browser**. The account is saved only afte
 course access is verified. **Other connection methods** opens the existing
 manual methods described below. See [browser setup, persistence and test status](BROWSER-AUTH.md).
 
-**Moodle.** Two authentication options.
-
-1. *School login*: firstname.lastname + password → the binary calls
-   `/login/token.php` with the `moodle_mobile_app` service; only the **token**
-   is saved, never the password. If your school uses Microsoft SSO or 2FA, this
-   mode can be refused.
-2. *Mobile token*: paste an existing mobile token. This is the reliable option
-   when SSO blocks the password flow.
+**Moodle.** Enter your school username and password. The app calls
+`/login/token.php` with the `moodle_mobile_app` service; only the **token**
+is saved, never the password. If your school uses Microsoft SSO or 2FA, this
+mode can be refused. New accounts use Polytechnique Montréal's Moodle site;
+existing accounts keep their configured site.
 
 **Omnivox (Léa / Mio).** Enter the college Omnivox address
 (`https://cegepxxx.omnivox.ca`), your student number and password. The app
@@ -73,16 +70,26 @@ signing in again. **Cancel verification** discards the pending session. Neither
 the password nor the code is saved, and existing accounts are replaced only
 after the new connection is verified. The app also saves a random mobile device
 id so the same mobile session can be reopened after a restart.
-**Advanced options** also supports a local
-[omnivox-mcp](https://github.com/Beat-YT/omnivox-mcp) gateway (`http://127.0.0.1:3000`
-and `accessKey.txt`).
+
+Omnivox now exposes **46 tools** (34 reads and 12 writes), including MIO messages/search,
+announcements, absences, teacher contacts, notifications, college news/forms,
+calendar pagination, weekly schedules and file reading. See
+[Omnivox tools](OMNIVOX-TOOLS.md) for the complete list and ID conventions.
+Browser-profile connections use the same tools; see
+[persistent browser sign-in](BROWSER-AUTH.md).
+Writes include sending/replying/forwarding MIO, message and folder deletion,
+categorization, flags, restoring messages, marking messages read, dismissing
+notifications and marking assignments consulted. They advertise
+`readOnlyHint: false` and `destructiveHint: true`; approval/automatic execution
+is controlled by the MCP client's settings, not an extra Omnivox confirmation
+parameter. **Assignment upload/removal is not implemented yet**: the observed
+official hand-in flow opens a separate CVIR web page, not a documented mobile
+upload endpoint. Do not confuse recording consultation with handing in work.
 
 **Brightspace / myCourses.** Enter your institution's Brightspace site address
 and the two session cookie **values** from your browser after SSO:
 `d2lSessionVal` and `d2lSecureSessionVal` (separate fields; values only). The
-**⋯** help control explains how to copy them from DevTools. An
-institution-authorized OAuth access token can go under **Advanced options**
-instead (without `Bearer`). The app verifies your profile and course
+**⋯** help control explains how to copy them from DevTools. The app verifies your profile and course
 enrollments. Read tools cover courses, content, grades, assignments (dropbox +
 due dates), quizzes, calendar, aggregated deadlines and course news.
 `brightspace_file` reads documents using `courseid` and a file topic's `Id`
@@ -99,8 +106,9 @@ the next page. Prefer `brightspace_deadlines` for upcoming work. Sessions expire
 and must be replaced via **Change login**. The connector uses LP API 1.49 and LE
 API 1.82.
 
-Saved accounts have check, reconnect and disconnect actions. Omnivox remains
-read-only.
+Saved accounts have check, reconnect and disconnect actions. Omnivox and
+Brightspace both expose reads and writes; write approval is left to the MCP
+client, with no extra server-side permission switch.
 
 ### Additional Brightspace workflows
 
@@ -143,15 +151,14 @@ Omnivox remains experimental: login/MFA may still fail on real college portals.
   A web session from `/Login/Account/Login` is rejected by `/Mobl/`, so the
   connector keeps the same mobile identity (user agent, device id, AuthHash)
   for the whole session. The email-code verification API is supported directly.
-  Other portal variants may need the local
-  [omnivox-mcp](https://github.com/Beat-YT/omnivox-mcp) gateway under advanced
-  options. Login and email-code form loading are checked against the live
+  Other portal variants may not be supported. Login and email-code form loading are checked against the live
   Maisonneuve MFA API; code validation, mobile-session establishment and
   persistence are covered by local HTTP fixtures. End-to-end verification with a
   real email code still depends on the college account.
 - **Brightspace** uses the Valence API with session cookies pasted from the
   browser after SSO (OAuth tokens still work). Tools cover content, grades,
-  dropbox assignments (including student submit when writes are enabled),
+  dropbox assignments (including student submit; approval depends on the MCP
+  client),
   quizzes, calendar, deadlines and news. Tested with local HTTP fixtures; live
   validation still depends on a real institutional account.
 - **monPortail/Brio** is not integrated yet. Laval requires institutional SSO/MFA;

@@ -347,23 +347,18 @@ impl BrightspaceClient {
             // Some tenants return empty 200; others return EntityDropbox JSON.
             let status = response.status();
             let mut raw = String::new();
-            let _ = response
+            response
                 .into_reader()
-                .take(512 * 1024)
-                .read_to_string(&mut raw);
+                .take(512 * 1024 + 1)
+                .read_to_string(&mut raw)
+                .map_err(|_| "Cannot read submission response; success is not confirmed. Verify state before retrying.")?;
+            if raw.len() > 512 * 1024 {
+                return Err("Submission response exceeded limit; success is not confirmed. Verify state before retrying.".into());
+            }
             (status, raw)
         };
-        let result = if raw.trim().is_empty() {
-            json!({
-                "ok": true,
-                "courseid": courseid,
-                "folderid": folderid,
-                "filename": filename,
-                "bytes": bytes.len(),
-                "httpStatus": status,
-                "note": "Submission accepted. Confirm with brightspace_assignment_status."
-            })
-        } else if let Ok(value) = serde_json::from_str::<Value>(&raw) {
+        let parsed = crate::services::write_response::brightspace(raw.as_bytes())?;
+        let result = if let Some(value) = parsed {
             json!({
                 "ok": true,
                 "courseid": courseid,
@@ -380,7 +375,7 @@ impl BrightspaceClient {
                 "filename": filename,
                 "bytes": bytes.len(),
                 "httpStatus": status,
-                "note": "Submission accepted (non-JSON body). Confirm with brightspace_assignment_status."
+                "note": "Submission accepted. Confirm with brightspace_assignment_status."
             })
         };
         Ok(result)

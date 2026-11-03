@@ -18,7 +18,7 @@ fn routes() -> Vec<Route> {
         route("discussion_topics", "Visible topics in a discussion forum.", "GET", "/d2l/api/le/1.82/{courseid}/discussions/forums/{forumid}/topics/", &[]),
         route("discussion_posts", "One page of discussion posts. pageNumber starts at 1; pageSize defaults to 50 (max 100). Request subsequent pages until empty; no claim of completeness from one page.", "GET", "/d2l/api/le/1.82/{courseid}/discussions/forums/{forumid}/topics/{topicid}/posts/", &["pageNumber", "pageSize", "threadId", "threadsOnly"]),
         route("discussion_post", "Read one discussion post.", "GET", "/d2l/api/le/1.82/{courseid}/discussions/forums/{forumid}/topics/{topicid}/posts/{postid}", &[]),
-        route("discussion_post_create", "Publish a discussion thread or reply. parentpostid selects a reply; omit for a new thread. Plain text only, no attachments or anonymous posts. Group-type topics are not supported by this API. Requires writes enabled; client confirmation depends on client settings.", "POST", "/d2l/api/le/1.82/{courseid}/discussions/forums/{forumid}/topics/{topicid}/posts/", &[]),
+        route("discussion_post_create", "Publish a discussion thread or reply. parentpostid selects a reply; omit for a new thread. Plain text only, no attachments or anonymous posts. Group-type topics are not supported by this API. Client confirmation depends on client settings.", "POST", "/d2l/api/le/1.82/{courseid}/discussions/forums/{forumid}/topics/{topicid}/posts/", &[]),
         route("discussion_post_delete", "Delete a post when the account has permission. Destructive write; do not retry automatically.", "DELETE", "/d2l/api/le/1.82/{courseid}/discussions/forums/{forumid}/topics/{topicid}/posts/{postid}", &[]),
         route("discussion_read_status", "Mark a discussion post read or unread (write).", "PUT", "/d2l/api/le/1.82/{courseid}/discussions/forums/{forumid}/topics/{topicid}/posts/{postid}/ReadStatus", &[]),
         route("content_due", "One native Brightspace page of scheduled content still due, excluding exemptions. Use Next/bookmark for subsequent pages.", "GET", "/d2l/api/le/1.82/{courseid}/content/myItems/due/", &["bookmark", "startDateTime", "endDateTime"]),
@@ -331,11 +331,9 @@ pub(crate) fn dispatch(
         }
         bytes
     };
-    if bytes.is_empty() {
+    let Some(data) = crate::services::write_response::brightspace(&bytes)? else {
         return Ok(json!({"accepted":true}));
-    }
-    let data: Value = serde_json::from_slice(&bytes)
-        .map_err(|_| "Action returned a non-JSON response, not confirmed successful. Verify state before retrying.".to_string())?;
+    };
     Ok(crate::moodle::scrub(data, &client.config.token))
 }
 
