@@ -106,6 +106,12 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         assert icon_status == 200 and icon.startswith(b"\x89PNG\r\n\x1a\n")
         assert b'<link rel="icon" type="image/png" href="/assets/app-icon.png">' in page
         assert request("/state", auth=False)[0] == 401
+        assert request("/update", auth=False)[0] == 401
+        assert request("/update", origin="https://example.com")[0] == 401
+        update_status, update_body = request("/update")
+        assert update_status == 200
+        assert isinstance(json.loads(update_body)["available"], bool)
+        assert request("/action", {"action": "update"}, auth=False)[0] == 401
         assert request("/tools/moodle", auth=False)[0] == 401
         assert request("/tools/unknown")[0] == 404
         for service in ("moodle", "omnivox", "brightspace"):

@@ -28,6 +28,11 @@ from the release page, but do not install a launcher by themselves.
 
 Windows/macOS builds are not yet publisher-signed. [Details](tools/GUIDE.md#installation).
 
+When a newer GitHub release is available, an update button appears at the top left
+of the local page, opposite the language button. Click it to download and verify
+the update automatically. Linux updates in place and restarts; Windows/macOS open
+the official installer to finish installation. Connected accounts are preserved.
+
 <p align="center"><img src="tools/screens/moodle.png" width="100%" alt="Moodle sign-in on the local configuration page" /></p>
 
 <table>

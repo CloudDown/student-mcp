@@ -13,6 +13,7 @@ mod share;
 mod stdio;
 mod tray;
 mod tunnel;
+mod update;
 mod web;
 
 use services::moodle::catalog;
