@@ -19,8 +19,12 @@ struct Entry {
 struct Cache(Vec<Entry>);
 
 impl Cache {
-    fn get(&mut self, url: &str, now: Instant) -> Option<Arc<File>> {
+    fn expire(&mut self, now: Instant) {
         self.0.retain(|entry| entry.expires > now);
+    }
+
+    fn get(&mut self, url: &str, now: Instant) -> Option<Arc<File>> {
+        self.expire(now);
         let key: [u8; 32] = Sha256::digest(url.as_bytes()).into();
         self.0
             .iter()
@@ -61,14 +65,44 @@ pub(super) fn get(url: &str) -> Option<Arc<File>> {
 }
 
 pub(super) fn insert(url: &str, file: Arc<File>) {
+    crate::cache::start_expiry_worker();
     if let Ok(mut cache) = CACHE.lock() {
         cache.insert(url, file, Instant::now());
+    }
+}
+
+pub(crate) fn expire(now: Instant) {
+    if let Ok(mut cache) = CACHE.lock() {
+        cache.expire(now);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn expiry_reclaims_idle_entries_but_keeps_live_cache_hits() {
+        let mut cache = Cache::default();
+        let now = Instant::now();
+        let file = Arc::new(File {
+            filename: "expired.pdf".into(),
+            mime: "application/pdf".into(),
+            bytes: Arc::new(vec![1]),
+        });
+        let weak = Arc::downgrade(&file);
+        cache.insert("expired", file, now);
+        let live = Arc::new(File {
+            filename: "live.pdf".into(),
+            mime: "application/pdf".into(),
+            bytes: Arc::new(vec![2]),
+        });
+        cache.insert("live", Arc::clone(&live), now + Duration::from_secs(30));
+        let later = now + Duration::from_secs(61);
+        cache.expire(later);
+        assert!(weak.upgrade().is_none());
+        assert!(Arc::ptr_eq(&cache.get("live", later).unwrap(), &live));
+    }
 
     #[test]
     fn document_cache_expires_and_never_crosses_account_tokens() {

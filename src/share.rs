@@ -15,7 +15,7 @@ struct Artifact {
     name: String,
     mime: String,
     bytes: Arc<Vec<u8>>,
-    text: String,
+    text: Arc<Vec<u8>>,
     expires: Instant,
 }
 
@@ -43,6 +43,7 @@ pub(crate) fn publish_bytes(
     text: &str,
     _pages: u32,
 ) -> Option<String> {
+    crate::cache::start_expiry_worker();
     let mut files = FILES.lock().ok()?;
     publish_into(&mut files, filename, mime, bytes, text)
 }
@@ -88,7 +89,7 @@ fn publish_into(
         name: if name.is_empty() { "file".into() } else { name },
         mime: mime.replace(['\r', '\n'], ""),
         bytes,
-        text: text.into(),
+        text: Arc::new(text.as_bytes().to_vec()),
         expires: Instant::now() + TTL,
     });
     Some(id)
@@ -120,7 +121,14 @@ pub(crate) fn links_for(id: &str) -> Option<ShareLinks> {
     })
 }
 
-type Reply = (u16, Vec<(String, String)>, Vec<u8>);
+pub(crate) type Reply = (u16, Vec<(String, String)>, Arc<Vec<u8>>);
+
+pub(crate) fn expire(now: Instant) {
+    if let Ok(mut files) = FILES.lock() {
+        files.retain(|file| file.expires > now);
+    }
+}
+
 pub(crate) fn route(method: &str, path: &str) -> Option<Reply> {
     let path = path.strip_prefix("/s/")?;
     let mut headers = vec![
@@ -129,32 +137,32 @@ pub(crate) fn route(method: &str, path: &str) -> Option<Reply> {
         ("Referrer-Policy".into(), "no-referrer".into()),
     ];
     if method != "GET" {
-        return Some((405, headers, Vec::new()));
+        return Some((405, headers, Arc::default()));
     }
     let mut files = FILES.lock().ok()?;
     files.retain(|f| f.expires > Instant::now());
     let Some((id, name)) = path.split_once('/') else {
-        return Some((404, headers, Vec::new()));
+        return Some((404, headers, Arc::default()));
     };
     let Some(file) = files.iter().find(|f| f.id == id) else {
         return Some((
             410,
             headers,
-            b"File expired. Request a fresh link.".to_vec(),
+            Arc::new(b"File expired. Request a fresh link.".to_vec()),
         ));
     };
     let body = if name == "text" && !file.text.is_empty() {
         headers.push(("Content-Type".into(), "text/plain; charset=utf-8".into()));
-        file.text.as_bytes().to_vec()
+        Arc::clone(&file.text)
     } else if name == file.name {
         headers.push(("Content-Type".into(), file.mime.clone()));
         headers.push((
             "Content-Disposition".into(),
             format!("attachment; filename=\"{}\"", file.name),
         ));
-        file.bytes.as_ref().clone()
+        Arc::clone(&file.bytes)
     } else {
-        return Some((404, headers, Vec::new()));
+        return Some((404, headers, Arc::default()));
     };
     Some((200, headers, body))
 }
@@ -162,6 +170,45 @@ pub(crate) fn route(method: &str, path: &str) -> Option<Reply> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn expiry_releases_storage_without_copying_or_interrupting_downloads() {
+        let _guard = LINK_LOCK.lock().unwrap();
+        let bytes = Arc::new(vec![7; 1024 * 1024]);
+        let weak = Arc::downgrade(&bytes);
+        let id = publish_bytes(
+            "large.pdf",
+            "application/pdf",
+            Arc::clone(&bytes),
+            "text",
+            1,
+        )
+        .unwrap();
+        let live = publish("live.pdf", "application/pdf", b"live", "", 1).unwrap();
+        let body = route("GET", &format!("/s/{id}/large.pdf")).unwrap().2;
+        assert!(Arc::ptr_eq(&bytes, &body));
+        let text = route("GET", &format!("/s/{id}/text")).unwrap().2;
+        assert!(Arc::ptr_eq(
+            &text,
+            &route("GET", &format!("/s/{id}/text")).unwrap().2
+        ));
+        drop(bytes);
+        FILES
+            .lock()
+            .unwrap()
+            .iter_mut()
+            .find(|file| file.id == id)
+            .unwrap()
+            .expires = Instant::now();
+        expire(Instant::now());
+        assert!(!FILES.lock().unwrap().iter().any(|file| file.id == id));
+        assert_eq!(route("GET", &format!("/s/{id}/large.pdf")).unwrap().0, 410);
+        assert_eq!(route("GET", &format!("/s/{live}/live.pdf")).unwrap().0, 200);
+        assert_eq!(body.len(), 1024 * 1024);
+        assert!(body.iter().all(|byte| *byte == 7));
+        drop(body);
+        assert!(weak.upgrade().is_none());
+    }
 
     #[test]
     fn capacity_never_evicts_a_live_link_and_expiry_reclaims_space() {
@@ -216,10 +263,16 @@ mod tests {
         let _guard = LINK_LOCK.lock().unwrap();
         let id = publish("notes.pdf", "application/pdf", b"original", "hello", 1).unwrap();
         assert_eq!(
-            route("GET", &format!("/s/{id}/notes.pdf")).unwrap().2,
+            route("GET", &format!("/s/{id}/notes.pdf"))
+                .unwrap()
+                .2
+                .as_slice(),
             b"original"
         );
-        assert_eq!(route("GET", &format!("/s/{id}/text")).unwrap().2, b"hello");
+        assert_eq!(
+            route("GET", &format!("/s/{id}/text")).unwrap().2.as_slice(),
+            b"hello"
+        );
         assert_eq!(route("GET", &format!("/s/{id}/read")).unwrap().0, 404);
         assert_eq!(route("POST", &format!("/s/{id}/notes.pdf")).unwrap().0, 405);
         assert_eq!(route("GET", "/s/unknown/file").unwrap().0, 410);

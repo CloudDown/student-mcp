@@ -1,5 +1,6 @@
 mod autostart;
 mod browser;
+mod cache;
 mod config;
 mod delivery;
 mod document;

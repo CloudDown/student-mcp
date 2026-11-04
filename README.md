@@ -28,8 +28,9 @@ from the release page, but do not install a launcher by themselves.
 
 Windows/macOS builds are not yet publisher-signed. [Details](tools/GUIDE.md#installation).
 
-When a newer GitHub release is available, an update button appears at the top left
-of the local page, opposite the language button. Click it to download and verify
+The local page shows the installed version and update-check status at the top left,
+opposite the language button. When a newer GitHub release is available, an update
+button takes its place. Click it to download and verify
 the update automatically. Linux updates in place and restarts; Windows/macOS open
 the official installer to finish installation. Connected accounts are preserved.
 
