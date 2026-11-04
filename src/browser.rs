@@ -555,6 +555,8 @@ impl Browser {
                     "{origin}{}",
                     if service == "omnivox" {
                         MOBILE_LOGIN
+                    } else if service == "outlook" {
+                        "/mail/"
                     } else {
                         "/d2l/home"
                     }
@@ -952,6 +954,21 @@ impl Browser {
             let mut home = url;
             home.set_fragment(None);
             self.profile.home = home.to_string();
+        } else if self.profile.service == "outlook" {
+            if origin != self.profile.origin
+                || (url.scheme() != "https" && !origin.starts_with("http://127.0.0.1"))
+            {
+                return Err(RECONNECT.into());
+            }
+            let user = self
+                .request("GET", "/api/v2.0/me", None, None, false, 2 * 1024 * 1024)?
+                .json()?;
+            if user.get("EmailAddress").and_then(Value::as_str).is_none()
+                && user.get("Id").and_then(Value::as_str).is_none()
+            {
+                return Err(RECONNECT.into());
+            }
+            self.profile.home = format!("{origin}/mail/");
         } else {
             if origin != self.profile.origin
                 || !url.path().starts_with("/d2l/")
@@ -1044,14 +1061,16 @@ impl Browser {
             .map_err(|_| "Invalid account origin.")?
             .join(path)
             .map_err(|_| "Invalid request path.")?;
-        let prefix = if self.profile.service == "omnivox" {
-            "/Mobl/"
-        } else {
-            "/d2l/api/"
+        let allowed = match self.profile.service.as_str() {
+            "omnivox" => url.path().starts_with("/Mobl/"),
+            "outlook" => {
+                url.path().starts_with("/api/")
+                    || url.path().starts_with("/owa/")
+                    || url.path().starts_with("/ows/")
+            }
+            _ => url.path().starts_with("/d2l/api/"),
         };
-        if url.origin().ascii_serialization() != self.profile.origin
-            || !url.path().starts_with(prefix)
-        {
+        if url.origin().ascii_serialization() != self.profile.origin || !allowed {
             return Err("Browser requests are restricted to the connected school API.".into());
         }
         let mobile = self.profile.service == "omnivox";
@@ -1194,6 +1213,7 @@ impl Login {
                 }
                 origin
             }
+            "outlook" => crate::config::normalize_outlook_url(origin)?,
             _ => return Err("Unknown school service.".into()),
         };
         if !origin.starts_with("https://") {
@@ -1303,6 +1323,13 @@ impl Login {
                         token: Some(token),
                         ..Default::default()
                     })
+                }
+                "outlook" => {
+                    settings.outlook = Some(crate::config::MailSettings {
+                        url: Some(url),
+                        token: Some(token),
+                        ..Default::default()
+                    });
                 }
                 _ => return Err("Unknown service.".into()),
             }

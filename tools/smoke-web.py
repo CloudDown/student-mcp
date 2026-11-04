@@ -94,6 +94,9 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         links = page.split(b'function linkScreen(){', 1)[1].split(b'function publicMessage(', 1)[0]
         assert b'Launch at startup' in home and b'name="autostart"' in home
         assert b'name="advanced"' not in home and b'Allow changes' not in manage
+        assert b'data-screen="mail"' in home and b'aria-label="Mail transfer"' in home
+        assert b"Your school blocks automatic forwarding." in page
+        assert b"Ton \xc3\xa9cole bloque le transfert automatique" in page
         assert b'name="autostart"' not in links
         assert manage.index(b'class="status-row"') < manage.index(b'data-add') < manage.index(b'class="manage-actions"')
         assert b'accountChoices()' in manage and b'account-list' not in manage

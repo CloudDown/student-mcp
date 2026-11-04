@@ -38,6 +38,8 @@ If Chrome, Edge or Brave is already installed, that browser is used. A download 
 
 When the page says you are connected, go back to the home screen.
 
+The envelope button forwards school Outlook to another address (for example Gmail) and keeps a copy in Outlook. If your school blocks automatic forwarding, the page says so instead of pretending it worked.
+
 ## 3. Copy your AI link
 
 Click **AI connection**, then the copy button next to the public link. Keep this computer awake and online. Do not put the link in a screenshot or a chat.
