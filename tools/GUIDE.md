@@ -44,10 +44,28 @@ automatically when configured. Turn it off to remove the startup entry.
 
 ## 2. Connecting a service
 
-**Brightspace / Omnivox: browser sign-in (experimental).** Enter your school's
+**Outlook mail transfer.** The envelope button on the home page opens
+Outlook in the same browser sign-in flow (`https://outlook.office.com`
+by default). After the mailbox is verified, enter the destination
+address and turn forwarding on. student-mcp creates an inbox rule named
+`student-mcp-forward` that **forwards** (it does not redirect), so a
+copy stays in Outlook, then sends a test message to the mailbox. Error
+`5.7.520` is shown as **Your school blocks automatic forwarding.**
+(French: *Ton école bloque le transfert automatique*). Turn forwarding
+off to delete that rule. Mail transfer is local UI only; it is not an
+MCP tool.
+
+**Canvas.** Same browser sign-in as Brightspace. Enter the school Canvas
+address (ZoneCours HEC: `https://zonecours2.hec.ca`) and **Connect with
+browser**. student-mcp stores a private browser profile, not a personal
+access token (student tokens expire and are against Instructure policy).
+Read-only tools: courses, announcements, assignments and dates, grades,
+files and calendar.
+
+**Brightspace / Omnivox: browser sign-in.** Enter your school's
 address and choose **Connect with browser**. An installed Chromium-based browser
 (Chrome, Edge, Brave, Helium, …) opens the official sign-in page. If none is found,
-student-mcp automatically downloads a dedicated Chrome for Testing on first use,
+student-mcp asks permission before downloading a dedicated Chrome for Testing,
 with download progress and cancellation. You can keep Safari or Firefox as your
 default browser; no manual browser installation is needed on supported systems.
 Complete login and MFA in the separate sign-in window. A dedicated per-account
@@ -111,11 +129,12 @@ the next page. Prefer `brightspace_deadlines` for upcoming work. Sessions expire
 and must be replaced via **Change login**. The connector uses LP API 1.49 and LE
 API 1.82.
 
-Saved accounts have check, reconnect and disconnect actions. Omnivox and
-Brightspace both expose reads and writes; write approval is left to the MCP
-client, with no extra server-side permission switch.
-Legacy `allow_write` fields are accepted when loading old configurations but
-removed on the next save; they no longer represent a permission setting.
+Saved accounts have check, reconnect and disconnect actions. Connected
+services expose their full tool list. Write tools keep `readOnlyHint: false`
+and `destructiveHint: true` so Claude or ChatGPT can ask before changing
+school data. Older `tools.advanced` / `tools.allow_changes` / `allow_write`
+fields are ignored on load and omitted on the next save. Credentials and the
+public link stay in place.
 
 Connection checks and manual sign-ins run in a background worker. The local
 status page, link settings and Quit remain available while the school responds.
@@ -167,8 +186,8 @@ see [coverage and remaining work](BRIGHTSPACE-COVERAGE.md).
 Target order: Moodle → Omnivox → Brightspace → monPortail/Brio.
 Only implemented connectors are displayed, without empty slots.
 
-**Status (v0.6.0):** Moodle and Brightspace are the stable student connectors.
-Omnivox remains experimental: login/MFA may still fail on real college portals.
+**Status (v0.6.0):** Moodle and Brightspace are the student connectors in
+regular use. Omnivox login/MFA can still fail on some college portals.
 
 - **Moodle** also covers installations such as StudiUM; it is not a separate
   platform. Each institution must enable the required mobile/Web Service access.
@@ -330,6 +349,39 @@ student-mcp version
    reachable.
 
 ## Release maintenance
+
+### Optional publisher signatures
+
+Configure these **GitHub repository Actions secrets** (Settings → Secrets and
+variables → Actions). Never commit certificates, passwords or private keys.
+Without them, CI and packaging pass with unsigned Windows / ad-hoc macOS builds.
+When credentials are supplied, signing or notarization failures fail the build;
+there is no silent unsigned fallback. Use workflow dispatch to test packaging
+without publishing a release. Only a `v*` tag publishes a release.
+
+**Windows:** obtain an Authenticode code-signing certificate with its private key
+in an importable PFX from your certificate provider. Supply
+`WINDOWS_CERTIFICATE_BASE64` (base64 of the PFX) and
+`WINDOWS_CERTIFICATE_PASSWORD`. CI imports it into a temporary runner's user
+certificate store, signs both architectures and the setup file with SHA-256
+and a timestamp, verifies the signatures, then deletes the certificate/key.
+Hardware-only or cloud/HSM certificates need a provider-specific signing
+integration; a public `.cer` alone cannot sign. A signature does not immediately
+guarantee Windows SmartScreen reputation.
+
+**macOS:** enrol in the Apple Developer Program, create a **Developer ID
+Application** certificate and export it with its private key from Keychain as
+`.p12`. Supply `MACOS_CERTIFICATE_BASE64`, `MACOS_CERTIFICATE_PASSWORD` and
+`MACOS_SIGNING_IDENTITY` (full `Developer ID Application: Name (TEAMID)` string).
+For notarization also provide `APPLE_ID`, `APPLE_TEAM_ID` and
+`APPLE_APP_PASSWORD` (an app-specific password from your Apple account).
+CI uses a temporary keychain, signs binaries and nested apps inside out with
+hardened runtime/timestamps, notarizes and staples the installed app, installer,
+and DMG, then deletes the keychain. Checksums are generated **after** signing and
+stapling. PR jobs never import signing secrets.
+
+Missing secrets are supported; partially supplied or invalid credentials are
+errors. Test the signed downloads on clean native systems before publishing.
 
 Run checks from the repository root:
 

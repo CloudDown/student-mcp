@@ -12,6 +12,7 @@ mod reads;
 mod writes;
 
 const REQUIRED_TOOL: &str = "get-courses-summary";
+const PAGE_CHANGED: &str = "Omnivox did not return the expected data. The college page may have changed. Sign in again, or use the official Omnivox site.";
 
 // The official Omnivox mobile client identifies itself this way. Web and
 // mobile logins produce different sessions; `/Mobl/` only accepts the mobile
@@ -170,8 +171,7 @@ impl OmnivoxClient {
             if bytes.len() > 2 * 1024 * 1024 {
                 return Err("Omnivox response exceeded 2 MB. Use a smaller page.".into());
             }
-            serde_json::from_slice(&bytes)
-                .map_err(|_| "Omnivox did not return JSON. Sign in again in the app.".to_string())?
+            parse_mobile_json(&bytes)?
         };
         if value
             .get("NaviguerPage")
@@ -1202,6 +1202,24 @@ fn send_form(request: ureq::Request, body: &str) -> Result<ureq::Response, Strin
     }
 }
 
+fn looks_like_html(bytes: &[u8]) -> bool {
+    let start = bytes
+        .iter()
+        .position(|byte| !byte.is_ascii_whitespace())
+        .unwrap_or(0);
+    bytes.get(start).copied() == Some(b'<')
+}
+
+fn parse_mobile_json(bytes: &[u8]) -> Result<Value, String> {
+    serde_json::from_slice(bytes).map_err(|_| {
+        if looks_like_html(bytes) {
+            PAGE_CHANGED.into()
+        } else {
+            "Omnivox did not return JSON. Sign in again in the app.".into()
+        }
+    })
+}
+
 pub fn tools() -> Vec<Value> {
     let mut tools = vec![
         json!({"name":"omnivox_status","description":"Check the connected Omnivox / Léa account."}),
@@ -1280,6 +1298,13 @@ pub(crate) mod tests {
     use super::*;
     use std::io::{BufRead, BufReader, Read, Write};
     use std::net::TcpListener;
+
+    #[test]
+    fn html_bodies_are_reported_as_a_changed_college_page() {
+        let error = parse_mobile_json(b"  \n<html>login</html>").unwrap_err();
+        assert!(error.contains("page may have changed"));
+        assert_eq!(parse_mobile_json(br#"{"ok":true}"#).unwrap()["ok"], true);
+    }
 
     fn server(
         responses: Vec<(u16, String)>,

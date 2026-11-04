@@ -54,7 +54,7 @@ pub struct MoodleSettings {
     pub url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
-    /// Legacy input only. Approval belongs to the MCP client; omit on next save.
+    /// Legacy input only. Migrated into tools.allow_changes on load; omit on next save.
     #[serde(skip_serializing)]
     pub allow_write: Option<bool>,
 }
@@ -95,10 +95,39 @@ impl std::fmt::Debug for OmnivoxSettings {
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
+pub struct MailSettings {
+    pub url: Option<String>,
+    pub token: Option<String>,
+    pub forward_to: Option<String>,
+    #[serde(default)]
+    pub forwarding: bool,
+}
+
+impl std::fmt::Debug for MailSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MailSettings")
+            .field("url", &self.url)
+            .field("token", &"[redacted]")
+            .field("forward_to", &self.forward_to)
+            .field("forwarding", &self.forwarding)
+            .finish()
+    }
+}
+
+#[derive(Clone)]
+pub struct MailConfig {
+    pub base_url: String,
+    pub token: String,
+    pub forward_to: Option<String>,
+    pub forwarding: bool,
+}
+
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct BrightspaceSettings {
     pub url: Option<String>,
     pub token: Option<String>,
-    /// Legacy input only. Approval belongs to the MCP client; omit on next save.
+    /// Legacy input only. Migrated into tools.allow_changes on load; omit on next save.
     #[serde(skip_serializing)]
     pub allow_write: Option<bool>,
 }
@@ -114,15 +143,53 @@ impl std::fmt::Debug for BrightspaceSettings {
     }
 }
 
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CanvasSettings {
+    pub url: Option<String>,
+    pub token: Option<String>,
+}
+
+impl std::fmt::Debug for CanvasSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CanvasSettings")
+            .field("url", &self.url)
+            .field("token", &"[redacted]")
+            .finish()
+    }
+}
+
+#[derive(Clone)]
+pub struct CanvasConfig {
+    pub base_url: String,
+    pub token: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ToolSettings {
+    pub advanced: bool,
+    /// Explicit overrides keyed by service/account ID. Missing means read-only,
+    /// except for a legacy account that explicitly opted into allow_write.
+    pub allow_changes: std::collections::BTreeMap<String, bool>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
+    /// Accepted from older installs and ignored. Approval belongs to the AI client.
+    #[serde(default, skip_serializing)]
+    pub tools: ToolSettings,
     pub gateway: GatewaySettings,
     pub moodle: Option<MoodleSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub omnivox: Option<OmnivoxSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub brightspace: Option<BrightspaceSettings>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outlook: Option<MailSettings>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub canvas: Option<CanvasSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scale: Option<f32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -145,6 +212,10 @@ pub struct Account {
     pub moodle: Option<MoodleSettings>,
     pub omnivox: Option<OmnivoxSettings>,
     pub brightspace: Option<BrightspaceSettings>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outlook: Option<MailSettings>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canvas: Option<CanvasSettings>,
 }
 
 #[derive(Debug, Clone)]
@@ -157,8 +228,7 @@ pub struct Gateway {
 pub struct MoodleConfig {
     pub base_url: String,
     pub token: String,
-    // Retained to read legacy account settings; writes no longer use an app-level gate.
-    #[allow(dead_code)]
+    // Legacy permission; explicit modern account overrides take precedence.
     pub allow_write: bool,
 }
 
@@ -174,18 +244,51 @@ pub struct OmnivoxConfig {
 pub struct BrightspaceConfig {
     pub base_url: String,
     pub token: String,
-    // Retained to read legacy account settings; writes no longer use an app-level gate.
-    #[allow(dead_code)]
+    // Legacy permission; explicit modern account overrides take precedence.
     pub allow_write: bool,
 }
 
 impl Settings {
+    pub fn changes_allowed(&self, service: &str) -> bool {
+        let id = self
+            .account_scope
+            .as_ref()
+            .filter(|(s, _)| s == service)
+            .map(|(_, id)| id.as_str())
+            .unwrap_or(service);
+        self.tools
+            .allow_changes
+            .get(&format!("{service}/{id}"))
+            .copied()
+            .unwrap_or_else(|| match service {
+                "moodle" => self.moodle().is_some_and(|c| c.allow_write),
+                "brightspace" => self.brightspace().is_some_and(|c| c.allow_write),
+                _ => false,
+            })
+    }
+
+    pub fn remember_changes_allowed(&mut self, service: &str, enabled: bool) {
+        let id = self
+            .account_scope
+            .as_ref()
+            .filter(|(known, _)| known == service)
+            .map(|(_, id)| id.as_str())
+            .unwrap_or(service);
+        if enabled {
+            self.tools
+                .allow_changes
+                .insert(format!("{service}/{id}"), true);
+        }
+    }
+
     pub fn account_list(&self, service: &str) -> Vec<(String, String)> {
         let mut list = Vec::new();
         let url = match service {
             "moodle" => self.moodle().map(|c| c.base_url),
             "omnivox" => self.omnivox().map(|c| c.base_url),
             "brightspace" => self.brightspace().map(|c| c.base_url),
+            "outlook" => self.outlook().map(|c| c.base_url),
+            "canvas" => self.canvas().map(|c| c.base_url),
             _ => None,
         };
         if let Some(url) = url {
@@ -197,6 +300,8 @@ impl Settings {
                     "moodle" => account.moodle.as_ref().and_then(|c| c.url.clone()),
                     "omnivox" => account.omnivox.as_ref().and_then(|c| c.url.clone()),
                     "brightspace" => account.brightspace.as_ref().and_then(|c| c.url.clone()),
+                    "outlook" => account.outlook.as_ref().and_then(|c| c.url.clone()),
+                    "canvas" => account.canvas.as_ref().and_then(|c| c.url.clone()),
                     _ => None,
                 };
                 if let Some(url) = url {
@@ -218,11 +323,55 @@ impl Settings {
                 "moodle" => scoped.moodle = account.and_then(|a| a.moodle.clone()),
                 "omnivox" => scoped.omnivox = account.and_then(|a| a.omnivox.clone()),
                 "brightspace" => scoped.brightspace = account.and_then(|a| a.brightspace.clone()),
+                "outlook" => scoped.outlook = account.and_then(|a| a.outlook.clone()),
+                "canvas" => scoped.canvas = account.and_then(|a| a.canvas.clone()),
                 _ => {}
             }
         }
         scoped.account_scope = Some((service.into(), id.into()));
         scoped
+    }
+
+    fn migrate_permissions(&mut self) {
+        self.promote_write_permission(
+            "moodle",
+            "moodle",
+            self.moodle.as_ref().and_then(|saved| saved.allow_write),
+        );
+        self.promote_write_permission(
+            "brightspace",
+            "brightspace",
+            self.brightspace
+                .as_ref()
+                .and_then(|saved| saved.allow_write),
+        );
+        let extra: Vec<_> = self
+            .accounts
+            .iter()
+            .map(|account| {
+                let allow = match account.service.as_str() {
+                    "moodle" => account.moodle.as_ref().and_then(|saved| saved.allow_write),
+                    "brightspace" => account
+                        .brightspace
+                        .as_ref()
+                        .and_then(|saved| saved.allow_write),
+                    _ => None,
+                };
+                (account.service.clone(), account.id.clone(), allow)
+            })
+            .collect();
+        for (service, id, allow) in extra {
+            self.promote_write_permission(&service, &id, allow);
+        }
+    }
+
+    fn promote_write_permission(&mut self, service: &str, id: &str, allow: Option<bool>) {
+        if allow == Some(true) {
+            self.tools
+                .allow_changes
+                .entry(format!("{service}/{id}"))
+                .or_insert(true);
+        }
     }
 
     pub fn load() -> Self {
@@ -243,8 +392,11 @@ impl Settings {
         if text.trim().is_empty() {
             return Self::default();
         }
-        match serde_json::from_str(&text) {
-            Ok(settings) => settings,
+        match serde_json::from_str::<Self>(&text) {
+            Ok(mut settings) => {
+                settings.migrate_permissions();
+                settings
+            }
             Err(error) => Self {
                 config_error: Some(format!(
                     "Configuration file is not valid JSON and was left unchanged ({}): {error}",
@@ -301,6 +453,8 @@ impl Settings {
                     "moodle" => root.moodle = self.moodle.clone(),
                     "omnivox" => root.omnivox = self.omnivox.clone(),
                     "brightspace" => root.brightspace = self.brightspace.clone(),
+                    "outlook" => root.outlook = self.outlook.clone(),
+                    "canvas" => root.canvas = self.canvas.clone(),
                     _ => {}
                 }
             } else {
@@ -316,13 +470,23 @@ impl Settings {
                     brightspace: (service == "brightspace")
                         .then(|| self.brightspace.clone())
                         .flatten(),
+                    outlook: (service == "outlook")
+                        .then(|| self.outlook.clone())
+                        .flatten(),
+                    canvas: (service == "canvas").then(|| self.canvas.clone()).flatten(),
                 };
                 if account.moodle.is_some()
                     || account.omnivox.is_some()
                     || account.brightspace.is_some()
+                    || account.outlook.is_some()
+                    || account.canvas.is_some()
                 {
                     root.accounts.push(account);
                 }
+            }
+            let key = format!("{service}/{id}");
+            if let Some(value) = self.tools.allow_changes.get(&key) {
+                root.tools.allow_changes.insert(key, *value);
             }
             return root.save_unlocked();
         }
@@ -405,6 +569,8 @@ impl Settings {
             "moodle" => self.moodle = None,
             "omnivox" => self.omnivox = None,
             "brightspace" => self.brightspace = None,
+            "outlook" => self.outlook = None,
+            "canvas" => self.canvas = None,
             _ => {}
         }
     }
@@ -418,7 +584,7 @@ impl Settings {
 
     /// Persist service availability without touching any saved account credentials.
     pub fn set_service_enabled(service: &str, enabled: bool) -> Result<Self, String> {
-        if !["moodle", "omnivox", "brightspace"].contains(&service) {
+        if !["moodle", "omnivox", "brightspace", "canvas"].contains(&service) {
             return Err("Unknown service".into());
         }
         Self::update(|settings| {
@@ -438,7 +604,7 @@ impl Settings {
     }
 
     pub fn services_active(&self) -> Vec<String> {
-        ["moodle", "omnivox", "brightspace"]
+        ["moodle", "omnivox", "brightspace", "canvas"]
             .into_iter()
             .filter(|id| self.service_enabled(id) && !self.account_list(id).is_empty())
             .map(str::to_string)
@@ -484,6 +650,32 @@ impl Settings {
             base_url: normalize_brightspace_url(saved.url.as_deref()?).ok()?,
             token: token.to_string(),
             allow_write: saved.allow_write.unwrap_or(false),
+        })
+    }
+
+    pub fn outlook(&self) -> Option<MailConfig> {
+        let saved = self.outlook.as_ref()?;
+        let token = saved.token.as_deref()?.trim();
+        if token.is_empty() {
+            return None;
+        }
+        Some(MailConfig {
+            base_url: normalize_outlook_url(saved.url.as_deref()?).ok()?,
+            token: token.to_string(),
+            forward_to: saved.forward_to.clone(),
+            forwarding: saved.forwarding,
+        })
+    }
+
+    pub fn canvas(&self) -> Option<CanvasConfig> {
+        let saved = self.canvas.as_ref()?;
+        let token = saved.token.as_deref()?.trim();
+        if token.is_empty() {
+            return None;
+        }
+        Some(CanvasConfig {
+            base_url: normalize_canvas_url(saved.url.as_deref()?).ok()?,
+            token: token.to_string(),
         })
     }
 }
@@ -624,6 +816,38 @@ pub fn normalize_brightspace_url(input: &str) -> Result<String, String> {
     Ok(url.origin().ascii_serialization())
 }
 
+pub fn normalize_outlook_url(input: &str) -> Result<String, String> {
+    let url = parse_site_url(input)?;
+    let host = url.host_str().unwrap_or("").to_ascii_lowercase();
+    let outlook = host == "outlook.office.com"
+        || host == "outlook.office365.com"
+        || host == "outlook.live.com"
+        || host.ends_with(".office.com")
+        || host.ends_with(".office365.com");
+    if outlook
+        || parse_site_url(input).ok().is_some_and(|u| {
+            u.host_str()
+                .is_some_and(|h| h == "127.0.0.1" || h == "localhost" || h == "::1")
+        })
+    {
+        return Ok(url.origin().ascii_serialization());
+    }
+    Err("Use https://outlook.office.com or your school Outlook address.".into())
+}
+
+pub fn normalize_canvas_url(input: &str) -> Result<String, String> {
+    let url = parse_site_url(input)?;
+    let host = url.host_str().unwrap_or("").to_ascii_lowercase();
+    if host == "127.0.0.1" || host == "localhost" || host == "::1" {
+        return Ok(url.origin().ascii_serialization());
+    }
+    match url.path().trim_end_matches('/') {
+        "" | "/login" | "/login/canvas" | "/courses" => {}
+        _ => return Err("Use your Canvas site address, e.g. https://zonecours2.hec.ca.".into()),
+    }
+    Ok(url.origin().ascii_serialization())
+}
+
 fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     let temp = path.with_extension(format!("json.tmp-{}", random_hex(8)));
@@ -713,6 +937,48 @@ pub(crate) mod tests {
         });
     }
 
+    #[test]
+    fn legacy_allow_write_migrates_into_allow_changes_without_dropping_tokens() {
+        with_temp_config(|| {
+            std::fs::write(
+                config_path(),
+                r#"{"moodle":{"url":"https://school.example","token":"fixture","allow_write":true},"tools":{"advanced":false,"allow_changes":{"moodle/moodle":true}}}"#,
+            )
+            .unwrap();
+            let settings = Settings::load();
+            assert_eq!(settings.moodle().unwrap().token, "fixture");
+            settings.save().unwrap();
+            let text = std::fs::read_to_string(config_path()).unwrap();
+            assert!(!text.contains("allow_write"));
+            assert!(!text.contains("allow_changes"));
+            assert!(!text.contains("\"tools\""));
+            assert_eq!(Settings::load().moodle().unwrap().token, "fixture");
+            assert!(crate::mcp::tool_definitions(&Settings::load())
+                .iter()
+                .any(|tool| tool["name"] == "ws_call"));
+        });
+    }
+
+    #[test]
+    fn accounts_without_an_explicit_write_permission_stay_read_only() {
+        with_temp_config(|| {
+            std::fs::write(
+                config_path(),
+                r#"{"moodle":{"url":"https://school.example","token":"fixture"}}"#,
+            )
+            .unwrap();
+            let loaded = Settings::load();
+            assert_eq!(loaded.moodle().unwrap().token, "fixture");
+            assert!(crate::mcp::tool_definitions(&loaded)
+                .iter()
+                .any(|tool| tool["name"] == "ws_call"));
+            loaded.save().unwrap();
+            assert!(!std::fs::read_to_string(config_path())
+                .unwrap()
+                .contains("allow_changes"));
+        });
+    }
+
     // Invoked in a separate test process by the regression below.
     #[test]
     fn config_writer_process() {
@@ -734,6 +1000,8 @@ pub(crate) mod tests {
                 }),
                 omnivox: None,
                 brightspace: None,
+                outlook: None,
+                canvas: None,
             });
         })
         .unwrap();
@@ -855,6 +1123,36 @@ pub(crate) mod tests {
         assert!(!token_matches("abc", Some("abd")));
         assert!(token_matches("abc", Some("abc")));
         assert!(!token_matches("abc", None));
+    }
+
+    #[test]
+    fn outlook_urls_accept_office_hosts_and_localhost() {
+        assert_eq!(
+            normalize_outlook_url("outlook.office.com").unwrap(),
+            "https://outlook.office.com"
+        );
+        assert_eq!(
+            normalize_outlook_url("https://outlook.office365.com/mail/").unwrap(),
+            "https://outlook.office365.com"
+        );
+        assert_eq!(
+            normalize_outlook_url("http://127.0.0.1:1234/mail/").unwrap(),
+            "http://127.0.0.1:1234"
+        );
+        assert!(normalize_outlook_url("https://evil.example").is_err());
+    }
+
+    #[test]
+    fn canvas_urls_accept_the_site_root_and_zonecours() {
+        assert_eq!(
+            normalize_canvas_url("zonecours2.hec.ca").unwrap(),
+            "https://zonecours2.hec.ca"
+        );
+        assert_eq!(
+            normalize_canvas_url("https://school.instructure.com/login/canvas").unwrap(),
+            "https://school.instructure.com"
+        );
+        assert!(normalize_canvas_url("https://evil.example/not-canvas").is_err());
     }
 
     #[test]
@@ -1105,6 +1403,8 @@ pub(crate) mod tests {
                     ..Default::default()
                 }),
                 brightspace: None,
+                outlook: None,
+                canvas: None,
             });
             settings.save().unwrap();
             let mut moodle = Settings::load().for_account("moodle", "shared");

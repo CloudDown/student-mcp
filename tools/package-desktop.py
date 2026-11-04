@@ -2,6 +2,7 @@
 """Build one universal desktop installer per OS: student-mcp-setup.exe / student-mcp.dmg."""
 import argparse
 import hashlib
+import json
 import os
 import pathlib
 import plistlib
@@ -40,6 +41,42 @@ def lipo(output, *inputs):
         check=True,
     )
     return output
+
+
+def windows_sign(path):
+    thumbprint = os.environ.get("WINDOWS_SIGNING_THUMBPRINT")
+    if not thumbprint:
+        return
+    tool = os.environ.get("SIGNTOOL", "signtool")
+    subprocess.run([tool, "sign", "/sha1", thumbprint, "/s", "My", "/fd", "SHA256",
+                    "/tr", "http://timestamp.digicert.com", "/td", "SHA256", str(path)], check=True)
+    subprocess.run([tool, "verify", "/pa", str(path)], check=True)
+
+
+def macos_sign(path):
+    identity = os.environ.get("MACOS_SIGNING_IDENTITY", "-")
+    options = ["--options", "runtime", "--timestamp"] if identity != "-" else []
+    subprocess.run(["codesign", "--force", "--sign", identity, *options, str(path)], check=True)
+
+
+def notarize(path):
+    profile = os.environ.get("MACOS_NOTARY_PROFILE")
+    if not profile:
+        return
+    if not os.environ.get("MACOS_SIGNING_IDENTITY"):
+        raise ValueError("Notarization requires MACOS_SIGNING_IDENTITY")
+    with tempfile.TemporaryDirectory(prefix="student-notary-") as temporary:
+        submission = path
+        if path.suffix == ".app":
+            submission = pathlib.Path(temporary) / "submission.zip"
+            subprocess.run(["ditto", "-c", "-k", "--keepParent", str(path), str(submission)], check=True)
+        result = subprocess.run(["xcrun", "notarytool", "submit", str(submission),
+                                 "--keychain-profile", profile, "--wait", "--output-format", "json"],
+                                check=True, capture_output=True, text=True)
+        if json.loads(result.stdout).get("status") != "Accepted":
+            raise RuntimeError("Apple notarization was not accepted; no artifact will be published")
+    subprocess.run(["xcrun", "stapler", "staple", str(path)], check=True)
+    subprocess.run(["xcrun", "stapler", "validate", str(path)], check=True)
 
 
 def macos_bundle(directory, binary, launcher, version):
@@ -99,27 +136,34 @@ def package_macos(args, version, output):
                     CFBundleShortVersionString=version, CFBundleVersion=version)
         with plist_path.open("wb") as destination:
             plistlib.dump(info, destination)
-        # Apple Silicon requires valid code signatures, even for unsigned releases.
-        # These ad-hoc signatures are NOT Developer ID signing or notarization.
+        # Sign inside out; absence of credentials retains the ad-hoc build path.
         for executable in sorted((resources / payload.name / "Contents/MacOS").iterdir()):
-            subprocess.run(["codesign", "--force", "--sign", "-", str(executable)], check=True)
+            macos_sign(executable)
         for bundle in (resources / payload.name, installer):
-            subprocess.run(["codesign", "--force", "--sign", "-", str(bundle)], check=True)
+            macos_sign(bundle)
+            notarize(bundle)
         subprocess.run(["codesign", "--verify", "--deep", "--strict", str(installer)], check=True)
         (image_root / "INSTALL.txt").write_text(
             "Double-click Install student-mcp, then choose Install and open.\n"
             "The app is copied to /Applications/student-mcp.app and opened.\n"
             "Quit an existing copy from its menu-bar icon before upgrading.\n"
-            "This release is not Developer ID signed or notarized.\n", encoding="utf-8"
+            + ("Developer ID signed and notarized.\n" if os.environ.get("MACOS_NOTARY_PROFILE")
+               else "Not notarized by Apple.\n"), encoding="utf-8"
         )
         subprocess.run([
             "hdiutil", "create", "-volname", "student-mcp", "-srcfolder", str(image_root),
             "-format", "UDZO", "-ov", str(artifact),
         ], check=True)
+        if os.environ.get("MACOS_SIGNING_IDENTITY"):
+            macos_sign(artifact)
+        notarize(artifact)
     return artifact
 
 
 def package_windows(args, version, output):
+    for architecture in ("x64", "arm64"):
+        for kind in ("binary", "launcher"):
+            windows_sign(getattr(args, f"{architecture}_{kind}"))
     compiler = args.iscc or str(
         pathlib.Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)"))
         / "Inno Setup 6/ISCC.exe"
@@ -134,7 +178,9 @@ def package_windows(args, version, output):
             f"/DArm64Launcher={args.arm64_launcher}", f"/DOutputDir={output}",
             f"/DAppIcon={icon}", str(ROOT / "tools/packaging/windows.iss"),
         ], check=True)
-    return output / "student-mcp-setup.exe"
+    artifact = output / "student-mcp-setup.exe"
+    windows_sign(artifact)
+    return artifact
 
 
 def main():

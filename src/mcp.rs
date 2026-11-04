@@ -72,13 +72,14 @@ pub fn header_mismatch(id: &Value, message: &str) -> Value {
 /// Tool list for the current settings: always student_status, plus enabled services.
 pub fn tool_definitions(settings: &Settings) -> Vec<Value> {
     let mut available = settings.clone();
-    for service in ["moodle", "omnivox", "brightspace"] {
+    for service in ["moodle", "omnivox", "brightspace", "canvas"] {
         if let Some((id, _)) = settings.account_list(service).first() {
             let selected = settings.for_account(service, id);
             match service {
                 "moodle" => available.moodle = selected.moodle,
                 "omnivox" => available.omnivox = selected.omnivox,
                 "brightspace" => available.brightspace = selected.brightspace,
+                "canvas" => available.canvas = selected.canvas,
                 _ => {}
             }
         }
@@ -88,26 +89,47 @@ pub fn tool_definitions(settings: &Settings) -> Vec<Value> {
         settings.service_enabled("moodle") && settings.moodle().is_some(),
         settings.service_enabled("omnivox") && settings.omnivox().is_some(),
         settings.service_enabled("brightspace") && settings.brightspace().is_some(),
+        settings.service_enabled("canvas") && settings.canvas().is_some(),
     )
+}
+
+fn tool_service(name: &str) -> Option<&'static str> {
+    if name.starts_with("moodle_") || name.starts_with("ws_") {
+        Some("moodle")
+    } else if name.starts_with("omnivox_") {
+        Some("omnivox")
+    } else if name.starts_with("brightspace_") {
+        Some("brightspace")
+    } else if name.starts_with("canvas_") {
+        Some("canvas")
+    } else {
+        None
+    }
 }
 
 /// Local UI catalogue, also available before an account is connected.
 pub fn service_tool_definitions(service: &str) -> Option<Vec<Value>> {
-    let (moodle, omnivox, brightspace) = match service {
-        "moodle" => (true, false, false),
-        "omnivox" => (false, true, false),
-        "brightspace" => (false, false, true),
+    let (moodle, omnivox, brightspace, canvas) = match service {
+        "moodle" => (true, false, false, false),
+        "omnivox" => (false, true, false, false),
+        "brightspace" => (false, false, true, false),
+        "canvas" => (false, false, false, true),
         _ => return None,
     };
     Some(
-        definitions_for_services(moodle, omnivox, brightspace)
+        definitions_for_services(moodle, omnivox, brightspace, canvas)
             .into_iter()
             .filter(|tool| tool["name"] != "student_status")
             .collect(),
     )
 }
 
-fn definitions_for_services(moodle: bool, omnivox: bool, brightspace: bool) -> Vec<Value> {
+fn definitions_for_services(
+    moodle: bool,
+    omnivox: bool,
+    brightspace: bool,
+    canvas: bool,
+) -> Vec<Value> {
     let mut tools = vec![json!({
         "name": "student_status",
         "description": "Show which student services this connector exposes and the accounts in use.",
@@ -160,6 +182,9 @@ fn definitions_for_services(moodle: bool, omnivox: bool, brightspace: bool) -> V
     if brightspace {
         tools.extend(crate::brightspace::tools());
     }
+    if canvas {
+        tools.extend(crate::canvas::tools());
+    }
     // inputSchema is required by MCP even when a tool takes no arguments.
     // A strict client can reject the entire tools/list result if one is missing.
     for tool in &mut tools {
@@ -197,15 +222,7 @@ fn definitions_for_services(moodle: bool, omnivox: bool, brightspace: bool) -> V
 
 /// Dispatch one tool call; always returns a JSON-RPC tool result value.
 pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
-    let service = if name.starts_with("moodle_") || name.starts_with("ws_") {
-        Some("moodle")
-    } else if name.starts_with("omnivox_") {
-        Some("omnivox")
-    } else if name.starts_with("brightspace_") {
-        Some("brightspace")
-    } else {
-        None
-    };
+    let service = tool_service(name);
     let mut selected = None;
     if let Some(service) = service {
         if !settings.service_enabled(service) {
@@ -237,6 +254,7 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
         "student_status" => student_status(settings),
         name if name.starts_with("omnivox_") => omnivox_tool(settings, name, args),
         name if name.starts_with("brightspace_") => brightspace_tool(settings, name, args),
+        name if name.starts_with("canvas_") => canvas_tool(settings, name, args),
         "moodle_status" => moodle_tool(settings, |config| {
             let client = MoodleClient::new(config);
             let info = client.site_info()?;
@@ -482,7 +500,10 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
     };
     match outcome {
         Ok(data) => {
-            if matches!(name, "moodle_file" | "brightspace_file" | "omnivox_file") {
+            if matches!(
+                name,
+                "moodle_file" | "brightspace_file" | "omnivox_file" | "canvas_file"
+            ) {
                 let content =
                     crate::delivery::mcp_content_for_file(data, service.unwrap_or("student-mcp"));
                 return json!({ "content": content, "isError": false });
@@ -623,7 +644,7 @@ fn optional_i64_list(value: Option<&Value>) -> Result<Option<Vec<i64>>, String> 
 }
 
 fn student_status(settings: &Settings) -> ToolResult {
-    let accounts: Vec<Value> = ["moodle", "omnivox", "brightspace"]
+    let accounts: Vec<Value> = ["moodle", "omnivox", "brightspace", "canvas"]
         .into_iter()
         .flat_map(|service| {
             settings
@@ -634,7 +655,7 @@ fn student_status(settings: &Settings) -> ToolResult {
                         "account_id": id,
                         "service": service,
                         "url": url,
-                        "enabled": settings.service_enabled(service)
+                        "enabled": settings.service_enabled(service),
                     })
                 })
         })
@@ -725,6 +746,30 @@ fn brightspace_tool(settings: &Settings, name: &str, args: &Value) -> ToolResult
         }
         "brightspace_news" => client.news(require_integer(args, "courseid")?),
         _ => crate::brightspace::dispatch(&client, name, args),
+    }
+}
+
+fn canvas_tool(settings: &Settings, name: &str, args: &Value) -> ToolResult {
+    let config = settings
+        .canvas()
+        .ok_or("Canvas is not configured: connect it in the student-mcp window.")?;
+    let client = crate::canvas::CanvasClient::new(config);
+    match name {
+        "canvas_status" => client.whoami(),
+        "canvas_my_courses" => client.courses(),
+        "canvas_announcements" => {
+            let courseid = match args.get("courseid") {
+                None | Some(Value::Null) => None,
+                _ => Some(require_integer(args, "courseid")?),
+            };
+            client.announcements(courseid)
+        }
+        "canvas_assignments" => client.assignments(require_integer(args, "courseid")?),
+        "canvas_grades" => client.grades(require_integer(args, "courseid")?),
+        "canvas_files" => client.files(require_integer(args, "courseid")?),
+        "canvas_file" => client.download_file(require_integer(args, "fileid")?, &file_query(args)?),
+        "canvas_calendar" => client.calendar(),
+        other => Err(format!("Unknown tool \"{other}\".")),
     }
 }
 
@@ -853,6 +898,7 @@ pub fn activate_moodle(
         token: Some(token),
         allow_write: Some(allow_write),
     });
+    updated.remember_changes_allowed("moodle", allow_write);
     updated.save_service("moodle").map_err(|error| {
         format!("Cannot save Moodle credentials to the private config file: {error}")
     })?;
@@ -913,6 +959,20 @@ pub fn test_service(settings: &Settings, id: &str) -> Result<String, String> {
                 info.get("release").and_then(Value::as_str).unwrap_or("?")
             ))
         }
+        "outlook" => {
+            let config = settings
+                .outlook()
+                .ok_or("Outlook is not connected anymore.")?;
+            crate::mail::MailClient::new(config).me()?;
+            Ok("Outlook connected.".into())
+        }
+        "canvas" => {
+            let config = settings
+                .canvas()
+                .ok_or("Canvas is not connected anymore.")?;
+            crate::canvas::CanvasClient::new(config).whoami()?;
+            Ok("Canvas connected.".into())
+        }
         _ => Err("Unknown service.".into()),
     }
 }
@@ -941,6 +1001,8 @@ mod protocol_tests {
                 }),
                 omnivox: None,
                 brightspace: None,
+                outlook: None,
+                canvas: None,
             }],
             ..Default::default()
         };
@@ -1136,20 +1198,7 @@ mod protocol_tests {
             )
             .unwrap();
             let tools = reply["result"]["tools"].as_array().unwrap();
-            assert_eq!(
-                tools.len(),
-                1 + if enabled & 1 != 0 { 26 } else { 0 }
-                    + if enabled & 2 != 0 {
-                        crate::omnivox::tools().len()
-                    } else {
-                        0
-                    }
-                    + if enabled & 4 != 0 {
-                        crate::brightspace::tools().len()
-                    } else {
-                        0
-                    }
-            );
+            assert_eq!(tools.len(), tool_definitions(&settings).len());
             for tool in tools {
                 assert_eq!(
                     tool["inputSchema"]["type"], "object",
@@ -1304,7 +1353,7 @@ mod protocol_tests {
 
     #[test]
     fn ui_tool_catalogues_are_separate_and_include_moodle_ws_tools() {
-        for service in ["moodle", "omnivox", "brightspace"] {
+        for service in ["moodle", "omnivox", "brightspace", "canvas"] {
             let tools = service_tool_definitions(service).unwrap();
             assert!(!tools.is_empty());
             for tool in &tools {
@@ -1336,34 +1385,41 @@ mod protocol_tests {
             }),
             ..Default::default()
         };
-        assert_eq!(
-            &tool_definitions(&settings)[1..],
-            service_tool_definitions("moodle").unwrap()
-        );
         let names: Vec<_> = tool_definitions(&settings)
             .into_iter()
             .filter_map(|tool| tool["name"].as_str().map(str::to_string))
             .collect();
         for required in [
+            "student_status",
             "moodle_search",
-            "moodle_recent_grades",
-            "moodle_course_updates",
+            "moodle_my_courses",
+            "moodle_course_content",
+            "moodle_file",
             "moodle_deadlines",
+            "moodle_grades",
             "moodle_announcements",
-            "moodle_assignment_status",
-            "moodle_quiz_status",
-            "moodle_forums",
-            "moodle_forum_posts",
-            "moodle_notifications",
             "moodle_messages",
-            "moodle_completion",
-            "moodle_resources",
+            "moodle_assignments",
+            "moodle_calendar",
         ] {
             assert!(
                 names.iter().any(|name| name == required),
                 "missing {required}"
             );
         }
+        for extra in [
+            "moodle_recent_grades",
+            "moodle_course_updates",
+            "ws_call",
+            "ws_discover",
+            "ws_schema",
+        ] {
+            assert!(names.iter().any(|name| name == extra), "missing {extra}");
+        }
+        assert_eq!(
+            &tool_definitions(&settings)[1..],
+            service_tool_definitions("moodle").unwrap()
+        );
     }
 
     #[test]
@@ -1442,7 +1498,7 @@ mod protocol_tests {
 
     #[test]
     fn tool_annotations_are_complete_and_conservative() {
-        let tools = definitions_for_services(true, true, true);
+        let tools = definitions_for_services(true, true, true, true);
         assert!(tools.len() > 1);
         for tool in tools {
             let name = &tool["name"];

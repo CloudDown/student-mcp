@@ -20,6 +20,7 @@ use std::{
 use tungstenite::{Message, WebSocket};
 
 mod install;
+mod moodle;
 
 const PREFIX: &str = "browser-profile:";
 const RECONNECT: &str = "Browser session needs attention. Open student-mcp and choose Change login → Connect with browser.";
@@ -102,13 +103,14 @@ fn is_chromium_browser(path: &Path) -> bool {
         && !name.contains("safari")
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn parse_desktop_exec(contents: &str) -> Option<String> {
     contents
         .lines()
         .find_map(|line| line.trim().strip_prefix("Exec=").and_then(split_command))
 }
 
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[cfg(any(target_os = "windows", test))]
 fn parse_reg_sz(output: &str) -> Option<String> {
     output.lines().find_map(|line| {
         line.split_once("REG_SZ")
@@ -117,6 +119,7 @@ fn parse_reg_sz(output: &str) -> Option<String> {
     })
 }
 
+#[cfg(any(target_os = "linux", target_os = "windows", test))]
 fn split_command(command: &str) -> Option<String> {
     let command = command.trim();
     if let Some(rest) = command.strip_prefix('"') {
@@ -130,6 +133,7 @@ fn split_command(command: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+#[cfg(target_os = "linux")]
 fn resolve_command(command: &str) -> Option<PathBuf> {
     let path = PathBuf::from(command);
     if path.is_absolute() {
@@ -172,6 +176,7 @@ fn command_stdout(bin: &str, args: &[&str]) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+#[cfg(target_os = "linux")]
 fn linux_desktop_file(id: &str) -> Option<PathBuf> {
     let mut dirs = Vec::new();
     if let Some(home) = std::env::var_os("XDG_DATA_HOME") {
@@ -365,8 +370,22 @@ fn system_executable() -> Result<Option<PathBuf>, String> {
 
 fn executable() -> Result<PathBuf, String> {
     system_executable()?.or_else(install::available).ok_or_else(|| {
-        "No compatible browser is installed. Open student-mcp and choose Connect with browser to install one automatically.".into()
+        "No compatible browser is installed. Open student-mcp and choose Connect with browser to approve a browser download.".into()
     })
+}
+
+pub fn needs_download() -> Result<bool, String> {
+    Ok(system_executable()?.or_else(install::available).is_none())
+}
+
+fn download_permitted(installed: bool, consent: bool) -> Result<bool, String> {
+    if installed {
+        return Ok(false);
+    }
+    if consent {
+        return Ok(true);
+    }
+    Err("No compatible browser found. Approve the Chrome for Testing download in student-mcp, or install Chrome, Edge or Brave and try again.".into())
 }
 
 pub struct Reply {
@@ -487,6 +506,7 @@ struct Browser {
     profile: Profile,
     sequence: u64,
     mobile_contexts: HashSet<u64>,
+    moodle_sso: Option<moodle::Sso>,
 }
 
 impl Browser {
@@ -535,6 +555,10 @@ impl Browser {
                     "{origin}{}",
                     if service == "omnivox" {
                         MOBILE_LOGIN
+                    } else if service == "outlook" {
+                        "/mail/"
+                    } else if service == "canvas" {
+                        "/login/canvas"
                     } else {
                         "/d2l/home"
                     }
@@ -560,12 +584,19 @@ impl Browser {
                 "--no-default-browser-check",
                 "--disable-sync",
                 "--disable-background-mode",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
             ])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         if !visible {
             command.arg("--headless=new");
+        }
+        // GitHub-hosted Linux runners and container CI lack a user namespace
+        // for Chrome's sandbox. Keep the sandbox for interactive desktops.
+        if std::env::var_os("CI").is_some() {
+            command.arg("--no-sandbox");
         }
         command.arg("about:blank");
         let child = command
@@ -579,6 +610,7 @@ impl Browser {
             profile,
             sequence: 0,
             mobile_contexts: HashSet::new(),
+            moodle_sso: (service == "moodle").then(|| moodle::Sso::new(origin)),
         };
         let until = Instant::now() + Duration::from_secs(15);
         let agent = ureq::AgentBuilder::new()
@@ -682,7 +714,13 @@ impl Browser {
                 )?;
             }
         }
-        let home = browser.profile.home.clone();
+        let home = if let Some(sso) = &browser.moodle_sso {
+            let home = sso.launch_url();
+            browser.call("Fetch.enable", json!({"patterns":[{"urlPattern":format!("{origin}/admin/tool/mobile/launch.php*"),"requestStage":"Response"}]}))?;
+            home
+        } else {
+            browser.profile.home.clone()
+        };
         browser.call("Page.navigate", json!({"url":home}))?;
         Ok(browser)
     }
@@ -725,6 +763,32 @@ impl Browser {
                 continue;
             };
             let value: Value = serde_json::from_str(&text).map_err(|_| "Invalid browser reply.")?;
+            if self.moodle_sso.is_some() && value["method"] == "Fetch.requestPaused" {
+                let params = &value["params"];
+                let callback = params["responseHeaders"]
+                    .as_array()
+                    .and_then(|headers| {
+                        headers.iter().find(|h| {
+                            h["name"]
+                                .as_str()
+                                .is_some_and(|n| n.eq_ignore_ascii_case("location"))
+                        })
+                    })
+                    .and_then(|h| h["value"].as_str());
+                if let Some(callback) = callback.filter(|s| s.starts_with("moodlemobile:")) {
+                    let result = self.moodle_sso.as_mut().unwrap().accept(callback);
+                    self.send(
+                        "Fetch.failRequest",
+                        json!({"requestId":params["requestId"],"errorReason":"Aborted"}),
+                    )?;
+                    result?;
+                } else {
+                    self.send(
+                        "Fetch.continueRequest",
+                        json!({"requestId":params["requestId"]}),
+                    )?;
+                }
+            }
             if value["id"].as_u64() == Some(id) {
                 if value.get("error").is_some() {
                     return Err(
@@ -830,10 +894,32 @@ impl Browser {
             }
             std::thread::sleep(Duration::from_millis(750));
         }
-        Err(RECONNECT.into())
+        Err(if self.moodle_sso.is_some() {
+            moodle::UNAVAILABLE
+        } else {
+            RECONNECT
+        }
+        .into())
     }
 
     fn probe(&mut self) -> Result<(), String> {
+        if self.moodle_sso.is_some() {
+            // Also support Moodle's confirmation page, which renders a link
+            // instead of an HTTP redirect. Read only the configured school page.
+            let site = serde_json::to_string(&self.profile.origin).unwrap();
+            let link = self.evaluate(format!("location.href.startsWith({site} + '/admin/tool/mobile/launch.php') ? document.querySelector('a[href^=\"moodlemobile://token=\"]')?.getAttribute('href') : null"))?;
+            let sso = self.moodle_sso.as_mut().unwrap();
+            if sso.token.is_none() {
+                if let Some(link) = link.as_str() {
+                    sso.accept(link)?;
+                }
+            }
+            return if sso.token.is_some() {
+                Ok(())
+            } else {
+                Err(RECONNECT.into())
+            };
+        }
         let location = self.evaluate("location.href".into())?;
         let url = url::Url::parse(location.as_str().unwrap_or("")).map_err(|_| RECONNECT)?;
         let origin = url.origin().ascii_serialization();
@@ -870,6 +956,44 @@ impl Browser {
             let mut home = url;
             home.set_fragment(None);
             self.profile.home = home.to_string();
+        } else if self.profile.service == "outlook" {
+            if origin != self.profile.origin
+                || (url.scheme() != "https" && !origin.starts_with("http://127.0.0.1"))
+            {
+                return Err(RECONNECT.into());
+            }
+            let user = self
+                .request("GET", "/api/v2.0/me", None, None, false, 2 * 1024 * 1024)?
+                .json()?;
+            if user.get("EmailAddress").and_then(Value::as_str).is_none()
+                && user.get("Id").and_then(Value::as_str).is_none()
+            {
+                return Err(RECONNECT.into());
+            }
+            self.profile.home = format!("{origin}/mail/");
+        } else if self.profile.service == "canvas" {
+            if origin != self.profile.origin
+                || (url.scheme() != "https" && !origin.starts_with("http://127.0.0.1"))
+            {
+                return Err(RECONNECT.into());
+            }
+            if url.path().contains("login") {
+                return Err(RECONNECT.into());
+            }
+            let user = self
+                .request(
+                    "GET",
+                    "/api/v1/users/self",
+                    None,
+                    None,
+                    false,
+                    2 * 1024 * 1024,
+                )?
+                .json()?;
+            if user.get("id").is_none_or(Value::is_null) {
+                return Err(RECONNECT.into());
+            }
+            self.profile.home = format!("{origin}/");
         } else {
             if origin != self.profile.origin
                 || !url.path().starts_with("/d2l/")
@@ -962,14 +1086,17 @@ impl Browser {
             .map_err(|_| "Invalid account origin.")?
             .join(path)
             .map_err(|_| "Invalid request path.")?;
-        let prefix = if self.profile.service == "omnivox" {
-            "/Mobl/"
-        } else {
-            "/d2l/api/"
+        let allowed = match self.profile.service.as_str() {
+            "omnivox" => url.path().starts_with("/Mobl/"),
+            "outlook" => {
+                url.path().starts_with("/api/")
+                    || url.path().starts_with("/owa/")
+                    || url.path().starts_with("/ows/")
+            }
+            "canvas" => url.path().starts_with("/api/v1/") || url.path().starts_with("/files/"),
+            _ => url.path().starts_with("/d2l/api/"),
         };
-        if url.origin().ascii_serialization() != self.profile.origin
-            || !url.path().starts_with(prefix)
-        {
+        if url.origin().ascii_serialization() != self.profile.origin || !allowed {
             return Err("Browser requests are restricted to the connected school API.".into());
         }
         let mobile = self.profile.service == "omnivox";
@@ -1100,8 +1227,10 @@ impl Login {
         id: &str,
         origin: &str,
         previous: Option<&str>,
+        allow_download: bool,
     ) -> Result<Self, String> {
         let origin = match service {
+            "moodle" => crate::config::normalize_moodle_url(origin)?,
             "brightspace" => crate::config::normalize_brightspace_url(origin)?,
             "omnivox" => {
                 let origin = crate::config::normalize_omnivox_url(origin)?;
@@ -1110,7 +1239,9 @@ impl Login {
                 }
                 origin
             }
-            _ => return Err("Browser login is available for Brightspace and Omnivox.".into()),
+            "outlook" => crate::config::normalize_outlook_url(origin)?,
+            "canvas" => crate::config::normalize_canvas_url(origin)?,
+            _ => return Err("Unknown school service.".into()),
         };
         if !origin.starts_with("https://") {
             return Err("Browser login requires an HTTPS school address.".into());
@@ -1118,6 +1249,10 @@ impl Login {
         // Validate an explicit override before starting; installation is done by
         // the login worker so the local UI and Cancel stay responsive.
         let system_browser = system_executable()?;
+        let download = download_permitted(
+            system_browser.or_else(install::available).is_some(),
+            allow_download,
+        )?;
         let created = previous.filter(|s| is_profile(s)).is_none();
         let token = previous
             .filter(|s| is_profile(s))
@@ -1133,7 +1268,7 @@ impl Login {
         let service_owned = service.to_string();
         let worker = std::thread::spawn(move || {
             let outcome = (|| {
-                if system_browser.is_none() {
+                if download {
                     install::ensure(&stop, &worker_progress)?;
                 }
                 install::check_cancelled(&stop)?;
@@ -1147,6 +1282,19 @@ impl Login {
                 )?;
                 worker_progress.lock().unwrap().phase = "signin";
                 browser.wait_ready(&stop, Duration::from_secs(300))?;
+                if let Some(sso) = browser.moodle_sso.as_mut() {
+                    let token = sso.token.take().ok_or(moodle::UNAVAILABLE)?;
+                    let client = crate::moodle::MoodleClient::new(&crate::config::MoodleConfig {
+                        base_url: worker_origin.clone(),
+                        token: token.clone(),
+                        allow_write: false,
+                    });
+                    client.site_info()?;
+                    install::check_cancelled(&stop)?;
+                    drop(browser);
+                    remove(&worker_token)?;
+                    return Ok((token, worker_origin));
+                }
                 Ok((worker_token, browser.profile.origin.clone()))
             })();
             let _ = tx.send(outcome);
@@ -1178,12 +1326,23 @@ impl Login {
         let result = result.and_then(|(token, url)| {
             let mut settings = crate::config::Settings::load().for_account(&self.service, &self.id);
             match self.service.as_str() {
+                "moodle" => {
+                    let allow = settings.changes_allowed("moodle");
+                    settings.moodle = Some(crate::config::MoodleSettings {
+                        url: Some(url),
+                        token: Some(token),
+                        allow_write: Some(allow),
+                    });
+                    settings.remember_changes_allowed("moodle", allow);
+                }
                 "brightspace" => {
+                    let allow = settings.changes_allowed("brightspace");
                     settings.brightspace = Some(crate::config::BrightspaceSettings {
                         url: Some(url),
                         token: Some(token),
-                        allow_write: Some(true),
-                    })
+                        allow_write: Some(allow),
+                    });
+                    settings.remember_changes_allowed("brightspace", allow);
                 }
                 "omnivox" => {
                     settings.omnivox = Some(crate::config::OmnivoxSettings {
@@ -1191,6 +1350,19 @@ impl Login {
                         token: Some(token),
                         ..Default::default()
                     })
+                }
+                "outlook" => {
+                    settings.outlook = Some(crate::config::MailSettings {
+                        url: Some(url),
+                        token: Some(token),
+                        ..Default::default()
+                    });
+                }
+                "canvas" => {
+                    settings.canvas = Some(crate::config::CanvasSettings {
+                        url: Some(url),
+                        token: Some(token),
+                    });
                 }
                 _ => return Err("Unknown service.".into()),
             }
@@ -1233,7 +1405,7 @@ impl Drop for Login {
         }
         // A cancelled/failed first sign-in leaves an unused profile; do not
         // retain its secrets. A re-login must never delete the saved profile.
-        if self.created && self.state != "connected" {
+        if self.created && (self.state != "connected" || self.service == "moodle") {
             let _ = remove(&self.token);
         }
     }
@@ -1275,6 +1447,14 @@ pub fn remove(token: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn installed_browser_is_preferred_and_download_requires_explicit_consent() {
+        assert!(!download_permitted(true, false).unwrap());
+        assert!(!download_permitted(true, true).unwrap());
+        assert!(download_permitted(false, false).is_err());
+        assert!(download_permitted(false, true).unwrap());
+    }
 
     #[test]
     fn profile_wait_serializes_callers_and_can_be_cancelled_or_expire() {
@@ -1374,12 +1554,12 @@ mod tests {
     #[test]
     fn browser_login_rejects_incompatible_services_and_origins_before_launch() {
         for (service, origin) in [
-            ("moodle", "https://school.example"),
+            ("unknown", "https://school.example"),
             ("omnivox", "https://other.example"),
             ("brightspace", "http://school.example"),
             ("brightspace", "https://user:password@school.example"),
         ] {
-            assert!(Login::start(service, "test", origin, None).is_err());
+            assert!(Login::start(service, "test", origin, None, false).is_err());
         }
     }
 
@@ -1398,6 +1578,89 @@ mod tests {
             let b = profile_path(&format!("{PREFIX}{}", "b".repeat(32))).unwrap();
             assert_ne!(a, b);
             assert_eq!(a.parent(), b.parent());
+        });
+    }
+
+    #[test]
+    #[ignore = "requires Chromium; synthetic local Moodle SSO server, no credentials"]
+    fn chromium_moodle_sso_captures_redirect_and_confirmation_link() {
+        use md5::{Digest, Md5};
+        use tiny_http::{Header, Response, Server};
+        crate::config::tests::with_temp_config(|| {
+            let server = Server::http("127.0.0.1:0").unwrap();
+            let origin = format!("http://{}", server.server_addr());
+            let base = origin.clone();
+            let stop = Arc::new(AtomicBool::new(false));
+            let finished = stop.clone();
+            let worker = std::thread::spawn(move || {
+                while !finished.load(Ordering::SeqCst) {
+                    let Some(request) = server.recv_timeout(Duration::from_millis(50)).unwrap()
+                    else {
+                        continue;
+                    };
+                    let url = url::Url::parse(&format!("{base}{}", request.url())).unwrap();
+                    let passport = url
+                        .query_pairs()
+                        .find(|(k, _)| k == "passport")
+                        .map(|(_, v)| v.into_owned())
+                        .unwrap_or_default();
+                    let site = if url.path().starts_with("/confirm/") {
+                        format!("{base}/confirm")
+                    } else {
+                        base.clone()
+                    };
+                    let hash = format!("{:x}", Md5::digest(format!("{site}{passport}")));
+                    let callback = format!(
+                        "moodlemobile://token={}",
+                        base64::engine::general_purpose::STANDARD
+                            .encode(format!("{hash}:::{}:::discard-private", "a".repeat(32)))
+                    );
+                    let response = if site.ends_with("/confirm") {
+                        Response::from_string(format!("<a href=\"{callback}\">Launch app</a>"))
+                            .with_header(Header::from_bytes("Content-Type", "text/html").unwrap())
+                    } else {
+                        Response::from_string("")
+                            .with_status_code(302)
+                            .with_header(Header::from_bytes("Location", callback).unwrap())
+                    };
+                    let _ = request.respond(response);
+                }
+            });
+            let result = std::panic::catch_unwind(|| {
+                for site in [origin.clone(), format!("{origin}/confirm")] {
+                    let token = format!("{PREFIX}{}", crate::config::random_hex(16));
+                    let dir = profile_path(&token).unwrap();
+                    private_dir(&dir).unwrap();
+                    save(
+                        &dir.join("session.json"),
+                        &Profile {
+                            service: "moodle".into(),
+                            origin: site.clone(),
+                            home: "about:blank".into(),
+                            mobile: json!({}),
+                            identity: None,
+                        },
+                    )
+                    .unwrap();
+                    let mut browser = Browser::launch(&token, "moodle", &site, false).unwrap();
+                    browser
+                        .wait_ready(&AtomicBool::new(false), Duration::from_secs(10))
+                        .unwrap();
+                    assert_eq!(
+                        browser.moodle_sso.as_ref().unwrap().token.as_deref(),
+                        Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+                    );
+                    drop(browser);
+                    remove(&token).unwrap();
+                    assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+                    assert!(dir.join("profile.lock").is_file());
+                }
+            });
+            stop.store(true, Ordering::SeqCst);
+            worker.join().unwrap();
+            if let Err(panic) = result {
+                std::panic::resume_unwind(panic);
+            }
         });
     }
 

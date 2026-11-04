@@ -231,6 +231,7 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                 "/assets/brightspace.png" => {
                     Some(include_bytes!("resources/assets/brightspace-icon.png"))
                 }
+                "/assets/canvas.png" => Some(include_bytes!("resources/assets/canvas-icon.png")),
                 _ => None,
             };
             if let Some(image) = image {
@@ -257,12 +258,13 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
             }
         } else if request.method() == &Method::Get && path == "/state" {
             let mut accounts = Vec::new();
-            for service in ["moodle", "omnivox", "brightspace"] {
+            for service in ["moodle", "omnivox", "brightspace", "outlook", "canvas"] {
                 for (id, url) in current.account_list(service) {
                     accounts.push(json!({"service":service,"id":id,"url":url,"enabled":current.service_enabled(service)}));
                 }
             }
-            (200, "application/json", json!({"accounts":accounts,"verification":pending.as_ref().map(|(_,p)| &p.prompt),"browser_login":browser_login.as_ref().map(crate::browser::Login::status),"link":mcp_endpoint(tunnel.origin().unwrap_or(&format!("http://127.0.0.1:{port}")), &gateway.token),"local_link":mcp_endpoint(&format!("http://127.0.0.1:{port}"), &gateway.token),"tunnel":format!("{:?}",tunnel.state),"public":current.gateway.public_enabled(),"local":enabled.load(Ordering::SeqCst),"autostart":crate::autostart::enabled().unwrap_or(false)}).to_string().into_bytes(),false)
+            let mail = current.outlook().map(|c| json!({"connected":true,"forward_to":c.forward_to,"forwarding":c.forwarding,"url":c.base_url})).unwrap_or(json!({"connected":false}));
+            (200, "application/json", json!({"accounts":accounts,"mail":mail,"verification":pending.as_ref().map(|(_,p)| &p.prompt),"browser_login":browser_login.as_ref().map(crate::browser::Login::status),"link":mcp_endpoint(tunnel.origin().unwrap_or(&format!("http://127.0.0.1:{port}")), &gateway.token),"local_link":mcp_endpoint(&format!("http://127.0.0.1:{port}"), &gateway.token),"tunnel":format!("{:?}",tunnel.state),"public":current.gateway.public_enabled(),"local":enabled.load(Ordering::SeqCst),"autostart":crate::autostart::enabled().unwrap_or(false)}).to_string().into_bytes(),false)
         } else if request.method() == &Method::Get && path == "/update" {
             (
                 200,
@@ -386,7 +388,7 @@ enum ActionDispatch {
 fn background_action(action: &str) -> bool {
     matches!(
         action,
-        "connect" | "check" | "verify" | "resend" | "disconnect"
+        "connect" | "check" | "verify" | "resend" | "disconnect" | "mail_enable" | "mail_disable"
     )
 }
 
@@ -451,7 +453,7 @@ fn action(
         _ => {}
     }
     let service = get("service");
-    if !["moodle", "omnivox", "brightspace"].contains(&service) {
+    if !["moodle", "omnivox", "brightspace", "outlook", "canvas"].contains(&service) {
         return Err("Unknown service".into());
     }
     if get("action") == "service_enabled" {
@@ -468,8 +470,11 @@ fn action(
     };
     let settings = Settings::load().for_account(service, &id);
     let saved = match service {
+        "moodle" => settings.moodle().map(|c| (c.base_url, c.token)),
         "brightspace" => settings.brightspace().map(|c| (c.base_url, c.token)),
         "omnivox" => settings.omnivox().map(|c| (c.base_url, c.token)),
+        "outlook" => settings.outlook().map(|c| (c.base_url, c.token)),
+        "canvas" => settings.canvas().map(|c| (c.base_url, c.token)),
         _ => None,
     };
     if get("action") == "browser_connect" {
@@ -480,7 +485,14 @@ fn action(
             return Err("Finish or cancel the current browser sign-in first.".into());
         }
         let url = if get("url").is_empty() {
-            saved.as_ref().map(|(url, _)| url.as_str()).unwrap_or("")
+            saved
+                .as_ref()
+                .map(|(url, _)| url.as_str())
+                .unwrap_or(if service == "outlook" {
+                    "https://outlook.office.com"
+                } else {
+                    ""
+                })
         } else {
             get("url")
         };
@@ -488,7 +500,17 @@ fn action(
             .as_ref()
             .filter(|(old, _)| old.trim_end_matches('/') == url.trim_end_matches('/'))
             .map(|(_, token)| token.as_str());
-        *browser_login = Some(crate::browser::Login::start(service, &id, url, previous)?);
+        let allow_download = args["allow_browser_download"] == true;
+        if !allow_download && crate::browser::needs_download()? {
+            return Ok(json!({"browser_download_required":true}));
+        }
+        *browser_login = Some(crate::browser::Login::start(
+            service,
+            &id,
+            url,
+            previous,
+            allow_download,
+        )?);
         *pending = None;
         return Ok(json!({"browser_login":browser_login.as_ref().unwrap().status()}));
     }
@@ -500,6 +522,16 @@ fn action(
 // working; never owns the UI server, tray or tunnel.
 fn connection_action(args: &Value, pending: &mut Pending) -> Result<Value, String> {
     let get = |key| args.get(key).and_then(Value::as_str).unwrap_or("");
+    if get("action") == "mail_enable" {
+        let mut settings = Settings::load();
+        let message = crate::mail::enable(&mut settings, get("forward_to"))?;
+        return Ok(json!({"message":message}));
+    }
+    if get("action") == "mail_disable" {
+        let mut settings = Settings::load();
+        let message = crate::mail::disable(&mut settings)?;
+        return Ok(json!({"message":message}));
+    }
     if matches!(get("action"), "verify" | "resend") {
         let (settings, challenge) = pending.as_mut().ok_or("No pending verification")?;
         if get("action") == "resend" {
@@ -511,7 +543,7 @@ fn connection_action(args: &Value, pending: &mut Pending) -> Result<Value, Strin
         return Ok(json!({"message":message}));
     }
     let service = get("service");
-    if !["moodle", "omnivox", "brightspace"].contains(&service) {
+    if !["moodle", "omnivox", "brightspace", "outlook", "canvas"].contains(&service) {
         return Err("Unknown service".into());
     }
     let id = if get("id").is_empty() {
@@ -524,6 +556,8 @@ fn connection_action(args: &Value, pending: &mut Pending) -> Result<Value, Strin
         let saved = match service {
             "brightspace" => settings.brightspace().map(|c| (c.base_url, c.token)),
             "omnivox" => settings.omnivox().map(|c| (c.base_url, c.token)),
+            "outlook" => settings.outlook().map(|c| (c.base_url, c.token)),
+            "canvas" => settings.canvas().map(|c| (c.base_url, c.token)),
             _ => None,
         };
         if let Some((_, token)) = &saved {
@@ -542,17 +576,23 @@ fn connection_action(args: &Value, pending: &mut Pending) -> Result<Value, Strin
     }
     *pending = None;
     let message = match service {
-        "moodle" => crate::mcp::activate_moodle(
-            &mut settings,
-            get("url"),
-            get("username"),
-            get("password"),
-            get("token"),
-            true,
-        )?,
-        "brightspace" => {
-            crate::brightspace::activate(&mut settings, get("url"), get("token"), true)?
+        "moodle" => {
+            let allow_write = settings.changes_allowed("moodle");
+            crate::mcp::activate_moodle(
+                &mut settings,
+                get("url"),
+                get("username"),
+                get("password"),
+                get("token"),
+                allow_write,
+            )?
         }
+        "brightspace" => {
+            let allow_write = settings.changes_allowed("brightspace");
+            crate::brightspace::activate(&mut settings, get("url"), get("token"), allow_write)?
+        }
+        "outlook" => crate::mail::activate(&mut settings, get("url"), get("token"))?,
+        "canvas" => crate::canvas::activate(&mut settings, get("url"), get("token"))?,
         _ => {
             if get("token").is_empty() {
                 match crate::omnivox::activate_login(
@@ -586,5 +626,8 @@ mod tests {
         assert!(!action_allowed_during_job("service_enabled", false));
         assert!(!action_allowed_during_job("disconnect", true));
         assert!(!action_allowed_during_job("check", true));
+        assert!(!action_allowed_during_job("advanced_tools", false));
+        assert!(!action_allowed_during_job("allow_changes", true));
+        assert!(!action_allowed_during_job("allow_changes", false));
     }
 }

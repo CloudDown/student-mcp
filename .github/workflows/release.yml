@@ -139,6 +139,13 @@ jobs:
           }
           $process = Start-Process $installer -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-' -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Inno Setup installation failed: $($process.ExitCode)" }
+      - name: Import optional Windows signing certificate
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: ./tools/packaging/signing-windows.ps1
       - name: Build one universal Windows setup.exe
         shell: bash
         run: |
@@ -147,6 +154,13 @@ jobs:
             --x64-launcher payload/student-mcp-desktop-windows-x64.exe \
             --arm64-binary payload/student-mcp-windows-arm64.exe \
             --arm64-launcher payload/student-mcp-desktop-windows-arm64.exe
+      - name: Remove Windows signing certificate
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:WINDOWS_SIGNING_THUMBPRINT) {
+            Remove-Item "Cert:\CurrentUser\My\$env:WINDOWS_SIGNING_THUMBPRINT" -DeleteKey -ErrorAction SilentlyContinue
+          }
       - name: Check no Visual C++ runtime installation is required
         shell: pwsh
         run: |
@@ -179,6 +193,16 @@ jobs:
           pattern: payload-macos-*
           path: payload
           merge-multiple: true
+      - name: Import optional Developer ID and notarization credentials
+        if: github.event_name != 'pull_request'
+        env:
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bash tools/packaging/signing-macos.sh
       - name: Build one universal student-mcp.dmg
         run: |
           python tools/package-desktop.py macos \
@@ -186,6 +210,13 @@ jobs:
             --x64-launcher payload/student-mcp-desktop-macos-x64 \
             --arm64-binary payload/student-mcp-macos-arm64 \
             --arm64-launcher payload/student-mcp-desktop-macos-arm64
+      - name: Remove temporary signing keychain
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/student-signing.keychain-db" ]; then
+            security default-keychain -d user -s "$HOME/Library/Keychains/login.keychain-db"
+            security delete-keychain "$RUNNER_TEMP/student-signing.keychain-db"
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-macos

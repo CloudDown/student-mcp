@@ -2,19 +2,17 @@
 <p align="center">
   <img src="src/resources/assets/app-icon.png" width="72" alt="student-mcp tray icon">
 </p>
-<p align="center">Moodle, Omnivox and Brightspace in your MCP assistant.</p>
-
-<p align="center"><img src="tools/screens/home.png" width="100%" alt="Local configuration page with Moodle connected and a demo AI connection link" /></p>
+<p align="center">Ask your AI about your courses, deadlines, grades and files — without typing your school password into the chat.</p>
 
 ## Install
 
 ### Windows
 
-Download **[student-mcp-setup.exe](https://github.com/CloudDown/student-mcp/releases/latest/download/student-mcp-setup.exe)**.
+Download **[student-mcp-setup.exe](https://github.com/CloudDown/student-mcp/releases/latest/download/student-mcp-setup.exe)** and open it. Keep **Open student-mcp** selected.
 
 ### macOS
 
-Download **[student-mcp.dmg](https://github.com/CloudDown/student-mcp/releases/latest/download/student-mcp.dmg)**.
+Download **[student-mcp.dmg](https://github.com/CloudDown/student-mcp/releases/latest/download/student-mcp.dmg)**, open it, double-click **Install student-mcp**, then **Install and open**.
 
 ### Linux
 
@@ -22,35 +20,64 @@ Download **[student-mcp.dmg](https://github.com/CloudDown/student-mcp/releases/l
 curl -fsSL https://raw.githubusercontent.com/CloudDown/student-mcp/main/tools/packaging/install.sh | bash
 ```
 
-The installer adds student-mcp to your application launcher. The raw
-`student-mcp-linux-x64` / `student-mcp-linux-arm64` binaries are also available
-from the release page, but do not install a launcher by themselves.
+The installer adds student-mcp to the application menu. Windows or macOS may warn that the app is unsigned until publisher signatures are added; do not turn off those checks.
 
-Windows/macOS builds are not yet publisher-signed. [Details](tools/GUIDE.md#installation).
+## 1. Open student-mcp
 
-The local page shows the installed version and update-check status at the top left,
-opposite the language button. When a newer GitHub release is available, an update
-button takes its place. Click it to download and verify
-the update automatically. Linux updates in place and restarts; Windows/macOS open
-the official installer to finish installation. Connected accounts are preserved.
+Launch it from the Start menu, Applications, or your app launcher. A local page opens. Closing the tab leaves a tray icon; quit from there when you are done.
 
-<p align="center"><img src="tools/screens/omnivox.png" width="100%" alt="Omnivox browser sign-in on the local configuration page" /></p>
+<p align="center"><img src="tools/screens/home.png" width="100%" alt="student-mcp home: Moodle, Omnivox and Brightspace tiles, AI connection card and launch at startup" /></p>
 
-<table>
-  <tr>
-    <td width="33%" align="center"><img src="src/resources/assets/moodle-icon.png" width="48" alt="Moodle logo" /><br /><b>Moodle</b><br /><sub>Courses, deadlines, grades &amp; PDFs</sub></td>
-    <td width="33%" align="center"><img src="src/resources/assets/omnivox-icon.png" width="48" alt="Omnivox logo" /><br /><b>Omnivox</b><br /><sub>Léa &amp; MIO · Courses, grades, documents, calendar and messaging</sub></td>
-    <td width="33%" align="center"><img src="src/resources/assets/brightspace-icon.png" width="48" alt="Brightspace logo" /><br /><b>Brightspace</b><br /><sub>myCourses · Courses, content &amp; grades</sub></td>
-  </tr>
-</table>
+## 2. Connect your school
 
-Sign in on the local page → copy the link → add it to your assistant's **MCP connectors**.
-Keep the computer online. Closing the tab leaves a tray icon; quit from there or from the page.
+Click **Moodle**, **Omnivox**, **Brightspace** or **Canvas**. Enter your school address, then **Connect with browser**. Sign in on the school site, including MFA if asked. Only a token or a private browser profile is saved — not your password. Canvas uses that session cookie; it does not ask for a personal access token.
 
-Safari and Firefox can remain your default browser. School sign-in uses an installed
-Chromium-based browser, or downloads a dedicated Chrome for Testing automatically
-on first use. [Browser setup](tools/BROWSER-AUTH.md).
+If Chrome, Edge or Brave is already installed, that browser is used. A download is offered only if none is found, and only after you agree.
 
-**v0.6.7:** Adds in-app update checks and verified downloads, plus application icons in desktop installers and the Linux application launcher. Includes curated Omnivox tools for Léa and MIO, improved document delivery and connection management, and more complete Moodle deadline reporting. Availability can vary by college and account permissions.
+<p align="center"><img src="tools/screens/moodle.png" width="100%" alt="Moodle connection page with school address and Connect with browser" /></p>
 
-<p align="center"><a href="tools/GUIDE.md">Docs</a> · <a href="tools/GUIDE.md#4-automatic-public-link-for-web-ai">Privacy &amp; relay</a> · MIT code; <a href="src/services/moodle/catalog/LICENSE.md">GPL-3.0+ Moodle catalogue</a></p>
+When the page says you are connected, go back to the home screen.
+
+The envelope button forwards school Outlook to another address (for example Gmail) and keeps a copy in Outlook. If your school blocks automatic forwarding, the page says so instead of pretending it worked.
+
+## 3. Copy your AI link
+
+Click **AI connection**, then the copy button next to the public link. Keep this computer awake and online. Do not put the link in a screenshot or a chat.
+
+<p align="center"><img src="tools/screens/link.png" width="100%" alt="Local and public AI connection links with copy buttons. Example URLs only, not a real token." /></p>
+
+## 4. Add the link to your assistant
+
+Paste the **complete** `https://…/mcp/…` link into the assistant’s MCP connector settings, not into a chat message.
+
+### Claude
+
+1. Open Claude → **Settings** → **Connectors** (wording can vary).
+2. Add a custom connector and paste the link.
+3. If Claude mentions OAuth, choose **Continue anyway**. This app has no OAuth.
+4. Ask: “What are my deadlines this week?”
+
+### ChatGPT
+
+1. Open ChatGPT → **Settings** → **Connectors** / **MCP** (available on plans that allow custom MCP).
+2. Add a connector and paste the same link.
+3. Start a new chat and ask about a course or a file.
+
+### OpenCode
+
+1. Open OpenCode settings and add an MCP server.
+2. For the public link, use the HTTP connector URL you copied.
+3. For a local assistant on this computer, you can instead point stdio at the installed binary (`student-mcp` with no arguments). Details: [tools/GUIDE.md](tools/GUIDE.md#3-local-ai-assistant).
+4. Ask your first question.
+
+You should be able to go from install to that question in a few minutes on Windows or macOS, with no terminal.
+
+<p align="center"><img src="tools/screens/omnivox.png" width="100%" alt="Omnivox sign-in with Connect with browser" /></p>
+
+## Privacy
+
+School passwords are not stored. The public link is a secret: anyone who has it can use your enabled tools. The HTTPS relay (`srv.us`) can technically read traffic. Prefer the local link or stdio if you do not want that. [Privacy and relay](tools/GUIDE.md#4-automatic-public-link-for-web-ai).
+
+Technical maintenance, packaging and signing: [tools/GUIDE.md](tools/GUIDE.md).
+
+MIT code; [GPL-3.0+ Moodle catalogue](src/services/moodle/catalog/LICENSE.md).

@@ -87,11 +87,16 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         assert b"Allow assistant changes" not in page
         assert b'data-action="permissions"' not in page
         assert b'L\xc3\xa9a / Mio \xc2\xb7 Read only' not in page
+        assert b'Experimental' not in page
         assert b'myCourses \xc2\xb7 Read only' not in page
         home = page.split(b'function home(){', 1)[1].split(b'function header(', 1)[0]
         manage = page.split(b'function manageScreenContent(){', 1)[1].split(b'function serviceScreen(){', 1)[0]
         links = page.split(b'function linkScreen(){', 1)[1].split(b'function publicMessage(', 1)[0]
         assert b'Launch at startup' in home and b'name="autostart"' in home
+        assert b'name="advanced"' not in home and b'Allow changes' not in manage
+        assert b'data-screen="mail"' in home and b'aria-label="Mail transfer"' in home
+        assert b"Your school blocks automatic forwarding." in page
+        assert b"Ton \xc3\xa9cole bloque le transfert automatique" in page
         assert b'name="autostart"' not in links
         assert manage.index(b'class="status-row"') < manage.index(b'data-add') < manage.index(b'class="manage-actions"')
         assert b'accountChoices()' in manage and b'account-list' not in manage
@@ -100,8 +105,11 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         translated_tool_names = set(re.findall(
             rb"^ (\w+):\['[^']{20,}','[^']{20,}'\]", translations, re.M
         ))
+        assert b"canvas" in home and b"ZoneCours" in page
         logo_status, logo = request("/assets/moodle.png", auth=False)
         assert logo_status == 200 and logo.startswith(b"\x89PNG\r\n\x1a\n")
+        canvas_status, canvas = request("/assets/canvas.png", auth=False)
+        assert canvas_status == 200 and canvas.startswith(b"\x89PNG\r\n\x1a\n")
         icon_status, icon = request("/assets/app-icon.png", auth=False)
         assert icon_status == 200 and icon.startswith(b"\x89PNG\r\n\x1a\n")
         assert b'<link rel="icon" type="image/png" href="/assets/app-icon.png">' in page
@@ -145,6 +153,24 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
                                              "id": "moodle", "enabled": True})
         assert status == 200 and json.loads(body)["enabled"] is True
         assert json.loads(request("/state")[1])["accounts"][0]["enabled"] is True
+        assert json.loads(config.read_text())["moodle"]["token"] == saved_token
+        enabled_state = json.loads(request("/state")[1])
+        assert "advanced" not in enabled_state
+        assert "allow_changes" not in enabled_state["accounts"][0]
+        status, body = request(connector_path, {"jsonrpc": "2.0", "id": 2, "method": "tools/list",
+                                                "params": {"_meta": {
+                                                    "io.modelcontextprotocol/protocolVersion": "2026-07-28"}}},
+                               auth=False, address=f"http://127.0.0.1:{port}")
+        names = [tool["name"] for tool in json.loads(body)["result"]["tools"]]
+        assert names[0] == "student_status"
+        assert "moodle_search" in names and "moodle_deadlines" in names
+        assert "ws_call" in names and "ws_discover" in names
+        status, body = request("/action", {"action": "allow_changes", "service": "moodle",
+                                             "id": "moodle", "enabled": True})
+        assert status == 400
+        assert json.loads(config.read_text())["moodle"]["token"] == saved_token
+        status, body = request("/action", {"action": "advanced_tools", "enabled": True})
+        assert status == 400
         assert json.loads(config.read_text())["moodle"]["token"] == saved_token
         assert state["autostart"] is False
         assert request("/action", {"action": "autostart", "enabled": True}, auth=False)[0] == 401

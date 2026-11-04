@@ -1,7 +1,7 @@
-# Persistent browser sign-in (experimental)
+# Persistent browser sign-in
 
-Brightspace and Omnivox now offer **Connect with browser** on the local
-configuration page. Enter your school's HTTPS address, finish the normal
+Brightspace, Omnivox, Canvas and Outlook mail transfer offer **Connect with browser**
+on the local configuration page. Enter the HTTPS address, finish the normal
 sign-in/MFA in the browser window, and wait for the app to confirm access.
 No password or MFA code is passed through the MCP tools.
 
@@ -117,7 +117,7 @@ and Brightspace cookie/OAuth input. Moodle keeps its mobile token flow.
 - UI smoke: browser action authentication, invalid services/sites and cancellation.
 - Real institutional sign-in/MFA and long-term session duration still need testing
   with the account owner. Windows/macOS browser launches are not validated by the
-  Linux tests. A full Omnivox mobile login remains an experimental integration.
+  Linux tests. A full Omnivox mobile login still depends on the live college page.
 
 ```sh
 cargo test
@@ -141,3 +141,24 @@ python3 tools/smoke-web.py target/debug/student-mcp
 
 The mobile bridge is a small independent implementation of the observed protocol;
 no upstream app bundle or third-party service is downloaded at runtime.
+# Moodle mobile SSO
+
+All services now start with **Connect with browser**. For Moodle, enter the
+school URL (including the installation path, if any), then complete the school's
+SSO/MFA. The connector opens `admin/tool/mobile/launch.php` with
+`service=moodle_mobile_app` and a fresh random passport. It intercepts the
+`moodlemobile://token=…` response locally, checks Moodle's MD5 site/passport
+binding, decodes the token, and verifies `core_webservice_get_site_info` before
+saving it. The optional private token is discarded. No protocol handler is
+registered and the token is never passed to the OS or the AI.
+
+Existing Moodle tokens remain usable without reconnecting. If mobile browser
+login is disabled by the school, **Other connection methods** retains password
+login. No password is saved. The temporary Moodle browser profile is removed
+after sign-in; Brightspace and Omnivox retain their per-account profiles.
+
+Target live checks: `https://studium.umontreal.ca` and
+`https://moodle.polymtl.ca`. Protocol tests use synthetic responses; they do not
+prove that either school has enabled this flow. An account holder must complete
+SSO/MFA on each site, check a course list, restart, and check it again. Never put
+tokens, credentials, or screenshots of authenticated personal data in reports.
