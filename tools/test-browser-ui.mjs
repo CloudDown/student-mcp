@@ -9,7 +9,7 @@ try {
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.addInitScript(()=>localStorage.setItem('student-mcp.language','en'));
   const html=readFileSync(new URL('../src/resources/web/index.html',import.meta.url),'utf8');
-  const state={accounts:[],browser_login:null,verification:null,tunnel:'Idle',local:true,public:false,autostart:false,link:'',local_link:''};
+  const state={accounts:[],mail:{connected:false},browser_login:null,verification:null,tunnel:'Idle',local:true,public:false,autostart:false,link:'',local_link:''};
   const actions=[];
   let needsBrowser=false;
   await page.route('http://student.test/**',async route=>{
@@ -19,6 +19,12 @@ try {
     if(path==='/update')return route.fulfill({json:{available:false}});
     if(path==='/action'){
       const action=route.request().postDataJSON();actions.push(action);
+      if(action.action==='mail_enable'){
+        if((action.forward_to||'').includes('gmail')){
+          return route.fulfill({json:{error:'Your school blocks automatic forwarding.'},status:400});
+        }
+        return route.fulfill({json:{message:'Forwarding on'}});
+      }
       if(action.action==='browser_connect'){
         if(needsBrowser&&!action.allow_browser_download)return route.fulfill({json:{browser_download_required:true}});
         state.browser_login={service:action.service,id:'fixture',state:'waiting',error:null,progress:{phase:'preparing'}};
@@ -90,6 +96,23 @@ try {
   await page.evaluate(()=>refresh());
   await page.getByRole('button',{name:'Moodle manage connection',exact:true}).click();
   assert.equal(await page.getByRole('checkbox',{name:'Allow changes'}).count(),0);
+  await page.getByRole('button',{name:'Back to services',exact:true}).click();
+  needsBrowser=false;
+  await page.getByRole('button',{name:'Mail transfer',exact:true}).click();
+  await page.getByRole('button',{name:'Connect with browser',exact:true}).click();
+  assert.equal(actions.at(-1).action,'browser_connect');
+  assert.equal(actions.at(-1).service,'outlook');
+  assert.equal(actions.at(-1).url,'https://outlook.office.com');
+  await page.getByRole('button',{name:'Cancel',exact:true}).waitFor();
+  state.mail={connected:true,forwarding:false,url:'https://outlook.office.com'};
+  state.browser_login={service:'outlook',id:'outlook',state:'connected'};
+  await page.evaluate(()=>refresh());
+  await page.getByLabel('Forward to',{exact:true}).fill('you@gmail.com');
+  await page.getByRole('button',{name:'Turn on forwarding',exact:true}).click();
+  await page.getByText('Your school blocks automatic forwarding.',{exact:true}).waitFor();
+  state.mail={connected:true,forwarding:true,forward_to:'you@gmail.com',url:'https://outlook.office.com'};
+  await page.evaluate(()=>refresh());
+  await page.getByRole('button',{name:'Turn off forwarding',exact:true}).waitFor();
   assert.deepEqual(errors,[]);
-  console.log('Browser UI passed: preparation, download progress, installation, sign-in, completion, manual fallback and cancellation.');
+  console.log('Browser UI passed: preparation, download progress, installation, sign-in, completion, manual fallback, cancellation and mail transfer.');
 } finally {await browser.close()}

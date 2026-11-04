@@ -40,6 +40,8 @@ async function browserRequest(input) {
         document.querySelector('meta[name="d2l-xsrf-token"],meta[name="csrf-token"]')?.content ||
         document.cookie.split('; ').find(c => c.startsWith('XSRF-TOKEN='))?.slice(11);
       if (csrf) headers['X-Csrf-Token'] = decodeURIComponent(csrf);
+      const canary = document.cookie.split('; ').find(c => c.startsWith('X-OWA-CANARY='))?.slice(13);
+      if (canary) headers['X-OWA-CANARY'] = decodeURIComponent(canary);
       if (input.bodyBase64 !== undefined) body = Uint8Array.from(atob(input.bodyBase64), c => c.charCodeAt(0));
     }
     const response = await fetch(input.path, {

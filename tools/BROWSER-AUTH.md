@@ -1,7 +1,7 @@
 # Persistent browser sign-in
 
-Brightspace and Omnivox now offer **Connect with browser** on the local
-configuration page. Enter your school's HTTPS address, finish the normal
+Brightspace, Omnivox and Outlook mail transfer offer **Connect with browser**
+on the local configuration page. Enter the HTTPS address, finish the normal
 sign-in/MFA in the browser window, and wait for the app to confirm access.
 No password or MFA code is passed through the MCP tools.
 
