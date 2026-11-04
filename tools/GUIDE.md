@@ -45,9 +45,12 @@ automatically when configured. Turn it off to remove the startup entry.
 ## 2. Connecting a service
 
 **Brightspace / Omnivox: browser sign-in (experimental).** Enter your school's
-address and choose **Connect with browser**. Your default Chromium-based
-browser (Chrome, Edge, Brave, Helium, …) opens the official sign-in page;
-complete login and MFA there. A dedicated per-account
+address and choose **Connect with browser**. An installed Chromium-based browser
+(Chrome, Edge, Brave, Helium, …) opens the official sign-in page. If none is found,
+student-mcp automatically downloads a dedicated Chrome for Testing on first use,
+with download progress and cancellation. You can keep Safari or Firefox as your
+default browser; no manual browser installation is needed on supported systems.
+Complete login and MFA in the separate sign-in window. A dedicated per-account
 profile retains the session across restarts. If interaction is needed later,
 choose **Change login → Connect with browser**. The account is saved only after
 course access is verified. **Other connection methods** opens the existing

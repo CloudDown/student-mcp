@@ -15,10 +15,11 @@ try {
     const path=new URL(route.request().url()).pathname;
     if(path==='/')return route.fulfill({contentType:'text/html',body:html});
     if(path==='/state')return route.fulfill({json:state});
+    if(path==='/update')return route.fulfill({json:{available:false}});
     if(path==='/action'){
       const action=route.request().postDataJSON();actions.push(action);
       if(action.action==='browser_connect'){
-        state.browser_login={service:action.service,id:'fixture',state:'waiting',error:null};
+        state.browser_login={service:action.service,id:'fixture',state:'waiting',error:null,progress:{phase:'preparing'}};
         return route.fulfill({json:{browser_login:state.browser_login}});
       }
       if(action.action==='cancel')state.browser_login={...state.browser_login,state:'cancelled'};
@@ -30,6 +31,15 @@ try {
   await page.getByRole('button',{name:'Brightspace connect',exact:true}).click();
   await page.getByLabel('Site address',{exact:true}).fill('https://school.brightspace.com');
   await page.getByRole('button',{name:'Connect with browser',exact:true}).click();
+  await page.getByText('Preparing the sign-in browser…',{exact:true}).waitFor();
+  state.browser_login.progress={phase:'downloading',downloaded:10485760,total:104857600};
+  await page.evaluate(()=>refresh());
+  await page.getByText('Downloading Chrome for Testing… 10.0 / 100.0 MB',{exact:true}).waitFor();
+  state.browser_login.progress={phase:'extracting'};
+  await page.evaluate(()=>refresh());
+  await page.getByText('Installing the sign-in browser…',{exact:true}).waitFor();
+  state.browser_login.progress={phase:'signin'};
+  await page.evaluate(()=>refresh());
   await page.getByText('Finish signing in in the browser window. This page will update automatically.',{exact:true}).waitFor();
   assert.equal(actions.at(-1).action,'browser_connect');
   assert.equal(actions.at(-1).service,'brightspace');
@@ -50,5 +60,5 @@ try {
   assert.equal(actions.at(-1).action,'cancel');
   assert.equal(state.accounts.length,1);
   assert.deepEqual(errors,[]);
-  console.log('Browser UI passed: start, pending, completion, manual fallback and cancellation.');
+  console.log('Browser UI passed: preparation, download progress, installation, sign-in, completion, manual fallback and cancellation.');
 } finally {await browser.close()}

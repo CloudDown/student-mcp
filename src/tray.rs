@@ -72,6 +72,7 @@ mod linux {
     impl NativeTray {
         pub(super) fn new(sender: Sender<Command>) -> Result<Self, String> {
             LinuxTray(Events(sender))
+                .assume_sni_available(true)
                 .spawn()
                 .map(Self)
                 .map_err(|error| error.to_string())

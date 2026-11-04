@@ -19,6 +19,8 @@ use std::{
 };
 use tungstenite::{Message, WebSocket};
 
+mod install;
+
 const PREFIX: &str = "browser-profile:";
 const RECONNECT: &str = "Browser session needs attention. Open student-mcp and choose Change login → Connect with browser.";
 const ACCOUNT_CHANGED: &str = "The browser is signed into a different account. Add it as a new account, or disconnect this one before reconnecting.";
@@ -290,17 +292,18 @@ fn default_https_browser() -> Option<PathBuf> {
     }
 }
 
-fn executable() -> Result<PathBuf, String> {
+// Discovery never downloads anything: MCP requests may only use an installed browser.
+fn system_executable() -> Result<Option<PathBuf>, String> {
     if let Some(path) = std::env::var_os("STUDENT_MCP_BROWSER") {
         let path = PathBuf::from(path);
-        return if path.is_absolute() && path.is_file() {
-            Ok(path)
+        return if path.is_absolute() && path.is_file() && is_chromium_browser(&path) {
+            Ok(Some(prefer_real_chromium(path)))
         } else {
             Err("STUDENT_MCP_BROWSER must be an absolute path to a Chromium-based browser.".into())
         };
     }
     if let Some(path) = default_https_browser() {
-        return Ok(path);
+        return Ok(Some(path));
     }
     let mut candidates = vec![
         PathBuf::from("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
@@ -309,6 +312,19 @@ fn executable() -> Result<PathBuf, String> {
         PathBuf::from("/Applications/Helium.app/Contents/MacOS/Helium"),
         PathBuf::from("/Applications/Chromium.app/Contents/MacOS/Chromium"),
     ];
+    if let Some(home) = std::env::var_os("HOME") {
+        for name in [
+            "Google Chrome",
+            "Microsoft Edge",
+            "Brave Browser",
+            "Helium",
+            "Chromium",
+        ] {
+            candidates.push(
+                PathBuf::from(&home).join(format!("Applications/{name}.app/Contents/MacOS/{name}")),
+            );
+        }
+    }
     for root in ["PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"] {
         if let Some(root) = std::env::var_os(root) {
             for name in [
@@ -341,13 +357,16 @@ fn executable() -> Result<PathBuf, String> {
             }
         }
     }
-    candidates
+    Ok(candidates
         .into_iter()
         .find(|path| path.is_file() && is_chromium_browser(path))
-        .map(prefer_real_chromium)
-        .ok_or_else(|| {
-            "Set Chrome, Edge, Brave or Helium as your default browser, then try again.".into()
-        })
+        .map(prefer_real_chromium))
+}
+
+fn executable() -> Result<PathBuf, String> {
+    system_executable()?.or_else(install::available).ok_or_else(|| {
+        "No compatible browser is installed. Open student-mcp and choose Connect with browser to install one automatically.".into()
+    })
 }
 
 pub struct Reply {
@@ -482,6 +501,7 @@ impl Browser {
         visible: bool,
         cancelled: &AtomicBool,
     ) -> Result<Self, String> {
+        install::check_cancelled(cancelled)?;
         let exe = executable()?;
         let dir = profile_path(token)?;
         private_dir(dir.parent().unwrap()).map_err(|_| "Cannot create browser storage.")?;
@@ -566,6 +586,7 @@ impl Browser {
             .timeout(Duration::from_secs(2))
             .build();
         loop {
+            install::check_cancelled(cancelled)?;
             if browser.child.try_wait().ok().flatten().is_some() {
                 return Err(
                     "Browser exited. Check that a desktop display is available for sign-in.".into(),
@@ -1070,6 +1091,7 @@ pub struct Login {
     token: String,
     created: bool,
     origin: String,
+    progress: Arc<Mutex<install::Progress>>,
 }
 
 impl Login {
@@ -1093,7 +1115,9 @@ impl Login {
         if !origin.starts_with("https://") {
             return Err("Browser login requires an HTTPS school address.".into());
         }
-        executable()?;
+        // Validate an explicit override before starting; installation is done by
+        // the login worker so the local UI and Cancel stay responsive.
+        let system_browser = system_executable()?;
         let created = previous.filter(|s| is_profile(s)).is_none();
         let token = previous
             .filter(|s| is_profile(s))
@@ -1104,9 +1128,16 @@ impl Login {
         let (tx, result) = mpsc::channel();
         let cancelled = Arc::new(AtomicBool::new(false));
         let stop = cancelled.clone();
+        let progress = Arc::new(Mutex::new(install::Progress::default()));
+        let worker_progress = progress.clone();
         let service_owned = service.to_string();
         let worker = std::thread::spawn(move || {
             let outcome = (|| {
+                if system_browser.is_none() {
+                    install::ensure(&stop, &worker_progress)?;
+                }
+                install::check_cancelled(&stop)?;
+                worker_progress.lock().unwrap().phase = "opening";
                 let mut browser = Browser::launch_cancellable(
                     &worker_token,
                     &service_owned,
@@ -1114,6 +1145,7 @@ impl Login {
                     true,
                     &stop,
                 )?;
+                worker_progress.lock().unwrap().phase = "signin";
                 browser.wait_ready(&stop, Duration::from_secs(300))?;
                 Ok((worker_token, browser.profile.origin.clone()))
             })();
@@ -1130,6 +1162,7 @@ impl Login {
             token,
             created,
             origin,
+            progress,
         })
     }
 
@@ -1175,7 +1208,7 @@ impl Login {
     }
 
     pub fn status(&self) -> Value {
-        json!({"service":self.service,"id":self.id,"state":self.state,"error":self.error,"origin":self.origin})
+        json!({"service":self.service,"id":self.id,"state":self.state,"error":self.error,"origin":self.origin,"progress":*self.progress.lock().unwrap()})
     }
 
     pub fn cancel(&mut self) {
@@ -1374,6 +1407,7 @@ mod tests {
             let (tx, result) = mpsc::channel();
             let cancelled = Arc::new(AtomicBool::new(false));
             let login = Login {
+                progress: Arc::new(Mutex::new(install::Progress::default())),
                 worker: None,
                 service: "brightspace".into(),
                 id: "new".into(),
@@ -1413,6 +1447,7 @@ mod tests {
             settings.save().unwrap();
             let (tx, result) = mpsc::channel();
             let mut login = Login {
+                progress: Arc::new(Mutex::new(install::Progress::default())),
                 worker: None,
                 service: "brightspace".into(),
                 id: "new".into(),

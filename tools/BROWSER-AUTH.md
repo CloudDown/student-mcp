@@ -7,9 +7,32 @@ No password or MFA code is passed through the MCP tools.
 
 ## Browser and lifecycle
 
-- Uses the default Chromium-based browser (Chrome, Edge, Brave, Helium, …) in a
-  private profile. Safari and Firefox cannot drive this session. Override with
-  `STUDENT_MCP_BROWSER` set to an absolute executable path.
+- You can keep Safari or Firefox as your default browser and use the local page
+  there. School sign-in opens a separate Chromium-based browser with a private
+  profile: student-mcp prefers the compatible default browser, then another
+  installed Chrome, Edge, Brave, Helium, etc.
+- If none is found, **Connect with browser** automatically downloads the official
+  stable **Chrome for Testing** from Google. No administrator access or default
+  browser change is required. The first download is roughly 150–200 MB (varies by
+  platform); allow up to 1.5 GB of disk space for extraction, plus the archive.
+  The UI shows preparation, download progress and installation; **Cancel** stops
+  the job and removes its temporary download. A stalled network read can take up
+  to ten seconds to return before cancellation is observed.
+- Managed binaries live next to the configuration, by default
+  `~/.student-mcp.browser-runtime/`, separately from account profiles. Completed
+  installs are reused. Browser sign-in checks for a newer stable managed version;
+  an offline catalogue check falls back to the installed one. MCP requests never
+  download or update a browser. Old versions are retained so active processes are
+  not disrupted; with student-mcp stopped, the runtime directory can be removed
+  to reclaim space (the next sign-in downloads it again).
+- Supported download targets: Linux x64/ARM64, macOS Intel/Apple Silicon, and
+  Windows x86/x64 (Windows ARM64 uses x64 emulation). Availability depends on
+  Google's stable catalogue. Linux still needs Chrome's system libraries and a
+  desktop session for interactive sign-in; installing the distribution's Chromium
+  package provides its required dependencies. No sandbox restrictions are disabled.
+- Override discovery with `STUDENT_MCP_BROWSER` set to an absolute path to a
+  Chromium-based executable. An invalid explicit override is reported instead of
+  silently downloading a different browser.
 - No Node.js, Playwright, extension, or separate gateway is required at runtime.
   Rust uses Chrome DevTools Protocol over a loopback connection.
 - Each account has a dedicated browser profile, separate from ordinary browsing.
@@ -85,6 +108,10 @@ and Brightspace cookie/OAuth input. Moodle keeps its mobile token flow.
 - Local Rust fixture with real Chromium: restart persistence, cookie rotation,
   cookie deletion, CSRF, binary downloads, size bounds, origin restrictions,
   account-identity mismatch, profile cleanup and no replay of writes.
+- Installer fixtures: official download URL/platform selection, incomplete
+  downloads, cancellation, progress, bounded extraction, path traversal rejection,
+  macOS framework symlinks and publication only after extraction. Real macOS and
+  Windows installation still require validation on those systems.
 - Node VM tests: Omnivox bridge storage/identity, fragment token, domain scoping,
   and routing reads through the official request worker.
 - UI smoke: browser action authentication, invalid services/sites and cancellation.
@@ -98,6 +125,8 @@ node --test tools/test-browser.mjs
 # Optional UI test, with Playwright installed in the development environment:
 node tools/test-browser-ui.mjs
 STUDENT_MCP_BROWSER=/absolute/path/to/chrome cargo test chromium_session_survives -- --ignored
+# Optional real browser download (uses disposable test storage):
+cargo test managed_browser_download_and_launch -- --ignored
 python3 tools/smoke-web.py target/debug/student-mcp
 ```
 
