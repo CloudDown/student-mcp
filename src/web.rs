@@ -394,19 +394,6 @@ fn action_allowed_during_job(action: &str, checking: bool) -> bool {
     matches!(action, "stop" | "links" | "autostart") || (checking && action == "service_enabled")
 }
 
-#[cfg(test)]
-mod tests {
-    use super::action_allowed_during_job;
-
-    #[test]
-    fn service_can_be_toggled_during_connection_check_only() {
-        assert!(action_allowed_during_job("service_enabled", true));
-        assert!(!action_allowed_during_job("service_enabled", false));
-        assert!(!action_allowed_during_job("disconnect", true));
-        assert!(!action_allowed_during_job("check", true));
-    }
-}
-
 fn respond_action(request: tiny_http::Request, result: Result<Value, String>) {
     let (status, value) = match result {
         Ok(value) => (200, value),
@@ -587,4 +574,17 @@ fn connection_action(args: &Value, pending: &mut Pending) -> Result<Value, Strin
         }
     };
     Ok(json!({"message":message}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::action_allowed_during_job;
+
+    #[test]
+    fn service_can_be_toggled_during_connection_check_only() {
+        assert!(action_allowed_during_job("service_enabled", true));
+        assert!(!action_allowed_during_job("service_enabled", false));
+        assert!(!action_allowed_during_job("disconnect", true));
+        assert!(!action_allowed_during_job("check", true));
+    }
 }
