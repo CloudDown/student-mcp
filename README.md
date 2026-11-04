@@ -44,6 +44,15 @@ the official installer to finish installation. Connected accounts are preserved.
   </tr>
 </table>
 
+## Omnivox is experimental
+
+Léa and MIO work on some colleges and fail on others when the mobile page
+changes. The local app shows an **Experimental** badge. Tool replies include the
+same warning. If Omnivox returns a login page or unexpected HTML instead of
+data, student-mcp says the college page may have changed — use the official
+Omnivox site or app, then reconnect. Do not treat Omnivox answers as final
+without checking the portal.
+
 Sign in on the local page → copy the link → add it to your assistant's **MCP connectors**.
 Keep the computer online. Closing the tab leaves a tray icon; quit from there or from the page.
 

@@ -54,7 +54,9 @@ try {
   await page.getByRole('button',{name:'Other connection methods',exact:true}).click();
   await page.getByLabel('d2lSessionVal',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Back to services',exact:true}).click();
+  await page.getByText('Experimental',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Omnivox connect',exact:true}).click();
+  await page.getByText('Omnivox is experimental. College pages change; confirm important results in the official app.',{exact:true}).waitFor();
   await page.getByLabel('College address',{exact:true}).fill('https://college.omnivox.ca');
   await page.getByRole('button',{name:'Connect with browser',exact:true}).click();
   await page.getByRole('button',{name:'Cancel',exact:true}).click();

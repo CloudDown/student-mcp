@@ -581,6 +581,13 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
             }
             // Keep pretty text for human/LLM clients and structuredContent for
             // machines. File tools stay content-only (binary/text blocks).
+            let data = if service == Some("omnivox") {
+                crate::omnivox::mark_result(data)
+            } else if data.is_object() {
+                data
+            } else {
+                json!({ "items": data })
+            };
             json!({
                 "content": [{
                     "type": "text",
@@ -588,7 +595,7 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                 }],
                 // MCP requires structuredContent to be an object, even when
                 // the school's native JSON result is an array or scalar.
-                "structuredContent": if data.is_object() { data } else { json!({"items":data}) },
+                "structuredContent": data,
                 "isError": false
             })
         }
@@ -600,11 +607,14 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                         tool["name"] == name && tool["annotations"]["readOnlyHint"] == false
                     })
                 });
-            let message = if write_capable {
+            let mut message = if write_capable {
                 format!("{message}\nIf the request reached the school, inspect the current state before retrying; an error does not prove that no change was applied.")
             } else {
                 message
             };
+            if service == Some("omnivox") {
+                message = crate::omnivox::mark_error(message);
+            }
             json!({ "content": [{ "type": "text", "text": message }], "isError": true })
         }
     }
@@ -727,7 +737,8 @@ fn student_status(settings: &Settings) -> ToolResult {
                         "service": service,
                         "url": url,
                         "enabled": settings.service_enabled(service),
-                        "allow_changes": settings.for_account(service, &id).changes_allowed(service)
+                        "allow_changes": settings.for_account(service, &id).changes_allowed(service),
+                        "experimental": service == "omnivox"
                     })
                 })
         })
