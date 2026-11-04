@@ -26,7 +26,7 @@ The installer adds student-mcp to the application menu. Windows or macOS may war
 
 Launch it from the Start menu, Applications, or your app launcher. A local page opens. Closing the tab leaves a tray icon; quit from there when you are done.
 
-<p align="center"><img src="tools/screens/home.png" width="100%" alt="student-mcp home: Moodle, Omnivox and Brightspace tiles, AI connection card, launch at startup and advanced tools" /></p>
+<p align="center"><img src="tools/screens/home.png" width="100%" alt="student-mcp home: Moodle, Omnivox and Brightspace tiles, AI connection card and launch at startup" /></p>
 
 ## 2. Connect your school
 
@@ -70,11 +70,7 @@ Paste the **complete** `https://…/mcp/…` link into the assistant’s MCP con
 
 You should be able to go from install to that question in a few minutes on Windows or macOS, with no terminal.
 
-## Omnivox is experimental
-
-<p align="center"><img src="tools/screens/omnivox.png" width="100%" alt="Omnivox sign-in page with the Experimental label" /></p>
-
-Léa and MIO work on some colleges and break when the mobile page changes. The app shows an **Experimental** badge. Tool replies include the same warning. If Omnivox returns a login page or unexpected HTML, student-mcp says the college page may have changed — use the official site or app, then reconnect. Do not treat Omnivox answers as final without checking the portal.
+<p align="center"><img src="tools/screens/omnivox.png" width="100%" alt="Omnivox sign-in with Connect with browser" /></p>
 
 ## Privacy
 

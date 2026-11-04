@@ -83,73 +83,11 @@ pub fn tool_definitions(settings: &Settings) -> Vec<Value> {
             }
         }
     }
-    let live = settings;
     let settings = &available;
-    let mut tools = definitions_for_services(
+    definitions_for_services(
         settings.service_enabled("moodle") && settings.moodle().is_some(),
         settings.service_enabled("omnivox") && settings.omnivox().is_some(),
         settings.service_enabled("brightspace") && settings.brightspace().is_some(),
-    );
-    tools.retain(|tool| {
-        let name = tool["name"].as_str().unwrap_or("");
-        if name == "student_status" {
-            return true;
-        }
-        let write = tool["annotations"]["readOnlyHint"] != true;
-        if name.starts_with("ws_") && !live.tools.advanced {
-            return false;
-        }
-        if !live.tools.advanced && !write && !essential_tool(name) {
-            return false;
-        }
-        if write {
-            let service = tool_service(name).unwrap_or("");
-            return live
-                .account_list(service)
-                .iter()
-                .any(|(id, _)| live.for_account(service, id).changes_allowed(service));
-        }
-        true
-    });
-    tools
-}
-
-fn essential_tool(name: &str) -> bool {
-    matches!(
-        name,
-        "moodle_my_courses"
-            | "moodle_course_content"
-            | "moodle_file"
-            | "moodle_search"
-            | "moodle_deadlines"
-            | "moodle_grades"
-            | "moodle_announcements"
-            | "moodle_messages"
-            | "moodle_conversation_messages"
-            | "moodle_assignments"
-            | "moodle_calendar"
-            | "brightspace_my_courses"
-            | "brightspace_course_content"
-            | "brightspace_file"
-            | "brightspace_search"
-            | "brightspace_deadlines"
-            | "brightspace_grades"
-            | "brightspace_news"
-            | "brightspace_assignments"
-            | "brightspace_calendar"
-            | "brightspace_discussion_forums"
-            | "brightspace_discussion_topics"
-            | "omnivox_my_courses"
-            | "omnivox_course_documents"
-            | "omnivox_file"
-            | "omnivox_calendar"
-            | "omnivox_grades"
-            | "omnivox_assignments"
-            | "omnivox_announcements"
-            | "omnivox_mio_messages"
-            | "omnivox_mio_message"
-            | "omnivox_mio_search"
-            | "omnivox_course_announcements"
     )
 }
 
@@ -271,7 +209,6 @@ fn definitions_for_services(moodle: bool, omnivox: bool, brightspace: bool) -> V
 
 /// Dispatch one tool call; always returns a JSON-RPC tool result value.
 pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
-    let advertised = tool_definitions(settings);
     let service = tool_service(name);
     let mut selected = None;
     if let Some(service) = service {
@@ -300,31 +237,6 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
         }
     }
     let settings = selected.as_ref().unwrap_or(settings);
-    let write = match (name, service) {
-        ("ws_call", _) => args["name"]
-            .as_str()
-            .and_then(|function| Catalog::load().get(function).map(|entry| entry.write))
-            .unwrap_or(true),
-        (_, Some(service)) => service_tool_definitions(service).is_some_and(|tools| {
-            tools
-                .iter()
-                .any(|tool| tool["name"] == name && tool["annotations"]["readOnlyHint"] != true)
-        }),
-        _ => false,
-    };
-    if let Some(service) = service {
-        if write && !settings.changes_allowed(service) {
-            return tool_error("Allow changes is off for this account. Enable it in student-mcp before asking the assistant to change school data. Nothing was sent to the school.");
-        }
-        if !advertised.iter().any(|tool| tool["name"] == name) {
-            if name.starts_with("ws_") || (!write && !essential_tool(name)) {
-                return tool_error(
-                    "Advanced tools are off. Enable Advanced mode in student-mcp to use this tool.",
-                );
-            }
-            return tool_error("This tool is not enabled for the connected account.");
-        }
-    }
     let outcome = match name {
         "student_status" => student_status(settings),
         name if name.starts_with("omnivox_") => omnivox_tool(settings, name, args),
@@ -581,13 +493,6 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
             }
             // Keep pretty text for human/LLM clients and structuredContent for
             // machines. File tools stay content-only (binary/text blocks).
-            let data = if service == Some("omnivox") {
-                crate::omnivox::mark_result(data)
-            } else if data.is_object() {
-                data
-            } else {
-                json!({ "items": data })
-            };
             json!({
                 "content": [{
                     "type": "text",
@@ -595,7 +500,7 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                 }],
                 // MCP requires structuredContent to be an object, even when
                 // the school's native JSON result is an array or scalar.
-                "structuredContent": data,
+                "structuredContent": if data.is_object() { data } else { json!({"items":data}) },
                 "isError": false
             })
         }
@@ -607,14 +512,11 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                         tool["name"] == name && tool["annotations"]["readOnlyHint"] == false
                     })
                 });
-            let mut message = if write_capable {
+            let message = if write_capable {
                 format!("{message}\nIf the request reached the school, inspect the current state before retrying; an error does not prove that no change was applied.")
             } else {
                 message
             };
-            if service == Some("omnivox") {
-                message = crate::omnivox::mark_error(message);
-            }
             json!({ "content": [{ "type": "text", "text": message }], "isError": true })
         }
     }
@@ -737,8 +639,6 @@ fn student_status(settings: &Settings) -> ToolResult {
                         "service": service,
                         "url": url,
                         "enabled": settings.service_enabled(service),
-                        "allow_changes": settings.for_account(service, &id).changes_allowed(service),
-                        "experimental": service == "omnivox"
                     })
                 })
         })
@@ -746,7 +646,6 @@ fn student_status(settings: &Settings) -> ToolResult {
     Ok(json!({
         "version": VERSION,
         "services": settings.services_active(),
-        "advanced": settings.tools.advanced,
         "accounts": accounts
     }))
 }
@@ -1083,7 +982,7 @@ mod protocol_tests {
     fn ws_call_checks_token_authorization_even_for_unclassified_functions() {
         let info = json!({"userid":1,"functions":[{"name":"local_example_change_record"}]});
         let (url, worker) = crate::moodle::tests::server(vec![info, json!({"ok":true})]);
-        let mut settings = Settings {
+        let settings = Settings {
             moodle: Some(MoodleSettings {
                 url: Some(url),
                 token: Some("fake-token".into()),
@@ -1091,11 +990,6 @@ mod protocol_tests {
             }),
             ..Default::default()
         };
-        settings.tools.advanced = true;
-        settings
-            .tools
-            .allow_changes
-            .insert("moodle/moodle".into(), true);
         let reply = dispatch_tool(
             &settings,
             "ws_call",
@@ -1118,7 +1012,7 @@ mod protocol_tests {
             info,
             json!([]),
         ]);
-        let mut settings = Settings {
+        let settings = Settings {
             moodle: Some(MoodleSettings {
                 url: Some(url.clone()),
                 token: Some("fake-token".into()),
@@ -1126,18 +1020,6 @@ mod protocol_tests {
             }),
             ..Default::default()
         };
-        let blocked = dispatch_tool(
-            &settings,
-            "ws_call",
-            &json!({"name": "core_course_delete_courses", "args": {"courseids": [1]}}),
-        );
-        assert_eq!(blocked["isError"], true);
-        assert!(blocked.to_string().contains("Allow changes"));
-        settings.tools.advanced = true;
-        settings
-            .tools
-            .allow_changes
-            .insert("moodle/moodle".into(), true);
         let write = dispatch_tool(
             &settings,
             "ws_call",
@@ -1468,16 +1350,17 @@ mod protocol_tests {
                 "missing {required}"
             );
         }
-        assert_eq!(names.len(), 12);
-        assert!(!names.iter().any(|name| name.starts_with("ws_")));
-        let mut advanced = settings.clone();
-        advanced.tools.advanced = true;
-        advanced
-            .tools
-            .allow_changes
-            .insert("moodle/moodle".into(), true);
+        for extra in [
+            "moodle_recent_grades",
+            "moodle_course_updates",
+            "ws_call",
+            "ws_discover",
+            "ws_schema",
+        ] {
+            assert!(names.iter().any(|name| name == extra), "missing {extra}");
+        }
         assert_eq!(
-            &tool_definitions(&advanced)[1..],
+            &tool_definitions(&settings)[1..],
             service_tool_definitions("moodle").unwrap()
         );
     }

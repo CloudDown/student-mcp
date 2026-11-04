@@ -12,8 +12,7 @@ mod reads;
 mod writes;
 
 const REQUIRED_TOOL: &str = "get-courses-summary";
-pub const EXPERIMENTAL_NOTICE: &str = "Omnivox support is experimental. College pages change without notice; confirm important results in the official app or website.";
-const PAGE_CHANGED: &str = "Omnivox did not return the expected data. The college page may have changed; this connector is experimental. Sign in again, or use the official Omnivox site.";
+const PAGE_CHANGED: &str = "Omnivox did not return the expected data. The college page may have changed. Sign in again, or use the official Omnivox site.";
 
 // The official Omnivox mobile client identifies itself this way. Web and
 // mobile logins produce different sessions; `/Mobl/` only accepts the mobile
@@ -1221,25 +1220,6 @@ fn parse_mobile_json(bytes: &[u8]) -> Result<Value, String> {
     })
 }
 
-pub fn mark_result(data: Value) -> Value {
-    let mut wrapped = if data.is_object() {
-        data
-    } else {
-        json!({ "items": data })
-    };
-    wrapped["experimental"] = json!(true);
-    wrapped["notice"] = json!(EXPERIMENTAL_NOTICE);
-    wrapped
-}
-
-pub fn mark_error(message: String) -> String {
-    if message.contains("experimental") {
-        message
-    } else {
-        format!("{message} ({EXPERIMENTAL_NOTICE})")
-    }
-}
-
 pub fn tools() -> Vec<Value> {
     let mut tools = vec![
         json!({"name":"omnivox_status","description":"Check the connected Omnivox / Léa account."}),
@@ -1323,13 +1303,7 @@ pub(crate) mod tests {
     fn html_bodies_are_reported_as_a_changed_college_page() {
         let error = parse_mobile_json(b"  \n<html>login</html>").unwrap_err();
         assert!(error.contains("page may have changed"));
-        assert!(error.contains("experimental"));
         assert_eq!(parse_mobile_json(br#"{"ok":true}"#).unwrap()["ok"], true);
-        let marked = mark_result(json!({"ListeCours":[]}));
-        assert_eq!(marked["experimental"], true);
-        assert_eq!(marked["ListeCours"], json!([]));
-        assert!(marked["notice"].as_str().unwrap().contains("experimental"));
-        assert!(mark_error("Sign in again.".into()).contains("experimental"));
     }
 
     fn server(
@@ -1420,20 +1394,19 @@ pub(crate) mod tests {
             let reply = crate::mcp::dispatch_tool(&settings, "omnivox_my_courses", &json!({}));
             assert_eq!(reply["isError"], false);
             assert!(reply["structuredContent"].is_object());
-            assert_eq!(reply["structuredContent"]["experimental"], true);
-            assert!(reply["structuredContent"]["notice"]
-                .as_str()
-                .unwrap()
-                .contains("experimental"));
-            if value.is_object() {
-                assert_eq!(reply["structuredContent"]["courses"], json!([]));
-            } else {
-                assert_eq!(reply["structuredContent"]["items"], value);
-            }
-            assert!(reply["content"][0]["text"]
-                .as_str()
-                .unwrap()
-                .contains("experimental"));
+            assert_eq!(
+                reply["structuredContent"],
+                if value.is_object() {
+                    value.clone()
+                } else {
+                    json!({"items":value})
+                }
+            );
+            assert_eq!(
+                serde_json::from_str::<Value>(reply["content"][0]["text"].as_str().unwrap())
+                    .unwrap(),
+                value
+            );
             worker.join().unwrap();
         }
     }
@@ -1451,7 +1424,7 @@ pub(crate) mod tests {
                     config.device_id = Some("a".repeat(40));
                     config.auth_hash = Some("device-code".into());
                 }
-                let mut settings = crate::config::Settings {
+                let settings = crate::config::Settings {
                     omnivox: Some(crate::config::OmnivoxSettings {
                         url: Some(config.base_url),
                         token: Some(config.token.clone()),
@@ -1460,7 +1433,6 @@ pub(crate) mod tests {
                     }),
                     ..Default::default()
                 };
-                settings.tools.advanced = true;
                 let reply = crate::mcp::dispatch_tool(&settings, name, &args);
                 assert_eq!(reply["isError"], false, "{name}: {reply}");
                 for secret in ["hidden-code", "hidden-sid", "hidden-jwt", &config.token] {

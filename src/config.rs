@@ -123,16 +123,11 @@ pub struct ToolSettings {
     pub allow_changes: std::collections::BTreeMap<String, bool>,
 }
 
-impl ToolSettings {
-    fn is_default(&self) -> bool {
-        !self.advanced && self.allow_changes.is_empty()
-    }
-}
-
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
-    #[serde(skip_serializing_if = "ToolSettings::is_default")]
+    /// Accepted from older installs and ignored. Approval belongs to the AI client.
+    #[serde(default, skip_serializing)]
     pub tools: ToolSettings,
     pub gateway: GatewaySettings,
     pub moodle: Option<MoodleSettings>,
@@ -224,29 +219,6 @@ impl Settings {
             self.tools
                 .allow_changes
                 .insert(format!("{service}/{id}"), true);
-        }
-    }
-
-    pub fn set_changes_allowed(service: &str, id: &str, enabled: bool) -> Result<(), String> {
-        let mut found = false;
-        Self::update(|settings| {
-            if settings
-                .account_list(service)
-                .iter()
-                .any(|(known, _)| known == id)
-            {
-                settings
-                    .tools
-                    .allow_changes
-                    .insert(format!("{service}/{id}"), enabled);
-                found = true;
-            }
-        })
-        .map_err(|e| e.to_string())?;
-        if found {
-            Ok(())
-        } else {
-            Err("Connect this account before changing permissions.".into())
         }
     }
 
@@ -837,18 +809,20 @@ pub(crate) mod tests {
         with_temp_config(|| {
             std::fs::write(
                 config_path(),
-                r#"{"moodle":{"url":"https://school.example","token":"fixture","allow_write":true}}"#,
+                r#"{"moodle":{"url":"https://school.example","token":"fixture","allow_write":true},"tools":{"advanced":false,"allow_changes":{"moodle/moodle":true}}}"#,
             )
             .unwrap();
             let settings = Settings::load();
-            assert!(settings.changes_allowed("moodle"));
+            assert_eq!(settings.moodle().unwrap().token, "fixture");
             settings.save().unwrap();
             let text = std::fs::read_to_string(config_path()).unwrap();
             assert!(!text.contains("allow_write"));
-            assert!(text.contains("allow_changes"));
-            let reloaded = Settings::load();
-            assert_eq!(reloaded.moodle().unwrap().token, "fixture");
-            assert!(reloaded.changes_allowed("moodle"));
+            assert!(!text.contains("allow_changes"));
+            assert!(!text.contains("\"tools\""));
+            assert_eq!(Settings::load().moodle().unwrap().token, "fixture");
+            assert!(crate::mcp::tool_definitions(&Settings::load())
+                .iter()
+                .any(|tool| tool["name"] == "ws_call"));
         });
     }
 
@@ -860,8 +834,12 @@ pub(crate) mod tests {
                 r#"{"moodle":{"url":"https://school.example","token":"fixture"}}"#,
             )
             .unwrap();
-            assert!(!Settings::load().changes_allowed("moodle"));
-            Settings::load().save().unwrap();
+            let loaded = Settings::load();
+            assert_eq!(loaded.moodle().unwrap().token, "fixture");
+            assert!(crate::mcp::tool_definitions(&loaded)
+                .iter()
+                .any(|tool| tool["name"] == "ws_call"));
+            loaded.save().unwrap();
             assert!(!std::fs::read_to_string(config_path())
                 .unwrap()
                 .contains("allow_changes"));

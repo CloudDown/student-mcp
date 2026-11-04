@@ -87,13 +87,13 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         assert b"Allow assistant changes" not in page
         assert b'data-action="permissions"' not in page
         assert b'L\xc3\xa9a / Mio \xc2\xb7 Read only' not in page
-        assert b'Experimental' in page
+        assert b'Experimental' not in page
         assert b'myCourses \xc2\xb7 Read only' not in page
         home = page.split(b'function home(){', 1)[1].split(b'function header(', 1)[0]
         manage = page.split(b'function manageScreenContent(){', 1)[1].split(b'function serviceScreen(){', 1)[0]
         links = page.split(b'function linkScreen(){', 1)[1].split(b'function publicMessage(', 1)[0]
         assert b'Launch at startup' in home and b'name="autostart"' in home
-        assert b'name="advanced"' in home and b'Allow changes' in manage
+        assert b'name="advanced"' not in home and b'Allow changes' not in manage
         assert b'name="autostart"' not in links
         assert manage.index(b'class="status-row"') < manage.index(b'data-add') < manage.index(b'class="manage-actions"')
         assert b'accountChoices()' in manage and b'account-list' not in manage
@@ -149,8 +149,8 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         assert json.loads(request("/state")[1])["accounts"][0]["enabled"] is True
         assert json.loads(config.read_text())["moodle"]["token"] == saved_token
         enabled_state = json.loads(request("/state")[1])
-        assert enabled_state["advanced"] is False
-        assert enabled_state["accounts"][0]["allow_changes"] is False
+        assert "advanced" not in enabled_state
+        assert "allow_changes" not in enabled_state["accounts"][0]
         status, body = request(connector_path, {"jsonrpc": "2.0", "id": 2, "method": "tools/list",
                                                 "params": {"_meta": {
                                                     "io.modelcontextprotocol/protocolVersion": "2026-07-28"}}},
@@ -158,22 +158,13 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         names = [tool["name"] for tool in json.loads(body)["result"]["tools"]]
         assert names[0] == "student_status"
         assert "moodle_search" in names and "moodle_deadlines" in names
-        assert "ws_call" not in names and "ws_discover" not in names
-        assert len(names) == 12
+        assert "ws_call" in names and "ws_discover" in names
         status, body = request("/action", {"action": "allow_changes", "service": "moodle",
                                              "id": "moodle", "enabled": True})
-        assert status == 200
-        assert json.loads(request("/state")[1])["accounts"][0]["allow_changes"] is True
+        assert status == 400
         assert json.loads(config.read_text())["moodle"]["token"] == saved_token
         status, body = request("/action", {"action": "advanced_tools", "enabled": True})
-        assert status == 200
-        assert json.loads(request("/state")[1])["advanced"] is True
-        status, body = request(connector_path, {"jsonrpc": "2.0", "id": 3, "method": "tools/list",
-                                                "params": {"_meta": {
-                                                    "io.modelcontextprotocol/protocolVersion": "2026-07-28"}}},
-                               auth=False, address=f"http://127.0.0.1:{port}")
-        advanced_names = [tool["name"] for tool in json.loads(body)["result"]["tools"]]
-        assert "ws_call" in advanced_names
+        assert status == 400
         assert json.loads(config.read_text())["moodle"]["token"] == saved_token
         assert state["autostart"] is False
         assert request("/action", {"action": "autostart", "enabled": True}, auth=False)[0] == 401
