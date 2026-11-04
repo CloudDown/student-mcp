@@ -438,7 +438,7 @@ mod tests {
                 },
             ));
             let (client, worker) = server(replies);
-            let settings = crate::config::Settings {
+            let mut settings = crate::config::Settings {
                 brightspace: Some(crate::config::BrightspaceSettings {
                     url: Some(client.config.base_url.clone()),
                     token: Some(client.config.token.clone()),
@@ -446,6 +446,11 @@ mod tests {
                 }),
                 ..Default::default()
             };
+            settings.tools.advanced = true;
+            settings
+                .tools
+                .allow_changes
+                .insert("brightspace/brightspace".into(), true);
             let result = crate::mcp::dispatch_tool(&settings, &name, &args());
             assert_eq!(result["isError"], false, "{name}: {result}");
             assert!(!result.to_string().contains("fixture-private"));

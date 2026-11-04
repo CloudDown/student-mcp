@@ -111,11 +111,15 @@ the next page. Prefer `brightspace_deadlines` for upcoming work. Sessions expire
 and must be replaced via **Change login**. The connector uses LP API 1.49 and LE
 API 1.82.
 
-Saved accounts have check, reconnect and disconnect actions. Omnivox and
-Brightspace both expose reads and writes; write approval is left to the MCP
-client, with no extra server-side permission switch.
-Legacy `allow_write` fields are accepted when loading old configurations but
-removed on the next save; they no longer represent a permission setting.
+Saved accounts have check, reconnect and disconnect actions. The assistant
+sees about a dozen read tools per connected service (courses, files, deadlines,
+grades, announcements, messages, search). **Advanced tools** on the home page
+unlocks the rest, including Moodle `ws_discover`, `ws_schema` and `ws_call`.
+**Allow changes** on the account page is required before any write reaches the
+school; the MCP client may still ask for confirmation. Legacy `allow_write:
+true` is migrated into Allow changes automatically; other existing accounts
+stay read-only until the student turns it on. The public link and saved tokens
+are unchanged.
 
 Connection checks and manual sign-ins run in a background worker. The local
 status page, link settings and Quit remain available while the school responds.

@@ -1399,7 +1399,7 @@ pub(crate) mod tests {
                     config.device_id = Some("a".repeat(40));
                     config.auth_hash = Some("device-code".into());
                 }
-                let settings = crate::config::Settings {
+                let mut settings = crate::config::Settings {
                     omnivox: Some(crate::config::OmnivoxSettings {
                         url: Some(config.base_url),
                         token: Some(config.token.clone()),
@@ -1408,6 +1408,7 @@ pub(crate) mod tests {
                     }),
                     ..Default::default()
                 };
+                settings.tools.advanced = true;
                 let reply = crate::mcp::dispatch_tool(&settings, name, &args);
                 assert_eq!(reply["isError"], false, "{name}: {reply}");
                 for secret in ["hidden-code", "hidden-sid", "hidden-jwt", &config.token] {

@@ -259,10 +259,10 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
             let mut accounts = Vec::new();
             for service in ["moodle", "omnivox", "brightspace"] {
                 for (id, url) in current.account_list(service) {
-                    accounts.push(json!({"service":service,"id":id,"url":url,"enabled":current.service_enabled(service)}));
+                    accounts.push(json!({"service":service,"id":id,"url":url,"enabled":current.service_enabled(service),"allow_changes":current.for_account(service, &id).changes_allowed(service)}));
                 }
             }
-            (200, "application/json", json!({"accounts":accounts,"verification":pending.as_ref().map(|(_,p)| &p.prompt),"browser_login":browser_login.as_ref().map(crate::browser::Login::status),"link":mcp_endpoint(tunnel.origin().unwrap_or(&format!("http://127.0.0.1:{port}")), &gateway.token),"local_link":mcp_endpoint(&format!("http://127.0.0.1:{port}"), &gateway.token),"tunnel":format!("{:?}",tunnel.state),"public":current.gateway.public_enabled(),"local":enabled.load(Ordering::SeqCst),"autostart":crate::autostart::enabled().unwrap_or(false)}).to_string().into_bytes(),false)
+            (200, "application/json", json!({"accounts":accounts,"verification":pending.as_ref().map(|(_,p)| &p.prompt),"browser_login":browser_login.as_ref().map(crate::browser::Login::status),"link":mcp_endpoint(tunnel.origin().unwrap_or(&format!("http://127.0.0.1:{port}")), &gateway.token),"local_link":mcp_endpoint(&format!("http://127.0.0.1:{port}"), &gateway.token),"tunnel":format!("{:?}",tunnel.state),"public":current.gateway.public_enabled(),"local":enabled.load(Ordering::SeqCst),"autostart":crate::autostart::enabled().unwrap_or(false),"advanced":current.tools.advanced}).to_string().into_bytes(),false)
         } else if request.method() == &Method::Get && path == "/update" {
             (
                 200,
@@ -391,7 +391,8 @@ fn background_action(action: &str) -> bool {
 }
 
 fn action_allowed_during_job(action: &str, checking: bool) -> bool {
-    matches!(action, "stop" | "links" | "autostart") || (checking && action == "service_enabled")
+    matches!(action, "stop" | "links" | "autostart" | "advanced_tools")
+        || (checking && matches!(action, "service_enabled" | "allow_changes"))
 }
 
 fn respond_action(request: tiny_http::Request, result: Result<Value, String>) {
@@ -423,6 +424,14 @@ fn action(
         "stop" => return Ok(json!({"stop":true})),
         "autostart" => {
             crate::autostart::set(args["enabled"] == true)?;
+            return Ok(json!({}));
+        }
+        "advanced_tools" => {
+            let value = args["enabled"]
+                .as_bool()
+                .ok_or("Provide enabled as a boolean.")?;
+            Settings::update(|settings| settings.tools.advanced = value)
+                .map_err(|e| e.to_string())?;
             return Ok(json!({}));
         }
         "links" => {
@@ -460,6 +469,13 @@ fn action(
         }
         let updated = Settings::set_service_enabled(service, args["enabled"] == true)?;
         return Ok(json!({"enabled":updated.service_enabled(service)}));
+    }
+    if get("action") == "allow_changes" {
+        let value = args["enabled"]
+            .as_bool()
+            .ok_or("Provide enabled as a boolean.")?;
+        Settings::set_changes_allowed(service, get("id"), value)?;
+        return Ok(json!({}));
     }
     let id = if get("id").is_empty() {
         random_hex(8)
@@ -553,16 +569,20 @@ fn connection_action(args: &Value, pending: &mut Pending) -> Result<Value, Strin
     }
     *pending = None;
     let message = match service {
-        "moodle" => crate::mcp::activate_moodle(
-            &mut settings,
-            get("url"),
-            get("username"),
-            get("password"),
-            get("token"),
-            true,
-        )?,
+        "moodle" => {
+            let allow_write = settings.changes_allowed("moodle");
+            crate::mcp::activate_moodle(
+                &mut settings,
+                get("url"),
+                get("username"),
+                get("password"),
+                get("token"),
+                allow_write,
+            )?
+        }
         "brightspace" => {
-            crate::brightspace::activate(&mut settings, get("url"), get("token"), true)?
+            let allow_write = settings.changes_allowed("brightspace");
+            crate::brightspace::activate(&mut settings, get("url"), get("token"), allow_write)?
         }
         _ => {
             if get("token").is_empty() {
@@ -597,5 +617,8 @@ mod tests {
         assert!(!action_allowed_during_job("service_enabled", false));
         assert!(!action_allowed_during_job("disconnect", true));
         assert!(!action_allowed_during_job("check", true));
+        assert!(action_allowed_during_job("advanced_tools", false));
+        assert!(action_allowed_during_job("allow_changes", true));
+        assert!(!action_allowed_during_job("allow_changes", false));
     }
 }

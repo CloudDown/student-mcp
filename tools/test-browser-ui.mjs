@@ -9,7 +9,7 @@ try {
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.addInitScript(()=>localStorage.setItem('student-mcp.language','en'));
   const html=readFileSync(new URL('../src/resources/web/index.html',import.meta.url),'utf8');
-  const state={accounts:[],browser_login:null,verification:null,tunnel:'Idle',local:true,public:false,autostart:false,link:'',local_link:''};
+  const state={accounts:[],browser_login:null,verification:null,tunnel:'Idle',local:true,public:false,autostart:false,advanced:false,link:'',local_link:''};
   const actions=[];
   let needsBrowser=false;
   await page.route('http://student.test/**',async route=>{
@@ -83,6 +83,17 @@ try {
   await page.getByRole('button',{name:'Download and continue',exact:true}).click();
   assert.equal(actions.at(-1).allow_browser_download,true);
   assert.equal(actions.at(-1).url,'https://moodle.polymtl.ca');
+  await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  await page.getByRole('button',{name:'Back to services',exact:true}).click();
+  await page.getByRole('checkbox',{name:'Advanced tools',exact:true}).click();
+  assert.equal(actions.at(-1).action,'advanced_tools');
+  assert.equal(actions.at(-1).enabled,true);
+  state.accounts=[{id:'moodle',service:'moodle',url:'https://moodle.polymtl.ca',enabled:true,allow_changes:false}];
+  await page.evaluate(()=>refresh());
+  await page.getByRole('button',{name:'Moodle manage connection',exact:true}).click();
+  await page.getByRole('checkbox',{name:'Allow changes',exact:true}).click();
+  assert.equal(actions.at(-1).action,'allow_changes');
+  assert.equal(actions.at(-1).enabled,true);
   assert.deepEqual(errors,[]);
-  console.log('Browser UI passed: preparation, download progress, installation, sign-in, completion, manual fallback and cancellation.');
+  console.log('Browser UI passed: preparation, download progress, installation, sign-in, completion, manual fallback, cancellation, advanced tools and allow changes.');
 } finally {await browser.close()}

@@ -657,6 +657,7 @@ fn persist(
         token: Some(token.into()),
         allow_write: Some(allow_write),
     });
+    updated.remember_changes_allowed("brightspace", allow_write);
     updated.save_service("brightspace").map_err(|error| {
         format!("Cannot save Brightspace credentials to the private config file: {error}")
     })?;
@@ -1353,7 +1354,7 @@ mod tests {
 
     #[test]
     fn assignment_submit_rejects_invalid_arguments_before_network() {
-        let settings = crate::config::Settings {
+        let mut settings = crate::config::Settings {
             brightspace: Some(crate::config::BrightspaceSettings {
                 url: Some("http://127.0.0.1:1".into()),
                 token: Some("secret".into()),
@@ -1361,6 +1362,10 @@ mod tests {
             }),
             ..Default::default()
         };
+        settings
+            .tools
+            .allow_changes
+            .insert("brightspace/brightspace".into(), true);
         let reply = crate::mcp::dispatch_tool(
             &settings,
             "brightspace_assignment_submit",

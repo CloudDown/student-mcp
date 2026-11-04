@@ -54,7 +54,7 @@ pub struct MoodleSettings {
     pub url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
-    /// Legacy input only. Approval belongs to the MCP client; omit on next save.
+    /// Legacy input only. Migrated into tools.allow_changes on load; omit on next save.
     #[serde(skip_serializing)]
     pub allow_write: Option<bool>,
 }
@@ -98,7 +98,7 @@ impl std::fmt::Debug for OmnivoxSettings {
 pub struct BrightspaceSettings {
     pub url: Option<String>,
     pub token: Option<String>,
-    /// Legacy input only. Approval belongs to the MCP client; omit on next save.
+    /// Legacy input only. Migrated into tools.allow_changes on load; omit on next save.
     #[serde(skip_serializing)]
     pub allow_write: Option<bool>,
 }
@@ -116,7 +116,24 @@ impl std::fmt::Debug for BrightspaceSettings {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
+pub struct ToolSettings {
+    pub advanced: bool,
+    /// Explicit overrides keyed by service/account ID. Missing means read-only,
+    /// except for a legacy account that explicitly opted into allow_write.
+    pub allow_changes: std::collections::BTreeMap<String, bool>,
+}
+
+impl ToolSettings {
+    fn is_default(&self) -> bool {
+        !self.advanced && self.allow_changes.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Settings {
+    #[serde(skip_serializing_if = "ToolSettings::is_default")]
+    pub tools: ToolSettings,
     pub gateway: GatewaySettings,
     pub moodle: Option<MoodleSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -157,8 +174,7 @@ pub struct Gateway {
 pub struct MoodleConfig {
     pub base_url: String,
     pub token: String,
-    // Retained to read legacy account settings; writes no longer use an app-level gate.
-    #[allow(dead_code)]
+    // Legacy permission; explicit modern account overrides take precedence.
     pub allow_write: bool,
 }
 
@@ -174,12 +190,66 @@ pub struct OmnivoxConfig {
 pub struct BrightspaceConfig {
     pub base_url: String,
     pub token: String,
-    // Retained to read legacy account settings; writes no longer use an app-level gate.
-    #[allow(dead_code)]
+    // Legacy permission; explicit modern account overrides take precedence.
     pub allow_write: bool,
 }
 
 impl Settings {
+    pub fn changes_allowed(&self, service: &str) -> bool {
+        let id = self
+            .account_scope
+            .as_ref()
+            .filter(|(s, _)| s == service)
+            .map(|(_, id)| id.as_str())
+            .unwrap_or(service);
+        self.tools
+            .allow_changes
+            .get(&format!("{service}/{id}"))
+            .copied()
+            .unwrap_or_else(|| match service {
+                "moodle" => self.moodle().is_some_and(|c| c.allow_write),
+                "brightspace" => self.brightspace().is_some_and(|c| c.allow_write),
+                _ => false,
+            })
+    }
+
+    pub fn remember_changes_allowed(&mut self, service: &str, enabled: bool) {
+        let id = self
+            .account_scope
+            .as_ref()
+            .filter(|(known, _)| known == service)
+            .map(|(_, id)| id.as_str())
+            .unwrap_or(service);
+        if enabled {
+            self.tools
+                .allow_changes
+                .insert(format!("{service}/{id}"), true);
+        }
+    }
+
+    pub fn set_changes_allowed(service: &str, id: &str, enabled: bool) -> Result<(), String> {
+        let mut found = false;
+        Self::update(|settings| {
+            if settings
+                .account_list(service)
+                .iter()
+                .any(|(known, _)| known == id)
+            {
+                settings
+                    .tools
+                    .allow_changes
+                    .insert(format!("{service}/{id}"), enabled);
+                found = true;
+            }
+        })
+        .map_err(|e| e.to_string())?;
+        if found {
+            Ok(())
+        } else {
+            Err("Connect this account before changing permissions.".into())
+        }
+    }
+
     pub fn account_list(&self, service: &str) -> Vec<(String, String)> {
         let mut list = Vec::new();
         let url = match service {
@@ -225,6 +295,48 @@ impl Settings {
         scoped
     }
 
+    fn migrate_permissions(&mut self) {
+        self.promote_write_permission(
+            "moodle",
+            "moodle",
+            self.moodle.as_ref().and_then(|saved| saved.allow_write),
+        );
+        self.promote_write_permission(
+            "brightspace",
+            "brightspace",
+            self.brightspace
+                .as_ref()
+                .and_then(|saved| saved.allow_write),
+        );
+        let extra: Vec<_> = self
+            .accounts
+            .iter()
+            .map(|account| {
+                let allow = match account.service.as_str() {
+                    "moodle" => account.moodle.as_ref().and_then(|saved| saved.allow_write),
+                    "brightspace" => account
+                        .brightspace
+                        .as_ref()
+                        .and_then(|saved| saved.allow_write),
+                    _ => None,
+                };
+                (account.service.clone(), account.id.clone(), allow)
+            })
+            .collect();
+        for (service, id, allow) in extra {
+            self.promote_write_permission(&service, &id, allow);
+        }
+    }
+
+    fn promote_write_permission(&mut self, service: &str, id: &str, allow: Option<bool>) {
+        if allow == Some(true) {
+            self.tools
+                .allow_changes
+                .entry(format!("{service}/{id}"))
+                .or_insert(true);
+        }
+    }
+
     pub fn load() -> Self {
         let path = config_path();
         let text = match std::fs::read_to_string(&path) {
@@ -243,8 +355,11 @@ impl Settings {
         if text.trim().is_empty() {
             return Self::default();
         }
-        match serde_json::from_str(&text) {
-            Ok(settings) => settings,
+        match serde_json::from_str::<Self>(&text) {
+            Ok(mut settings) => {
+                settings.migrate_permissions();
+                settings
+            }
             Err(error) => Self {
                 config_error: Some(format!(
                     "Configuration file is not valid JSON and was left unchanged ({}): {error}",
@@ -323,6 +438,10 @@ impl Settings {
                 {
                     root.accounts.push(account);
                 }
+            }
+            let key = format!("{service}/{id}");
+            if let Some(value) = self.tools.allow_changes.get(&key) {
+                root.tools.allow_changes.insert(key, *value);
             }
             return root.save_unlocked();
         }
@@ -710,6 +829,42 @@ pub(crate) mod tests {
             assert!(!text.contains("allow_write"));
             assert_eq!(Settings::load().moodle().unwrap().token, "fixture");
             assert_eq!(Settings::load().brightspace().unwrap().token, "fixture2");
+        });
+    }
+
+    #[test]
+    fn legacy_allow_write_migrates_into_allow_changes_without_dropping_tokens() {
+        with_temp_config(|| {
+            std::fs::write(
+                config_path(),
+                r#"{"moodle":{"url":"https://school.example","token":"fixture","allow_write":true}}"#,
+            )
+            .unwrap();
+            let settings = Settings::load();
+            assert!(settings.changes_allowed("moodle"));
+            settings.save().unwrap();
+            let text = std::fs::read_to_string(config_path()).unwrap();
+            assert!(!text.contains("allow_write"));
+            assert!(text.contains("allow_changes"));
+            let reloaded = Settings::load();
+            assert_eq!(reloaded.moodle().unwrap().token, "fixture");
+            assert!(reloaded.changes_allowed("moodle"));
+        });
+    }
+
+    #[test]
+    fn accounts_without_an_explicit_write_permission_stay_read_only() {
+        with_temp_config(|| {
+            std::fs::write(
+                config_path(),
+                r#"{"moodle":{"url":"https://school.example","token":"fixture"}}"#,
+            )
+            .unwrap();
+            assert!(!Settings::load().changes_allowed("moodle"));
+            Settings::load().save().unwrap();
+            assert!(!std::fs::read_to_string(config_path())
+                .unwrap()
+                .contains("allow_changes"));
         });
     }
 
