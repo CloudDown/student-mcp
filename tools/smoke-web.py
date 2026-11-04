@@ -87,6 +87,7 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         assert b"Allow assistant changes" not in page
         assert b'data-action="permissions"' not in page
         assert b'L\xc3\xa9a / Mio \xc2\xb7 Read only' not in page
+        assert b'Experimental' in page
         assert b'myCourses \xc2\xb7 Read only' not in page
         home = page.split(b'function home(){', 1)[1].split(b'function header(', 1)[0]
         manage = page.split(b'function manageScreenContent(){', 1)[1].split(b'function serviceScreen(){', 1)[0]
