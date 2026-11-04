@@ -436,12 +436,19 @@ fn action(
             })
             .map_err(|e| e.to_string())?;
             enabled.store(local, Ordering::SeqCst);
-            if public {
+            // Only touch the public relay when that switch actually changes.
+            // Restarting on a local-link toggle made the public card reload
+            // through Starting and replayed its connecting animation.
+            let public_running = !matches!(
+                tunnel.state,
+                crate::tunnel::State::Idle | crate::tunnel::State::Stopped
+            );
+            if public && !public_running {
                 tunnel.start(port);
-            } else {
+            } else if !public && public_running {
                 tunnel.stop();
             }
-            return Ok(json!({"message":"Connection settings saved"}));
+            return Ok(json!({}));
         }
         "cancel" => {
             *pending = None;
