@@ -20,7 +20,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Build
         run: cargo build --locked --all-targets
       - name: Test
         run: cargo test --locked
+      - name: Packaging tests
+        run: python -m unittest discover -s tools -p 'test_*.py'
+      - name: Install test browser
+        shell: bash
+        run: |
+          npm install --prefix "$RUNNER_TEMP/student-ui" playwright@1.58.2
+          npx --prefix "$RUNNER_TEMP/student-ui" playwright install --with-deps chromium
+          node -e 'const p=require(process.env.RUNNER_TEMP+"/student-ui/node_modules/playwright"); console.log("STUDENT_MCP_BROWSER="+p.chromium.executablePath()); console.log("PLAYWRIGHT_MODULE="+require.resolve(process.env.RUNNER_TEMP+"/student-ui/node_modules/playwright/index.mjs"))' >> "$GITHUB_ENV"
+      - name: Browser protocol and UI tests
+        run: |
+          cargo test --locked chromium_moodle_sso -- --ignored
+          node tools/test-browser.mjs
+          node tools/test-browser-ui.mjs

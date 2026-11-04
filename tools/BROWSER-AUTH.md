@@ -141,3 +141,24 @@ python3 tools/smoke-web.py target/debug/student-mcp
 
 The mobile bridge is a small independent implementation of the observed protocol;
 no upstream app bundle or third-party service is downloaded at runtime.
+# Moodle mobile SSO
+
+All services now start with **Connect with browser**. For Moodle, enter the
+school URL (including the installation path, if any), then complete the school's
+SSO/MFA. The connector opens `admin/tool/mobile/launch.php` with
+`service=moodle_mobile_app` and a fresh random passport. It intercepts the
+`moodlemobile://token=…` response locally, checks Moodle's MD5 site/passport
+binding, decodes the token, and verifies `core_webservice_get_site_info` before
+saving it. The optional private token is discarded. No protocol handler is
+registered and the token is never passed to the OS or the AI.
+
+Existing Moodle tokens remain usable without reconnecting. If mobile browser
+login is disabled by the school, **Other connection methods** retains password
+login. No password is saved. The temporary Moodle browser profile is removed
+after sign-in; Brightspace and Omnivox retain their per-account profiles.
+
+Target live checks: `https://studium.umontreal.ca` and
+`https://moodle.polymtl.ca`. Protocol tests use synthetic responses; they do not
+prove that either school has enabled this flow. An account holder must complete
+SSO/MFA on each site, check a course list, restart, and check it again. Never put
+tokens, credentials, or screenshots of authenticated personal data in reports.

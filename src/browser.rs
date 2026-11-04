@@ -20,6 +20,7 @@ use std::{
 use tungstenite::{Message, WebSocket};
 
 mod install;
+mod moodle;
 
 const PREFIX: &str = "browser-profile:";
 const RECONNECT: &str = "Browser session needs attention. Open student-mcp and choose Change login → Connect with browser.";
@@ -487,6 +488,7 @@ struct Browser {
     profile: Profile,
     sequence: u64,
     mobile_contexts: HashSet<u64>,
+    moodle_sso: Option<moodle::Sso>,
 }
 
 impl Browser {
@@ -579,6 +581,7 @@ impl Browser {
             profile,
             sequence: 0,
             mobile_contexts: HashSet::new(),
+            moodle_sso: (service == "moodle").then(|| moodle::Sso::new(origin)),
         };
         let until = Instant::now() + Duration::from_secs(15);
         let agent = ureq::AgentBuilder::new()
@@ -682,7 +685,13 @@ impl Browser {
                 )?;
             }
         }
-        let home = browser.profile.home.clone();
+        let home = if let Some(sso) = &browser.moodle_sso {
+            let home = sso.launch_url();
+            browser.call("Fetch.enable", json!({"patterns":[{"urlPattern":format!("{origin}/admin/tool/mobile/launch.php*"),"requestStage":"Response"}]}))?;
+            home
+        } else {
+            browser.profile.home.clone()
+        };
         browser.call("Page.navigate", json!({"url":home}))?;
         Ok(browser)
     }
@@ -725,6 +734,32 @@ impl Browser {
                 continue;
             };
             let value: Value = serde_json::from_str(&text).map_err(|_| "Invalid browser reply.")?;
+            if self.moodle_sso.is_some() && value["method"] == "Fetch.requestPaused" {
+                let params = &value["params"];
+                let callback = params["responseHeaders"]
+                    .as_array()
+                    .and_then(|headers| {
+                        headers.iter().find(|h| {
+                            h["name"]
+                                .as_str()
+                                .is_some_and(|n| n.eq_ignore_ascii_case("location"))
+                        })
+                    })
+                    .and_then(|h| h["value"].as_str());
+                if let Some(callback) = callback.filter(|s| s.starts_with("moodlemobile:")) {
+                    let result = self.moodle_sso.as_mut().unwrap().accept(callback);
+                    self.send(
+                        "Fetch.failRequest",
+                        json!({"requestId":params["requestId"],"errorReason":"Aborted"}),
+                    )?;
+                    result?;
+                } else {
+                    self.send(
+                        "Fetch.continueRequest",
+                        json!({"requestId":params["requestId"]}),
+                    )?;
+                }
+            }
             if value["id"].as_u64() == Some(id) {
                 if value.get("error").is_some() {
                     return Err(
@@ -830,10 +865,32 @@ impl Browser {
             }
             std::thread::sleep(Duration::from_millis(750));
         }
-        Err(RECONNECT.into())
+        Err(if self.moodle_sso.is_some() {
+            moodle::UNAVAILABLE
+        } else {
+            RECONNECT
+        }
+        .into())
     }
 
     fn probe(&mut self) -> Result<(), String> {
+        if self.moodle_sso.is_some() {
+            // Also support Moodle's confirmation page, which renders a link
+            // instead of an HTTP redirect. Read only the configured school page.
+            let site = serde_json::to_string(&self.profile.origin).unwrap();
+            let link = self.evaluate(format!("location.href.startsWith({site} + '/admin/tool/mobile/launch.php') ? document.querySelector('a[href^=\"moodlemobile://token=\"]')?.getAttribute('href') : null"))?;
+            let sso = self.moodle_sso.as_mut().unwrap();
+            if sso.token.is_none() {
+                if let Some(link) = link.as_str() {
+                    sso.accept(link)?;
+                }
+            }
+            return if sso.token.is_some() {
+                Ok(())
+            } else {
+                Err(RECONNECT.into())
+            };
+        }
         let location = self.evaluate("location.href".into())?;
         let url = url::Url::parse(location.as_str().unwrap_or("")).map_err(|_| RECONNECT)?;
         let origin = url.origin().ascii_serialization();
@@ -1102,6 +1159,7 @@ impl Login {
         previous: Option<&str>,
     ) -> Result<Self, String> {
         let origin = match service {
+            "moodle" => crate::config::normalize_moodle_url(origin)?,
             "brightspace" => crate::config::normalize_brightspace_url(origin)?,
             "omnivox" => {
                 let origin = crate::config::normalize_omnivox_url(origin)?;
@@ -1110,7 +1168,7 @@ impl Login {
                 }
                 origin
             }
-            _ => return Err("Browser login is available for Brightspace and Omnivox.".into()),
+            _ => return Err("Unknown school service.".into()),
         };
         if !origin.starts_with("https://") {
             return Err("Browser login requires an HTTPS school address.".into());
@@ -1147,6 +1205,19 @@ impl Login {
                 )?;
                 worker_progress.lock().unwrap().phase = "signin";
                 browser.wait_ready(&stop, Duration::from_secs(300))?;
+                if let Some(sso) = browser.moodle_sso.as_mut() {
+                    let token = sso.token.take().ok_or(moodle::UNAVAILABLE)?;
+                    let client = crate::moodle::MoodleClient::new(&crate::config::MoodleConfig {
+                        base_url: worker_origin.clone(),
+                        token: token.clone(),
+                        allow_write: false,
+                    });
+                    client.site_info()?;
+                    install::check_cancelled(&stop)?;
+                    drop(browser);
+                    remove(&worker_token)?;
+                    return Ok((token, worker_origin));
+                }
                 Ok((worker_token, browser.profile.origin.clone()))
             })();
             let _ = tx.send(outcome);
@@ -1178,6 +1249,14 @@ impl Login {
         let result = result.and_then(|(token, url)| {
             let mut settings = crate::config::Settings::load().for_account(&self.service, &self.id);
             match self.service.as_str() {
+                "moodle" => {
+                    let allow_write = settings.moodle.as_ref().and_then(|s| s.allow_write);
+                    settings.moodle = Some(crate::config::MoodleSettings {
+                        url: Some(url),
+                        token: Some(token),
+                        allow_write,
+                    });
+                }
                 "brightspace" => {
                     settings.brightspace = Some(crate::config::BrightspaceSettings {
                         url: Some(url),
@@ -1233,7 +1312,7 @@ impl Drop for Login {
         }
         // A cancelled/failed first sign-in leaves an unused profile; do not
         // retain its secrets. A re-login must never delete the saved profile.
-        if self.created && self.state != "connected" {
+        if self.created && (self.state != "connected" || self.service == "moodle") {
             let _ = remove(&self.token);
         }
     }
@@ -1374,7 +1453,7 @@ mod tests {
     #[test]
     fn browser_login_rejects_incompatible_services_and_origins_before_launch() {
         for (service, origin) in [
-            ("moodle", "https://school.example"),
+            ("unknown", "https://school.example"),
             ("omnivox", "https://other.example"),
             ("brightspace", "http://school.example"),
             ("brightspace", "https://user:password@school.example"),
@@ -1398,6 +1477,89 @@ mod tests {
             let b = profile_path(&format!("{PREFIX}{}", "b".repeat(32))).unwrap();
             assert_ne!(a, b);
             assert_eq!(a.parent(), b.parent());
+        });
+    }
+
+    #[test]
+    #[ignore = "requires Chromium; synthetic local Moodle SSO server, no credentials"]
+    fn chromium_moodle_sso_captures_redirect_and_confirmation_link() {
+        use md5::{Digest, Md5};
+        use tiny_http::{Header, Response, Server};
+        crate::config::tests::with_temp_config(|| {
+            let server = Server::http("127.0.0.1:0").unwrap();
+            let origin = format!("http://{}", server.server_addr());
+            let base = origin.clone();
+            let stop = Arc::new(AtomicBool::new(false));
+            let finished = stop.clone();
+            let worker = std::thread::spawn(move || {
+                while !finished.load(Ordering::SeqCst) {
+                    let Some(request) = server.recv_timeout(Duration::from_millis(50)).unwrap()
+                    else {
+                        continue;
+                    };
+                    let url = url::Url::parse(&format!("{base}{}", request.url())).unwrap();
+                    let passport = url
+                        .query_pairs()
+                        .find(|(k, _)| k == "passport")
+                        .map(|(_, v)| v.into_owned())
+                        .unwrap_or_default();
+                    let site = if url.path().starts_with("/confirm/") {
+                        format!("{base}/confirm")
+                    } else {
+                        base.clone()
+                    };
+                    let hash = format!("{:x}", Md5::digest(format!("{site}{passport}")));
+                    let callback = format!(
+                        "moodlemobile://token={}",
+                        base64::engine::general_purpose::STANDARD
+                            .encode(format!("{hash}:::{}:::discard-private", "a".repeat(32)))
+                    );
+                    let response = if site.ends_with("/confirm") {
+                        Response::from_string(format!("<a href=\"{callback}\">Launch app</a>"))
+                            .with_header(Header::from_bytes("Content-Type", "text/html").unwrap())
+                    } else {
+                        Response::from_string("")
+                            .with_status_code(302)
+                            .with_header(Header::from_bytes("Location", callback).unwrap())
+                    };
+                    let _ = request.respond(response);
+                }
+            });
+            let result = std::panic::catch_unwind(|| {
+                for site in [origin.clone(), format!("{origin}/confirm")] {
+                    let token = format!("{PREFIX}{}", crate::config::random_hex(16));
+                    let dir = profile_path(&token).unwrap();
+                    private_dir(&dir).unwrap();
+                    save(
+                        &dir.join("session.json"),
+                        &Profile {
+                            service: "moodle".into(),
+                            origin: site.clone(),
+                            home: "about:blank".into(),
+                            mobile: json!({}),
+                            identity: None,
+                        },
+                    )
+                    .unwrap();
+                    let mut browser = Browser::launch(&token, "moodle", &site, false).unwrap();
+                    browser
+                        .wait_ready(&AtomicBool::new(false), Duration::from_secs(10))
+                        .unwrap();
+                    assert_eq!(
+                        browser.moodle_sso.as_ref().unwrap().token.as_deref(),
+                        Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+                    );
+                    drop(browser);
+                    remove(&token).unwrap();
+                    assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+                    assert!(dir.join("profile.lock").is_file());
+                }
+            });
+            stop.store(true, Ordering::SeqCst);
+            worker.join().unwrap();
+            if let Err(panic) = result {
+                std::panic::resume_unwind(panic);
+            }
         });
     }
 

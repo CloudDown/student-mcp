@@ -468,6 +468,7 @@ fn action(
     };
     let settings = Settings::load().for_account(service, &id);
     let saved = match service {
+        "moodle" => settings.moodle().map(|c| (c.base_url, c.token)),
         "brightspace" => settings.brightspace().map(|c| (c.base_url, c.token)),
         "omnivox" => settings.omnivox().map(|c| (c.base_url, c.token)),
         _ => None,

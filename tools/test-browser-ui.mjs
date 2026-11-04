@@ -59,6 +59,17 @@ try {
   await page.getByRole('button',{name:'Connect with browser',exact:true}).waitFor();
   assert.equal(actions.at(-1).action,'cancel');
   assert.equal(state.accounts.length,1);
+  await page.getByRole('button',{name:'Back to services',exact:true}).click();
+  await page.getByRole('button',{name:'Moodle connect',exact:true}).click();
+  await page.getByLabel('Site address',{exact:true}).fill('https://studium.umontreal.ca');
+  assert.equal(await page.getByLabel('Password',{exact:true}).count(),0);
+  await page.getByRole('button',{name:'Connect with browser',exact:true}).click();
+  assert.equal(actions.at(-1).service,'moodle');
+  assert.equal(actions.at(-1).url,'https://studium.umontreal.ca');
+  await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  await page.getByRole('button',{name:'Other connection methods',exact:true}).click();
+  await page.getByLabel('Password',{exact:true}).waitFor();
+  assert.equal(await page.getByLabel('Site address',{exact:true}).inputValue(),'https://studium.umontreal.ca');
   assert.deepEqual(errors,[]);
   console.log('Browser UI passed: preparation, download progress, installation, sign-in, completion, manual fallback and cancellation.');
 } finally {await browser.close()}
