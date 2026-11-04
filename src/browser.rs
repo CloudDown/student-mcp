@@ -580,12 +580,19 @@ impl Browser {
                 "--no-default-browser-check",
                 "--disable-sync",
                 "--disable-background-mode",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
             ])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         if !visible {
             command.arg("--headless=new");
+        }
+        // GitHub-hosted Linux runners and container CI lack a user namespace
+        // for Chrome's sandbox. Keep the sandbox for interactive desktops.
+        if std::env::var_os("CI").is_some() {
+            command.arg("--no-sandbox");
         }
         command.arg("about:blank");
         let child = command
