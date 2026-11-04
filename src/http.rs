@@ -322,16 +322,29 @@ fn presented_token_matches(expected: &str, header: &Option<String>, path_token: 
     header_ok || path_ok
 }
 
-fn route(
-    request: &Request,
-    sessions: &Arc<Mutex<Sessions>>,
-) -> (u16, Vec<(String, String)>, Vec<u8>) {
+fn route(request: &Request, sessions: &Arc<Mutex<Sessions>>) -> crate::share::Reply {
     let settings = Settings::load();
     let gateway = settings.gateway();
     route_with(request, sessions, &settings, &gateway.token)
 }
 
 fn route_with(
+    request: &Request,
+    sessions: &Arc<Mutex<Sessions>>,
+    settings: &Settings,
+    gateway_token: &str,
+) -> crate::share::Reply {
+    let path = request.path.as_str();
+    // The capability id authorizes the file. Keep its shared allocation alive
+    // until the socket write completes, without copying it under the store lock.
+    if let Some(response) = crate::share::route(&request.method, path) {
+        return response;
+    }
+    let (status, headers, body) = route_mcp(request, sessions, settings, gateway_token);
+    (status, headers, Arc::new(body))
+}
+
+fn route_mcp(
     request: &Request,
     sessions: &Arc<Mutex<Sessions>>,
     settings: &Settings,
@@ -366,10 +379,6 @@ fn route_with(
             "POST" => post_mcp(request, sessions, settings),
             _ => jsonrpc_error(405, "Unsupported HTTP method."),
         }
-    } else if let Some(response) = crate::share::route(&request.method, path) {
-        // Capability links for files returned by moodle_file. The random id in
-        // the path is the secret; no Moodle token is exposed.
-        response
     } else if is_oauth_discovery(path) {
         // This server authenticates with a secret link, not OAuth. Answering the
         // discovery probes with a plain 404 keeps Claude (and other MCP clients)
@@ -669,7 +678,7 @@ mod tests {
                 .any(|(key, value)| key == "Content-Type" && value.starts_with("text/plain")),
             "{headers:?}"
         );
-        assert_eq!(body, b"page one\x0Cpage two");
+        assert_eq!(body.as_slice(), b"page one\x0Cpage two");
     }
 
     #[test]
@@ -806,7 +815,7 @@ mod tests {
         Arc::new(Mutex::new(Sessions::default()))
     }
 
-    fn call(request: &Request) -> (u16, Vec<(String, String)>, Vec<u8>) {
+    fn call(request: &Request) -> crate::share::Reply {
         route_with(request, &sessions(), &Settings::default(), TOKEN)
     }
 

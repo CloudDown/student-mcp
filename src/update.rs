@@ -2,7 +2,7 @@
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
-    io::Read,
+    io::{Read, Write},
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -80,8 +80,12 @@ impl Updater {
             let mut state = this.0.lock().unwrap();
             state.checking = false;
             state.checked = Some(Instant::now());
-            if let Ok(release) = release {
-                state.release = Some(release);
+            match release {
+                Ok(release) => {
+                    state.release = Some(release);
+                    state.error = None;
+                }
+                Err(error) => state.error = Some(error),
             }
         });
     }
@@ -101,7 +105,7 @@ impl Updater {
                     .and_then(|r| r["assets"].as_array())
                     .is_some_and(|assets| assets.iter().any(|a| a["name"] == name))
             });
-        json!({"current":crate::VERSION,"latest":latest,"available":available,"installing":state.installing,"ready":state.ready,"error":state.error})
+        json!({"current":crate::VERSION,"latest":latest,"available":available,"checking":state.checking,"checked":state.checked.is_some(),"installing":state.installing,"ready":state.ready,"error":state.error})
     }
 
     pub fn start(&self) -> Result<(), String> {
@@ -133,7 +137,13 @@ impl Updater {
     }
 }
 
-fn verify(bytes: &[u8], sums: &str, name: &str) -> Result<(), String> {
+fn download_verified(
+    source: impl Read,
+    mut destination: impl Write,
+    sums: &str,
+    name: &str,
+    limit: u64,
+) -> Result<(), String> {
     let expected = sums
         .lines()
         .find_map(|line| {
@@ -142,7 +152,27 @@ fn verify(bytes: &[u8], sums: &str, name: &str) -> Result<(), String> {
             (fields.next()?.trim_start_matches('*') == name).then_some(hash)
         })
         .ok_or("Release checksum is missing")?;
-    if data_encoding::HEXLOWER.encode(&Sha256::digest(bytes)) != expected.to_ascii_lowercase() {
+    let mut source = source.take(limit + 1);
+    let mut hash = Sha256::new();
+    let mut total = 0;
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let count = match source.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(count) => count,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error.to_string()),
+        };
+        total += count as u64;
+        if total > limit {
+            return Err("Release download is too large".into());
+        }
+        destination
+            .write_all(&buffer[..count])
+            .map_err(|e| e.to_string())?;
+        hash.update(&buffer[..count]);
+    }
+    if data_encoding::HEXLOWER.encode(&hash.finalize()) != expected.to_ascii_lowercase() {
         return Err("Release checksum does not match; installation cancelled".into());
     }
     Ok(())
@@ -164,52 +194,63 @@ fn install(tag: &str) -> Result<(), String> {
         .take(64 * 1024)
         .read_to_string(&mut sums)
         .map_err(|e| e.to_string())?;
-    let mut bytes = Vec::new();
-    agent
+    let source = agent
         .get(&format!("{base}/{name}"))
         .call()
         .map_err(|e| e.to_string())?
-        .into_reader()
-        .take(MAX_DOWNLOAD + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|e| e.to_string())?;
-    if bytes.len() as u64 > MAX_DOWNLOAD {
-        return Err("Release download is too large".into());
+        .into_reader();
+    install_download(source, &sums, &name)
+}
+
+/// Remove our staging file on failure; only verified downloads can be installed.
+fn stage_download(
+    source: impl Read,
+    path: &std::path::Path,
+    sums: &str,
+    name: &str,
+) -> Result<(), String> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o755);
     }
-    verify(&bytes, &sums, &name)?;
-    install_bytes(&bytes)
+    let mut file = options.open(path).map_err(|e| e.to_string())?;
+    let result = download_verified(source, &mut file, sums, name, MAX_DOWNLOAD)
+        .and_then(|()| file.sync_all().map_err(|e| e.to_string()));
+    drop(file);
+    if result.is_err() {
+        let _ = std::fs::remove_file(path);
+    }
+    result
 }
 
 #[cfg(target_os = "linux")]
-fn install_bytes(bytes: &[u8]) -> Result<(), String> {
+fn install_download(source: impl Read, sums: &str, name: &str) -> Result<(), String> {
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
-    replace_executable(bytes, &executable)
+    replace_executable(source, sums, name, &executable)
 }
 
 #[cfg(target_os = "linux")]
-fn replace_executable(bytes: &[u8], executable: &std::path::Path) -> Result<(), String> {
-    use std::{fs::OpenOptions, io::Write, os::unix::fs::OpenOptionsExt};
+fn replace_executable(
+    source: impl Read,
+    sums: &str,
+    name: &str,
+    executable: &std::path::Path,
+) -> Result<(), String> {
     let staged = executable.with_file_name(format!(
         ".student-mcp-update-{}",
         crate::config::random_hex(8)
     ));
-    let result = (|| -> std::io::Result<()> {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o755)
-            .open(&staged)?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        std::fs::rename(&staged, executable)
-    })();
+    stage_download(source, &staged, sums, name)?;
+    let result = std::fs::rename(&staged, executable);
     let _ = std::fs::remove_file(staged);
     result.map_err(|e| format!("Cannot install update: {e}"))
 }
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
-fn install_bytes(bytes: &[u8]) -> Result<(), String> {
-    use std::io::Write;
+fn install_download(source: impl Read, sums: &str, name: &str) -> Result<(), String> {
     let directory = crate::config::config_path().with_file_name(format!(
         ".student-mcp-update-{}",
         crate::config::random_hex(16)
@@ -223,11 +264,11 @@ fn install_bytes(bytes: &[u8]) -> Result<(), String> {
         builder.mode(0o700);
     }
     builder.create(&directory).map_err(|e| e.to_string())?;
-    let path = directory.join(asset_name()?);
-    let mut file = std::fs::File::create(&path).map_err(|e| e.to_string())?;
-    file.write_all(bytes).map_err(|e| e.to_string())?;
-    file.sync_all().map_err(|e| e.to_string())?;
-    drop(file);
+    let path = directory.join(name);
+    if let Err(error) = stage_download(source, &path, sums, name) {
+        let _ = std::fs::remove_dir(&directory);
+        return Err(error);
+    }
     #[cfg(target_os = "windows")]
     std::process::Command::new(path)
         .args(["/SP-", "/NORESTART"])
@@ -254,13 +295,84 @@ fn install_bytes(bytes: &[u8]) -> Result<(), String> {
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
-fn install_bytes(_: &[u8]) -> Result<(), String> {
+fn install_download(_: impl Read, _: &str, _: &str) -> Result<(), String> {
     Err("Unsupported system".into())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_staging_removes_partial_downloads_and_preserves_existing_files() {
+        struct Disconnected;
+        impl Read for Disconnected {
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::ErrorKind::ConnectionReset.into())
+            }
+        }
+        let directory = crate::pdf::Workspace::new().unwrap();
+        let path = directory.join("installer");
+        let sums = format!(
+            "{}  app",
+            data_encoding::HEXLOWER.encode(&Sha256::digest(b"release"))
+        );
+        assert!(
+            stage_download((&b"partial"[..]).chain(Disconnected), &path, &sums, "app").is_err()
+        );
+        assert!(!path.exists());
+        assert!(stage_download(&b"modified"[..], &path, &sums, "app").is_err());
+        assert!(!path.exists());
+        stage_download(&b"release"[..], &path, &sums, "app").unwrap();
+        assert!(stage_download(&b"modified"[..], &path, &sums, "app").is_err());
+        assert_eq!(std::fs::read(path).unwrap(), b"release");
+    }
+
+    #[test]
+    fn streaming_download_is_bounded_and_propagates_io_failures() {
+        struct Chunked {
+            remaining: usize,
+            interrupt: bool,
+            fail: bool,
+        }
+        impl Read for Chunked {
+            fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+                assert!(buffer.len() <= 64 * 1024);
+                if std::mem::take(&mut self.interrupt) {
+                    return Err(std::io::ErrorKind::Interrupted.into());
+                }
+                if self.remaining == 0 && self.fail {
+                    return Err(std::io::ErrorKind::ConnectionReset.into());
+                }
+                let count = self.remaining.min(buffer.len()).min(8191);
+                buffer[..count].fill(42);
+                self.remaining -= count;
+                Ok(count)
+            }
+        }
+        let size = 2 * 1024 * 1024 + 3;
+        let sums = format!(
+            "{}  app",
+            data_encoding::HEXLOWER.encode(&Sha256::digest(vec![42; size]))
+        );
+        let source = |fail| Chunked {
+            remaining: size,
+            interrupt: true,
+            fail,
+        };
+        let mut output = Vec::new();
+        download_verified(source(false), &mut output, &sums, "app", size as u64).unwrap();
+        assert_eq!(output.len(), size);
+        assert!(output.iter().all(|byte| *byte == 42));
+        assert!(
+            download_verified(source(true), std::io::sink(), &sums, "app", size as u64).is_err()
+        );
+        let mut full_disk = &mut [0u8; 1][..];
+        assert!(
+            download_verified(source(false), &mut full_disk, &sums, "app", size as u64).is_err()
+        );
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn replacement_preserves_open_executable_and_leaves_no_staging_file() {
@@ -273,7 +385,11 @@ mod tests {
         let path = directory.join("student-mcp");
         std::fs::write(&path, b"old executable").unwrap();
         let mut running = std::fs::File::open(&path).unwrap();
-        replace_executable(b"new executable", &path).unwrap();
+        let sums = format!(
+            "{}  app",
+            data_encoding::HEXLOWER.encode(&Sha256::digest(b"new executable"))
+        );
+        replace_executable(&b"new executable"[..], &sums, "app", &path).unwrap();
         let mut previous = String::new();
         running.read_to_string(&mut previous).unwrap();
         assert_eq!(previous, "old executable");
@@ -283,7 +399,11 @@ mod tests {
             0o755
         );
         assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 1);
-        assert!(replace_executable(b"bad", &directory).is_err());
+        assert!(replace_executable(&b"bad"[..], &sums, "app", &path).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), b"new executable");
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 1);
+        assert!(replace_executable(&b"new executable"[..], &sums, "app", &directory).is_err());
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 1);
         assert_eq!(std::fs::read(&path).unwrap(), b"new executable");
         std::fs::remove_dir_all(directory).unwrap();
     }
@@ -300,9 +420,41 @@ mod tests {
             "{}  student-mcp-linux-x64\n",
             data_encoding::HEXLOWER.encode(&Sha256::digest(b"release"))
         );
-        assert!(verify(b"release", &sums, "student-mcp-linux-x64").is_ok());
-        assert!(verify(b"modified", &sums, "student-mcp-linux-x64").is_err());
-        assert!(verify(b"release", &sums, "student-mcp-linux-arm64").is_err());
+        let mut output = Vec::new();
+        assert!(download_verified(
+            &b"release"[..],
+            &mut output,
+            &sums,
+            "student-mcp-linux-x64",
+            7
+        )
+        .is_ok());
+        assert_eq!(output, b"release");
+        assert!(download_verified(
+            &b"modified"[..],
+            std::io::sink(),
+            &sums,
+            "student-mcp-linux-x64",
+            8
+        )
+        .is_err());
+        assert!(download_verified(
+            &b"release"[..],
+            std::io::sink(),
+            &sums,
+            "student-mcp-linux-arm64",
+            7
+        )
+        .is_err());
+        assert!(download_verified(
+            &b"release"[..],
+            std::io::sink(),
+            &sums,
+            "student-mcp-linux-x64",
+            6
+        )
+        .unwrap_err()
+        .contains("too large"));
     }
 
     #[test]

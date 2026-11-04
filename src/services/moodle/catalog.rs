@@ -59,7 +59,7 @@ impl Catalog {
     }
 
     /// Search by function name, then description. Name matches come first.
-    pub fn search(&self, query: &str, limit: usize) -> Vec<CatalogEntry> {
+    pub fn search(&self, query: &str, limit: usize) -> Vec<&CatalogEntry> {
         let needle = query.trim().to_lowercase();
         let mut matched: Vec<(u8, &CatalogEntry)> = self
             .entries
@@ -84,7 +84,7 @@ impl Catalog {
         matched
             .into_iter()
             .take(limit.max(1))
-            .map(|(_, entry)| entry.clone())
+            .map(|(_, entry)| entry)
             .collect()
     }
 
@@ -140,6 +140,10 @@ mod tests {
         let catalog = Catalog::load();
         let results = catalog.search("core_enrol_get_users_courses", 5);
         assert_eq!(results[0].name, "core_enrol_get_users_courses");
+        assert!(std::ptr::eq(
+            results[0],
+            catalog.get(&results[0].name).unwrap()
+        ));
     }
 
     #[test]
@@ -154,6 +158,35 @@ mod tests {
             assert_eq!(entry.description, actual.description);
             assert_eq!(entry.write, actual.write);
             assert_eq!(entry.parameters, actual.parameters);
+        }
+    }
+
+    #[test]
+    #[ignore = "manual performance measurement"]
+    fn benchmark_catalog_search() {
+        use std::{hint::black_box, time::Instant};
+        let catalog = Catalog::load();
+        for query in ["", "course"] {
+            let start = Instant::now();
+            for _ in 0..1000 {
+                // The old search copied every matched entry, including schemas.
+                black_box(
+                    catalog
+                        .search(query, catalog.len())
+                        .into_iter()
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                );
+            }
+            let cloned = start.elapsed();
+            let start = Instant::now();
+            for _ in 0..1000 {
+                black_box(catalog.search(query, catalog.len()));
+            }
+            eprintln!(
+                "1000 searches {query:?}: cloned={cloned:?}, borrowed={:?}",
+                start.elapsed()
+            );
         }
     }
 

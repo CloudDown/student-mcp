@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use url::Url;
 pub(crate) mod catalog;
-mod download;
+pub(crate) mod download;
 
 const MOBILE_SERVICE: &str = "moodle_mobile_app";
 const TIMEOUT: Duration = Duration::from_secs(30);

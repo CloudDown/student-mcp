@@ -117,7 +117,9 @@ button{transition:background 140ms ease-out,transform 140ms ease-out}button:acti
 .language-control{position:absolute;top:max(1rem,env(safe-area-inset-top));right:max(1rem,env(safe-area-inset-right));z-index:10}
 .update-control{right:auto;left:max(1rem,env(safe-area-inset-left))}
 .update-control[hidden]{display:none}
+.update-label{color:var(--muted);font-size:.875rem;line-height:2.75rem;white-space:nowrap}
 .update-control>.icon-button{color:var(--blue)}
+.update-control>.icon-button[hidden]{display:none}
 .update-status{position:absolute;left:0;top:calc(100% + .5rem);width:min(18rem,calc(100vw - 2rem));padding:.75rem 1rem;border:1px solid var(--border);border-radius:1rem;background:#fff;box-shadow:var(--shadow);font-size:.875rem}
 .language-control>.icon-button{display:grid;place-items:center;background:#ffffffb3;border:1px solid var(--border);box-shadow:var(--shadow);color:var(--subtle)}
 .language-control svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
@@ -149,8 +151,9 @@ button{transition:background 140ms ease-out,transform 140ms ease-out}button:acti
   <button type="button" data-language="en" lang="en" aria-pressed="false">English<span aria-hidden="true">✓</span></button>
  </div>
 </div>
-<div id="update-control" class="language-control update-control" hidden>
- <button id="update-button" class="icon-button" type="button" aria-label="Install update" title="Install update"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg></button>
+<div id="update-control" class="language-control update-control">
+ <span id="update-label" class="update-label" role="status"></span>
+ <button id="update-button" class="icon-button" type="button" aria-label="Install update" title="Install update" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg></button>
  <div id="update-status" class="update-status" role="status" hidden></div>
 </div>
 <main class="app"><div id="screen" class="screen"></div></main>
@@ -175,6 +178,9 @@ const translations={
  'Student MCP':['MCP étudiant','MCP estudiante'],
  'Change language':['Changer de langue','Cambiar idioma'], 'Language':['Langue','Idioma'],
  'Install update':['Installer la mise à jour','Instalar actualización'],
+ 'Checking for updates…':['Vérification des mises à jour…','Buscando actualizaciones…'],
+ 'Up to date':['À jour','Actualizado'],
+ 'Update check failed':['Vérification impossible','No se pudo comprobar'],
  'Downloading update…':['Téléchargement de la mise à jour…','Descargando actualización…'],
  'Update ready. student-mcp will restart or open its installer.':['Mise à jour prête. student-mcp va redémarrer ou ouvrir son installateur.','Actualización lista. student-mcp se reiniciará o abrirá su instalador.'],
  ', selected':[', sélectionné',', seleccionada'],
@@ -466,8 +472,10 @@ function linkScreen(){const publicReady=state.tunnel.startsWith('Ready(');return
 function publicMessage(){if(!state.public||state.tunnel==='Stopped')return 'Public link is off. Turn the switch on to restore your stable HTTPS link through srv.us. No account needed.';if(state.tunnel.startsWith('Starting'))return 'Opening your stable HTTPS link through srv.us.';if(state.tunnel.startsWith('Reconnecting'))return 'Reconnecting to srv.us. Your saved link stays the same.';if(state.tunnel.startsWith('Failed'))return 'The public link was not created. Turn the switch on to try again.';return 'No service is connected yet. Turn the switch on to create the HTTPS link anyway.'}
 let updateState={},updateSubmitting=false,updateActionError='';
 function renderUpdate(){
- const u=updateState,button=$('update-button'),status=$('update-status');
- $('update-control').hidden=!u.available&&!u.installing&&!u.ready;
+ const u=updateState,button=$('update-button'),status=$('update-status'),text=$('update-label');
+ const showButton=!!(u.available||u.installing||u.ready);
+ button.hidden=!showButton;text.hidden=showButton;
+ text.textContent=(u.current?'v'+u.current:'…')+' · '+t(u.error?'Update check failed':u.checked&&!u.checking?'Up to date':'Checking for updates…');
  const label=t('Install update')+(u.latest?' · '+u.latest:'');
  button.title=label;button.setAttribute('aria-label',label);
  button.disabled=updateSubmitting||!!u.installing||!!u.ready;
