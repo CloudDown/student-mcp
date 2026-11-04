@@ -91,7 +91,7 @@ ne doit jamais entrer dans git.
 - Le verrou `profile.lock` sérialise les processus. Ne pas le retirer : deux
   Chrome sur le même `--user-data-dir` corrompent la session.
 - Les requêtes navigateur sont limitées à l’origine du compte et à
-  `/d2l/api/`, `/Mobl/` ou, pour Outlook, `/api/` `/owa/` `/ows/`. Pas de redirection suivie, pas de rejeu automatique
+  `/d2l/api/`, `/Mobl/`, Canvas `/api/v1/` `/files/`, ou Outlook `/api/` `/owa/` `/ows/`. Pas de redirection suivie, pas de rejeu automatique
   d’une écriture, taille de réponse bornée.
 - Brightspace : utiliser le jeton CSRF fourni par la page
   (`D2L…GetXsrfToken`, `XSRF.Token`). Ne pas en fabriquer un.
@@ -111,6 +111,7 @@ ne doit jamais entrer dans git.
 - `src/browser.rs` — profils Chromium par compte, CDP, login interactif
 - `src/resources/browser/` — pont mobile Omnivox et requête navigateur
 - `src/services/{moodle,omnivox,brightspace}/mod.rs` — connecteurs par service
+- `src/services/canvas.rs` — Canvas / ZoneCours, session navigateur, lecture seule
 - `src/services/mail.rs` — transfert Outlook (règle inbox, copie conservée, 5.7.520)
 - `src/services/moodle/download.rs` — cache de téléchargements Moodle
 - `src/services/moodle/catalog.rs` / `catalog/` — catalogue des fonctions Moodle et licences

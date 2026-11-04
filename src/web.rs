@@ -231,6 +231,7 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                 "/assets/brightspace.png" => {
                     Some(include_bytes!("resources/assets/brightspace-icon.png"))
                 }
+                "/assets/canvas.png" => Some(include_bytes!("resources/assets/canvas-icon.png")),
                 _ => None,
             };
             if let Some(image) = image {
@@ -257,7 +258,7 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
             }
         } else if request.method() == &Method::Get && path == "/state" {
             let mut accounts = Vec::new();
-            for service in ["moodle", "omnivox", "brightspace", "outlook"] {
+            for service in ["moodle", "omnivox", "brightspace", "outlook", "canvas"] {
                 for (id, url) in current.account_list(service) {
                     accounts.push(json!({"service":service,"id":id,"url":url,"enabled":current.service_enabled(service)}));
                 }
@@ -452,7 +453,7 @@ fn action(
         _ => {}
     }
     let service = get("service");
-    if !["moodle", "omnivox", "brightspace", "outlook"].contains(&service) {
+    if !["moodle", "omnivox", "brightspace", "outlook", "canvas"].contains(&service) {
         return Err("Unknown service".into());
     }
     if get("action") == "service_enabled" {
@@ -473,6 +474,7 @@ fn action(
         "brightspace" => settings.brightspace().map(|c| (c.base_url, c.token)),
         "omnivox" => settings.omnivox().map(|c| (c.base_url, c.token)),
         "outlook" => settings.outlook().map(|c| (c.base_url, c.token)),
+        "canvas" => settings.canvas().map(|c| (c.base_url, c.token)),
         _ => None,
     };
     if get("action") == "browser_connect" {
@@ -541,7 +543,7 @@ fn connection_action(args: &Value, pending: &mut Pending) -> Result<Value, Strin
         return Ok(json!({"message":message}));
     }
     let service = get("service");
-    if !["moodle", "omnivox", "brightspace", "outlook"].contains(&service) {
+    if !["moodle", "omnivox", "brightspace", "outlook", "canvas"].contains(&service) {
         return Err("Unknown service".into());
     }
     let id = if get("id").is_empty() {
@@ -555,6 +557,7 @@ fn connection_action(args: &Value, pending: &mut Pending) -> Result<Value, Strin
             "brightspace" => settings.brightspace().map(|c| (c.base_url, c.token)),
             "omnivox" => settings.omnivox().map(|c| (c.base_url, c.token)),
             "outlook" => settings.outlook().map(|c| (c.base_url, c.token)),
+            "canvas" => settings.canvas().map(|c| (c.base_url, c.token)),
             _ => None,
         };
         if let Some((_, token)) = &saved {
@@ -589,6 +592,7 @@ fn connection_action(args: &Value, pending: &mut Pending) -> Result<Value, Strin
             crate::brightspace::activate(&mut settings, get("url"), get("token"), allow_write)?
         }
         "outlook" => crate::mail::activate(&mut settings, get("url"), get("token"))?,
+        "canvas" => crate::canvas::activate(&mut settings, get("url"), get("token"))?,
         _ => {
             if get("token").is_empty() {
                 match crate::omnivox::activate_login(

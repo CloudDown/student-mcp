@@ -557,6 +557,8 @@ impl Browser {
                         MOBILE_LOGIN
                     } else if service == "outlook" {
                         "/mail/"
+                    } else if service == "canvas" {
+                        "/login/canvas"
                     } else {
                         "/d2l/home"
                     }
@@ -969,6 +971,29 @@ impl Browser {
                 return Err(RECONNECT.into());
             }
             self.profile.home = format!("{origin}/mail/");
+        } else if self.profile.service == "canvas" {
+            if origin != self.profile.origin
+                || (url.scheme() != "https" && !origin.starts_with("http://127.0.0.1"))
+            {
+                return Err(RECONNECT.into());
+            }
+            if url.path().contains("login") {
+                return Err(RECONNECT.into());
+            }
+            let user = self
+                .request(
+                    "GET",
+                    "/api/v1/users/self",
+                    None,
+                    None,
+                    false,
+                    2 * 1024 * 1024,
+                )?
+                .json()?;
+            if user.get("id").is_none_or(Value::is_null) {
+                return Err(RECONNECT.into());
+            }
+            self.profile.home = format!("{origin}/");
         } else {
             if origin != self.profile.origin
                 || !url.path().starts_with("/d2l/")
@@ -1068,6 +1093,7 @@ impl Browser {
                     || url.path().starts_with("/owa/")
                     || url.path().starts_with("/ows/")
             }
+            "canvas" => url.path().starts_with("/api/v1/") || url.path().starts_with("/files/"),
             _ => url.path().starts_with("/d2l/api/"),
         };
         if url.origin().ascii_serialization() != self.profile.origin || !allowed {
@@ -1214,6 +1240,7 @@ impl Login {
                 origin
             }
             "outlook" => crate::config::normalize_outlook_url(origin)?,
+            "canvas" => crate::config::normalize_canvas_url(origin)?,
             _ => return Err("Unknown school service.".into()),
         };
         if !origin.starts_with("https://") {
@@ -1329,6 +1356,12 @@ impl Login {
                         url: Some(url),
                         token: Some(token),
                         ..Default::default()
+                    });
+                }
+                "canvas" => {
+                    settings.canvas = Some(crate::config::CanvasSettings {
+                        url: Some(url),
+                        token: Some(token),
                     });
                 }
                 _ => return Err("Unknown service.".into()),

@@ -30,7 +30,7 @@ Launch it from the Start menu, Applications, or your app launcher. A local page 
 
 ## 2. Connect your school
 
-Click **Moodle**, **Omnivox** or **Brightspace**. Enter your school address, then **Connect with browser**. Sign in on the school site, including MFA if asked. Only a token or a private browser profile is saved — not your password.
+Click **Moodle**, **Omnivox**, **Brightspace** or **Canvas**. Enter your school address, then **Connect with browser**. Sign in on the school site, including MFA if asked. Only a token or a private browser profile is saved — not your password. Canvas uses that session cookie; it does not ask for a personal access token.
 
 If Chrome, Edge or Brave is already installed, that browser is used. A download is offered only if none is found, and only after you agree.
 
