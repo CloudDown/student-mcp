@@ -11,6 +11,7 @@ try {
   const html=readFileSync(new URL('../src/resources/web/index.html',import.meta.url),'utf8');
   const state={accounts:[],browser_login:null,verification:null,tunnel:'Idle',local:true,public:false,autostart:false,link:'',local_link:''};
   const actions=[];
+  let needsBrowser=false;
   await page.route('http://student.test/**',async route=>{
     const path=new URL(route.request().url()).pathname;
     if(path==='/')return route.fulfill({contentType:'text/html',body:html});
@@ -19,6 +20,7 @@ try {
     if(path==='/action'){
       const action=route.request().postDataJSON();actions.push(action);
       if(action.action==='browser_connect'){
+        if(needsBrowser&&!action.allow_browser_download)return route.fulfill({json:{browser_download_required:true}});
         state.browser_login={service:action.service,id:'fixture',state:'waiting',error:null,progress:{phase:'preparing'}};
         return route.fulfill({json:{browser_login:state.browser_login}});
       }
@@ -70,6 +72,17 @@ try {
   await page.getByRole('button',{name:'Other connection methods',exact:true}).click();
   await page.getByLabel('Password',{exact:true}).waitFor();
   assert.equal(await page.getByLabel('Site address',{exact:true}).inputValue(),'https://studium.umontreal.ca');
+  await page.getByRole('button',{name:'Back to services',exact:true}).click();
+  await page.getByRole('button',{name:'Moodle connect',exact:true}).click();
+  await page.getByLabel('Site address',{exact:true}).fill('https://moodle.polymtl.ca');
+  needsBrowser=true;
+  await page.getByRole('button',{name:'Connect with browser',exact:true}).click();
+  await page.getByRole('button',{name:'Not now',exact:true}).click();
+  assert.equal(actions.at(-1).allow_browser_download,undefined);
+  await page.getByRole('button',{name:'Connect with browser',exact:true}).click();
+  await page.getByRole('button',{name:'Download and continue',exact:true}).click();
+  assert.equal(actions.at(-1).allow_browser_download,true);
+  assert.equal(actions.at(-1).url,'https://moodle.polymtl.ca');
   assert.deepEqual(errors,[]);
   console.log('Browser UI passed: preparation, download progress, installation, sign-in, completion, manual fallback and cancellation.');
 } finally {await browser.close()}

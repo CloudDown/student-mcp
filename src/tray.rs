@@ -10,10 +10,6 @@ pub enum Command {
 /// Handle kept alive for the process lifetime of `student-mcp up`.
 pub struct Tray {
     receiver: Receiver<Command>,
-    #[cfg_attr(
-        not(any(target_os = "linux", target_os = "windows", target_os = "macos")),
-        allow(dead_code)
-    )]
     _native: Option<NativeTray>,
 }
 
