@@ -514,7 +514,7 @@ mod tests {
             }
             seen
         });
-        let settings = crate::config::Settings {
+        let mut settings = crate::config::Settings {
             omnivox: Some(crate::config::OmnivoxSettings {
                 url: Some(origin),
                 token: Some(
@@ -530,6 +530,10 @@ mod tests {
             }),
             ..Default::default()
         };
+        settings
+            .tools
+            .allow_changes
+            .insert("omnivox/omnivox".into(), true);
         (settings, worker)
     }
 

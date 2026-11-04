@@ -1280,19 +1280,22 @@ impl Login {
             let mut settings = crate::config::Settings::load().for_account(&self.service, &self.id);
             match self.service.as_str() {
                 "moodle" => {
-                    let allow_write = settings.moodle.as_ref().and_then(|s| s.allow_write);
+                    let allow = settings.changes_allowed("moodle");
                     settings.moodle = Some(crate::config::MoodleSettings {
                         url: Some(url),
                         token: Some(token),
-                        allow_write,
+                        allow_write: Some(allow),
                     });
+                    settings.remember_changes_allowed("moodle", allow);
                 }
                 "brightspace" => {
+                    let allow = settings.changes_allowed("brightspace");
                     settings.brightspace = Some(crate::config::BrightspaceSettings {
                         url: Some(url),
                         token: Some(token),
-                        allow_write: Some(true),
-                    })
+                        allow_write: Some(allow),
+                    });
+                    settings.remember_changes_allowed("brightspace", allow);
                 }
                 "omnivox" => {
                     settings.omnivox = Some(crate::config::OmnivoxSettings {
