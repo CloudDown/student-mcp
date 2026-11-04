@@ -1,4 +1,4 @@
-# Persistent browser sign-in (experimental)
+# Persistent browser sign-in
 
 Brightspace and Omnivox now offer **Connect with browser** on the local
 configuration page. Enter your school's HTTPS address, finish the normal
@@ -117,7 +117,7 @@ and Brightspace cookie/OAuth input. Moodle keeps its mobile token flow.
 - UI smoke: browser action authentication, invalid services/sites and cancellation.
 - Real institutional sign-in/MFA and long-term session duration still need testing
   with the account owner. Windows/macOS browser launches are not validated by the
-  Linux tests. A full Omnivox mobile login remains an experimental integration.
+  Linux tests. A full Omnivox mobile login still depends on the live college page.
 
 ```sh
 cargo test

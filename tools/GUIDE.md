@@ -44,7 +44,7 @@ automatically when configured. Turn it off to remove the startup entry.
 
 ## 2. Connecting a service
 
-**Brightspace / Omnivox: browser sign-in (experimental).** Enter your school's
+**Brightspace / Omnivox: browser sign-in.** Enter your school's
 address and choose **Connect with browser**. An installed Chromium-based browser
 (Chrome, Edge, Brave, Helium, …) opens the official sign-in page. If none is found,
 student-mcp asks permission before downloading a dedicated Chrome for Testing,
@@ -111,15 +111,12 @@ the next page. Prefer `brightspace_deadlines` for upcoming work. Sessions expire
 and must be replaced via **Change login**. The connector uses LP API 1.49 and LE
 API 1.82.
 
-Saved accounts have check, reconnect and disconnect actions. The assistant
-sees about a dozen read tools per connected service (courses, files, deadlines,
-grades, announcements, messages, search). **Advanced tools** on the home page
-unlocks the rest, including Moodle `ws_discover`, `ws_schema` and `ws_call`.
-**Allow changes** on the account page is required before any write reaches the
-school; the MCP client may still ask for confirmation. Legacy `allow_write:
-true` is migrated into Allow changes automatically; other existing accounts
-stay read-only until the student turns it on. The public link and saved tokens
-are unchanged.
+Saved accounts have check, reconnect and disconnect actions. Connected
+services expose their full tool list. Write tools keep `readOnlyHint: false`
+and `destructiveHint: true` so Claude or ChatGPT can ask before changing
+school data. Older `tools.advanced` / `tools.allow_changes` / `allow_write`
+fields are ignored on load and omitted on the next save. Credentials and the
+public link stay in place.
 
 Connection checks and manual sign-ins run in a background worker. The local
 status page, link settings and Quit remain available while the school responds.
@@ -171,8 +168,8 @@ see [coverage and remaining work](BRIGHTSPACE-COVERAGE.md).
 Target order: Moodle → Omnivox → Brightspace → monPortail/Brio.
 Only implemented connectors are displayed, without empty slots.
 
-**Status (v0.6.0):** Moodle and Brightspace are the stable student connectors.
-Omnivox remains experimental: login/MFA may still fail on real college portals.
+**Status (v0.6.0):** Moodle and Brightspace are the student connectors in
+regular use. Omnivox login/MFA can still fail on some college portals.
 
 - **Moodle** also covers installations such as StudiUM; it is not a separate
   platform. Each institution must enable the required mobile/Web Service access.

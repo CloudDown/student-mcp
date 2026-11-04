@@ -12,7 +12,7 @@ class ReadmeTests(unittest.TestCase):
         self.assertIn("without typing your school password into the chat", README)
         for name in ("Claude", "ChatGPT", "OpenCode"):
             self.assertIn(name, README)
-        self.assertIn("Omnivox is experimental", README)
+        self.assertNotIn("experimental", README.lower())
         self.assertIn("tools/GUIDE.md", README)
         self.assertNotRegex(README, r"https?://(www\.)?(x|twitter)\.com")
         for image in ("home.png", "moodle.png", "link.png", "omnivox.png"):

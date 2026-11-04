@@ -9,7 +9,7 @@ try {
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.addInitScript(()=>localStorage.setItem('student-mcp.language','en'));
   const html=readFileSync(new URL('../src/resources/web/index.html',import.meta.url),'utf8');
-  const state={accounts:[],browser_login:null,verification:null,tunnel:'Idle',local:true,public:false,autostart:false,advanced:false,link:'',local_link:''};
+  const state={accounts:[],browser_login:null,verification:null,tunnel:'Idle',local:true,public:false,autostart:false,link:'',local_link:''};
   const actions=[];
   let needsBrowser=false;
   await page.route('http://student.test/**',async route=>{
@@ -54,9 +54,7 @@ try {
   await page.getByRole('button',{name:'Other connection methods',exact:true}).click();
   await page.getByLabel('d2lSessionVal',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Back to services',exact:true}).click();
-  await page.getByText('Experimental',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Omnivox connect',exact:true}).click();
-  await page.getByText('Omnivox is experimental. College pages change; confirm important results in the official app.',{exact:true}).waitFor();
   await page.getByLabel('College address',{exact:true}).fill('https://college.omnivox.ca');
   await page.getByRole('button',{name:'Connect with browser',exact:true}).click();
   await page.getByRole('button',{name:'Cancel',exact:true}).click();
@@ -87,15 +85,11 @@ try {
   assert.equal(actions.at(-1).url,'https://moodle.polymtl.ca');
   await page.getByRole('button',{name:'Cancel',exact:true}).click();
   await page.getByRole('button',{name:'Back to services',exact:true}).click();
-  await page.getByRole('checkbox',{name:'Advanced tools',exact:true}).click();
-  assert.equal(actions.at(-1).action,'advanced_tools');
-  assert.equal(actions.at(-1).enabled,true);
-  state.accounts=[{id:'moodle',service:'moodle',url:'https://moodle.polymtl.ca',enabled:true,allow_changes:false}];
+  assert.equal(await page.getByRole('checkbox',{name:'Advanced tools'}).count(),0);
+  state.accounts=[{id:'moodle',service:'moodle',url:'https://moodle.polymtl.ca',enabled:true}];
   await page.evaluate(()=>refresh());
   await page.getByRole('button',{name:'Moodle manage connection',exact:true}).click();
-  await page.getByRole('checkbox',{name:'Allow changes',exact:true}).click();
-  assert.equal(actions.at(-1).action,'allow_changes');
-  assert.equal(actions.at(-1).enabled,true);
+  assert.equal(await page.getByRole('checkbox',{name:'Allow changes'}).count(),0);
   assert.deepEqual(errors,[]);
-  console.log('Browser UI passed: preparation, download progress, installation, sign-in, completion, manual fallback, cancellation, advanced tools and allow changes.');
+  console.log('Browser UI passed: preparation, download progress, installation, sign-in, completion, manual fallback and cancellation.');
 } finally {await browser.close()}

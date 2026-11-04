@@ -5,7 +5,7 @@ const {chromium}=await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(proc
 const html=readFileSync(new URL('../src/resources/web/index.html',import.meta.url),'utf8');
 const out=new URL('./screens/',import.meta.url);
 mkdirSync(out,{recursive:true});
-const state={accounts:[],browser_login:null,verification:null,tunnel:'Idle',local:true,public:false,autostart:false,advanced:false,link:'',local_link:'http://127.0.0.1:8420/mcp/your-link'};
+const state={accounts:[],browser_login:null,verification:null,tunnel:'Idle',local:true,public:false,autostart:false,link:'',local_link:'http://127.0.0.1:8420/mcp/your-link'};
 const browser=await chromium.launch({headless:true,executablePath:process.env.STUDENT_MCP_BROWSER});
 const page=await browser.newPage({viewport:{width:1540,height:866},deviceScaleFactor:2});
 await page.addInitScript(()=>localStorage.setItem('student-mcp.language','en'));
