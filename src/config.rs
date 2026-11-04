@@ -143,6 +143,28 @@ impl std::fmt::Debug for BrightspaceSettings {
     }
 }
 
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CanvasSettings {
+    pub url: Option<String>,
+    pub token: Option<String>,
+}
+
+impl std::fmt::Debug for CanvasSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CanvasSettings")
+            .field("url", &self.url)
+            .field("token", &"[redacted]")
+            .finish()
+    }
+}
+
+#[derive(Clone)]
+pub struct CanvasConfig {
+    pub base_url: String,
+    pub token: String,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ToolSettings {
@@ -167,6 +189,8 @@ pub struct Settings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub outlook: Option<MailSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub canvas: Option<CanvasSettings>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scale: Option<f32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub accounts: Vec<Account>,
@@ -190,6 +214,8 @@ pub struct Account {
     pub brightspace: Option<BrightspaceSettings>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outlook: Option<MailSettings>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canvas: Option<CanvasSettings>,
 }
 
 #[derive(Debug, Clone)]
@@ -262,6 +288,7 @@ impl Settings {
             "omnivox" => self.omnivox().map(|c| c.base_url),
             "brightspace" => self.brightspace().map(|c| c.base_url),
             "outlook" => self.outlook().map(|c| c.base_url),
+            "canvas" => self.canvas().map(|c| c.base_url),
             _ => None,
         };
         if let Some(url) = url {
@@ -274,6 +301,7 @@ impl Settings {
                     "omnivox" => account.omnivox.as_ref().and_then(|c| c.url.clone()),
                     "brightspace" => account.brightspace.as_ref().and_then(|c| c.url.clone()),
                     "outlook" => account.outlook.as_ref().and_then(|c| c.url.clone()),
+                    "canvas" => account.canvas.as_ref().and_then(|c| c.url.clone()),
                     _ => None,
                 };
                 if let Some(url) = url {
@@ -296,6 +324,7 @@ impl Settings {
                 "omnivox" => scoped.omnivox = account.and_then(|a| a.omnivox.clone()),
                 "brightspace" => scoped.brightspace = account.and_then(|a| a.brightspace.clone()),
                 "outlook" => scoped.outlook = account.and_then(|a| a.outlook.clone()),
+                "canvas" => scoped.canvas = account.and_then(|a| a.canvas.clone()),
                 _ => {}
             }
         }
@@ -425,6 +454,7 @@ impl Settings {
                     "omnivox" => root.omnivox = self.omnivox.clone(),
                     "brightspace" => root.brightspace = self.brightspace.clone(),
                     "outlook" => root.outlook = self.outlook.clone(),
+                    "canvas" => root.canvas = self.canvas.clone(),
                     _ => {}
                 }
             } else {
@@ -443,11 +473,13 @@ impl Settings {
                     outlook: (service == "outlook")
                         .then(|| self.outlook.clone())
                         .flatten(),
+                    canvas: (service == "canvas").then(|| self.canvas.clone()).flatten(),
                 };
                 if account.moodle.is_some()
                     || account.omnivox.is_some()
                     || account.brightspace.is_some()
                     || account.outlook.is_some()
+                    || account.canvas.is_some()
                 {
                     root.accounts.push(account);
                 }
@@ -538,6 +570,7 @@ impl Settings {
             "omnivox" => self.omnivox = None,
             "brightspace" => self.brightspace = None,
             "outlook" => self.outlook = None,
+            "canvas" => self.canvas = None,
             _ => {}
         }
     }
@@ -551,7 +584,7 @@ impl Settings {
 
     /// Persist service availability without touching any saved account credentials.
     pub fn set_service_enabled(service: &str, enabled: bool) -> Result<Self, String> {
-        if !["moodle", "omnivox", "brightspace"].contains(&service) {
+        if !["moodle", "omnivox", "brightspace", "canvas"].contains(&service) {
             return Err("Unknown service".into());
         }
         Self::update(|settings| {
@@ -571,7 +604,7 @@ impl Settings {
     }
 
     pub fn services_active(&self) -> Vec<String> {
-        ["moodle", "omnivox", "brightspace"]
+        ["moodle", "omnivox", "brightspace", "canvas"]
             .into_iter()
             .filter(|id| self.service_enabled(id) && !self.account_list(id).is_empty())
             .map(str::to_string)
@@ -631,6 +664,18 @@ impl Settings {
             token: token.to_string(),
             forward_to: saved.forward_to.clone(),
             forwarding: saved.forwarding,
+        })
+    }
+
+    pub fn canvas(&self) -> Option<CanvasConfig> {
+        let saved = self.canvas.as_ref()?;
+        let token = saved.token.as_deref()?.trim();
+        if token.is_empty() {
+            return None;
+        }
+        Some(CanvasConfig {
+            base_url: normalize_canvas_url(saved.url.as_deref()?).ok()?,
+            token: token.to_string(),
         })
     }
 }
@@ -790,6 +835,19 @@ pub fn normalize_outlook_url(input: &str) -> Result<String, String> {
     Err("Use https://outlook.office.com or your school Outlook address.".into())
 }
 
+pub fn normalize_canvas_url(input: &str) -> Result<String, String> {
+    let url = parse_site_url(input)?;
+    let host = url.host_str().unwrap_or("").to_ascii_lowercase();
+    if host == "127.0.0.1" || host == "localhost" || host == "::1" {
+        return Ok(url.origin().ascii_serialization());
+    }
+    match url.path().trim_end_matches('/') {
+        "" | "/login" | "/login/canvas" | "/courses" => {}
+        _ => return Err("Use your Canvas site address, e.g. https://zonecours2.hec.ca.".into()),
+    }
+    Ok(url.origin().ascii_serialization())
+}
+
 fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     let temp = path.with_extension(format!("json.tmp-{}", random_hex(8)));
@@ -943,6 +1001,7 @@ pub(crate) mod tests {
                 omnivox: None,
                 brightspace: None,
                 outlook: None,
+                canvas: None,
             });
         })
         .unwrap();
@@ -1081,6 +1140,19 @@ pub(crate) mod tests {
             "http://127.0.0.1:1234"
         );
         assert!(normalize_outlook_url("https://evil.example").is_err());
+    }
+
+    #[test]
+    fn canvas_urls_accept_the_site_root_and_zonecours() {
+        assert_eq!(
+            normalize_canvas_url("zonecours2.hec.ca").unwrap(),
+            "https://zonecours2.hec.ca"
+        );
+        assert_eq!(
+            normalize_canvas_url("https://school.instructure.com/login/canvas").unwrap(),
+            "https://school.instructure.com"
+        );
+        assert!(normalize_canvas_url("https://evil.example/not-canvas").is_err());
     }
 
     #[test]
@@ -1332,6 +1404,7 @@ pub(crate) mod tests {
                 }),
                 brightspace: None,
                 outlook: None,
+                canvas: None,
             });
             settings.save().unwrap();
             let mut moodle = Settings::load().for_account("moodle", "shared");

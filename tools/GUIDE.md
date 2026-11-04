@@ -55,6 +55,13 @@ copy stays in Outlook, then sends a test message to the mailbox. Error
 off to delete that rule. Mail transfer is local UI only; it is not an
 MCP tool.
 
+**Canvas.** Same browser sign-in as Brightspace. Enter the school Canvas
+address (ZoneCours HEC: `https://zonecours2.hec.ca`) and **Connect with
+browser**. student-mcp stores a private browser profile, not a personal
+access token (student tokens expire and are against Instructure policy).
+Read-only tools: courses, announcements, assignments and dates, grades,
+files and calendar.
+
 **Brightspace / Omnivox: browser sign-in.** Enter your school's
 address and choose **Connect with browser**. An installed Chromium-based browser
 (Chrome, Edge, Brave, Helium, …) opens the official sign-in page. If none is found,

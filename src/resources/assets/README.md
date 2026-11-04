@@ -37,3 +37,9 @@ the service only.
 downloaded on 2026-10-20 and rasterized at 256 × 256:
 https://s.brightspace.com/lib/branding/1.0.0/brightspace/favicon.ico
 The Brightspace brand belongs to D2L; its use here identifies the service only.
+
+`canvas-icon.png` is the square app symbol from
+[Simple Icons](https://simpleicons.org/) (CC0), downloaded on 2026-11-04:
+https://cdn.jsdelivr.net/npm/simple-icons@15.4.0/icons/canvas.svg
+Rasterized at 256 × 256 with Canvas red `#E72429`. The Canvas brand belongs
+to Instructure; its use here identifies the service only.

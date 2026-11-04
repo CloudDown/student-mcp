@@ -68,6 +68,14 @@ try {
   assert.equal(actions.at(-1).action,'cancel');
   assert.equal(state.accounts.length,1);
   await page.getByRole('button',{name:'Back to services',exact:true}).click();
+  await page.getByRole('button',{name:'Canvas connect',exact:true}).click();
+  await page.getByLabel('Site address',{exact:true}).fill('https://zonecours2.hec.ca');
+  assert.equal(await page.getByRole('button',{name:'Other connection methods'}).count(),0);
+  await page.getByRole('button',{name:'Connect with browser',exact:true}).click();
+  assert.equal(actions.at(-1).service,'canvas');
+  assert.equal(actions.at(-1).url,'https://zonecours2.hec.ca');
+  await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  await page.getByRole('button',{name:'Back to services',exact:true}).click();
   await page.getByRole('button',{name:'Moodle connect',exact:true}).click();
   await page.getByLabel('Site address',{exact:true}).fill('https://studium.umontreal.ca');
   assert.equal(await page.getByLabel('Password',{exact:true}).count(),0);
@@ -99,6 +107,7 @@ try {
   await page.getByRole('button',{name:'Back to services',exact:true}).click();
   needsBrowser=false;
   await page.getByRole('button',{name:'Mail transfer',exact:true}).click();
+  await page.getByLabel('Outlook address',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Connect with browser',exact:true}).click();
   assert.equal(actions.at(-1).action,'browser_connect');
   assert.equal(actions.at(-1).service,'outlook');

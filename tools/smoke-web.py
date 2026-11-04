@@ -105,8 +105,11 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         translated_tool_names = set(re.findall(
             rb"^ (\w+):\['[^']{20,}','[^']{20,}'\]", translations, re.M
         ))
+        assert b"canvas" in home and b"ZoneCours" in page
         logo_status, logo = request("/assets/moodle.png", auth=False)
         assert logo_status == 200 and logo.startswith(b"\x89PNG\r\n\x1a\n")
+        canvas_status, canvas = request("/assets/canvas.png", auth=False)
+        assert canvas_status == 200 and canvas.startswith(b"\x89PNG\r\n\x1a\n")
         icon_status, icon = request("/assets/app-icon.png", auth=False)
         assert icon_status == 200 and icon.startswith(b"\x89PNG\r\n\x1a\n")
         assert b'<link rel="icon" type="image/png" href="/assets/app-icon.png">' in page
