@@ -103,13 +103,14 @@ fn is_chromium_browser(path: &Path) -> bool {
         && !name.contains("safari")
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn parse_desktop_exec(contents: &str) -> Option<String> {
     contents
         .lines()
         .find_map(|line| line.trim().strip_prefix("Exec=").and_then(split_command))
 }
 
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[cfg(any(target_os = "windows", test))]
 fn parse_reg_sz(output: &str) -> Option<String> {
     output.lines().find_map(|line| {
         line.split_once("REG_SZ")
@@ -118,6 +119,7 @@ fn parse_reg_sz(output: &str) -> Option<String> {
     })
 }
 
+#[cfg(any(target_os = "linux", target_os = "windows", test))]
 fn split_command(command: &str) -> Option<String> {
     let command = command.trim();
     if let Some(rest) = command.strip_prefix('"') {
@@ -131,6 +133,7 @@ fn split_command(command: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+#[cfg(target_os = "linux")]
 fn resolve_command(command: &str) -> Option<PathBuf> {
     let path = PathBuf::from(command);
     if path.is_absolute() {
@@ -173,6 +176,7 @@ fn command_stdout(bin: &str, args: &[&str]) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+#[cfg(target_os = "linux")]
 fn linux_desktop_file(id: &str) -> Option<PathBuf> {
     let mut dirs = Vec::new();
     if let Some(home) = std::env::var_os("XDG_DATA_HOME") {
@@ -366,8 +370,22 @@ fn system_executable() -> Result<Option<PathBuf>, String> {
 
 fn executable() -> Result<PathBuf, String> {
     system_executable()?.or_else(install::available).ok_or_else(|| {
-        "No compatible browser is installed. Open student-mcp and choose Connect with browser to install one automatically.".into()
+        "No compatible browser is installed. Open student-mcp and choose Connect with browser to approve a browser download.".into()
     })
+}
+
+pub fn needs_download() -> Result<bool, String> {
+    Ok(system_executable()?.or_else(install::available).is_none())
+}
+
+fn download_permitted(installed: bool, consent: bool) -> Result<bool, String> {
+    if installed {
+        return Ok(false);
+    }
+    if consent {
+        return Ok(true);
+    }
+    Err("No compatible browser found. Approve the Chrome for Testing download in student-mcp, or install Chrome, Edge or Brave and try again.".into())
 }
 
 pub struct Reply {
@@ -1157,6 +1175,7 @@ impl Login {
         id: &str,
         origin: &str,
         previous: Option<&str>,
+        allow_download: bool,
     ) -> Result<Self, String> {
         let origin = match service {
             "moodle" => crate::config::normalize_moodle_url(origin)?,
@@ -1176,6 +1195,10 @@ impl Login {
         // Validate an explicit override before starting; installation is done by
         // the login worker so the local UI and Cancel stay responsive.
         let system_browser = system_executable()?;
+        let download = download_permitted(
+            system_browser.or_else(install::available).is_some(),
+            allow_download,
+        )?;
         let created = previous.filter(|s| is_profile(s)).is_none();
         let token = previous
             .filter(|s| is_profile(s))
@@ -1191,7 +1214,7 @@ impl Login {
         let service_owned = service.to_string();
         let worker = std::thread::spawn(move || {
             let outcome = (|| {
-                if system_browser.is_none() {
+                if download {
                     install::ensure(&stop, &worker_progress)?;
                 }
                 install::check_cancelled(&stop)?;
@@ -1356,6 +1379,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn installed_browser_is_preferred_and_download_requires_explicit_consent() {
+        assert!(!download_permitted(true, false).unwrap());
+        assert!(!download_permitted(true, true).unwrap());
+        assert!(download_permitted(false, false).is_err());
+        assert!(download_permitted(false, true).unwrap());
+    }
+
+    #[test]
     fn profile_wait_serializes_callers_and_can_be_cancelled_or_expire() {
         crate::config::tests::with_temp_config(|| {
             let path = crate::config::config_path().with_extension("profile-lock-test");
@@ -1458,7 +1489,7 @@ mod tests {
             ("brightspace", "http://school.example"),
             ("brightspace", "https://user:password@school.example"),
         ] {
-            assert!(Login::start(service, "test", origin, None).is_err());
+            assert!(Login::start(service, "test", origin, None, false).is_err());
         }
     }
 

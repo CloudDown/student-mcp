@@ -47,7 +47,7 @@ automatically when configured. Turn it off to remove the startup entry.
 **Brightspace / Omnivox: browser sign-in (experimental).** Enter your school's
 address and choose **Connect with browser**. An installed Chromium-based browser
 (Chrome, Edge, Brave, Helium, …) opens the official sign-in page. If none is found,
-student-mcp automatically downloads a dedicated Chrome for Testing on first use,
+student-mcp asks permission before downloading a dedicated Chrome for Testing,
 with download progress and cancellation. You can keep Safari or Firefox as your
 default browser; no manual browser installation is needed on supported systems.
 Complete login and MFA in the separate sign-in window. A dedicated per-account
@@ -330,6 +330,39 @@ student-mcp version
    reachable.
 
 ## Release maintenance
+
+### Optional publisher signatures
+
+Configure these **GitHub repository Actions secrets** (Settings → Secrets and
+variables → Actions). Never commit certificates, passwords or private keys.
+Without them, CI and packaging pass with unsigned Windows / ad-hoc macOS builds.
+When credentials are supplied, signing or notarization failures fail the build;
+there is no silent unsigned fallback. Use workflow dispatch to test packaging
+without publishing a release. Only a `v*` tag publishes a release.
+
+**Windows:** obtain an Authenticode code-signing certificate with its private key
+in an importable PFX from your certificate provider. Supply
+`WINDOWS_CERTIFICATE_BASE64` (base64 of the PFX) and
+`WINDOWS_CERTIFICATE_PASSWORD`. CI imports it into a temporary runner's user
+certificate store, signs both architectures and the setup file with SHA-256
+and a timestamp, verifies the signatures, then deletes the certificate/key.
+Hardware-only or cloud/HSM certificates need a provider-specific signing
+integration; a public `.cer` alone cannot sign. A signature does not immediately
+guarantee Windows SmartScreen reputation.
+
+**macOS:** enrol in the Apple Developer Program, create a **Developer ID
+Application** certificate and export it with its private key from Keychain as
+`.p12`. Supply `MACOS_CERTIFICATE_BASE64`, `MACOS_CERTIFICATE_PASSWORD` and
+`MACOS_SIGNING_IDENTITY` (full `Developer ID Application: Name (TEAMID)` string).
+For notarization also provide `APPLE_ID`, `APPLE_TEAM_ID` and
+`APPLE_APP_PASSWORD` (an app-specific password from your Apple account).
+CI uses a temporary keychain, signs binaries and nested apps inside out with
+hardened runtime/timestamps, notarizes and staples the installed app, installer,
+and DMG, then deletes the keychain. Checksums are generated **after** signing and
+stapling. PR jobs never import signing secrets.
+
+Missing secrets are supported; partially supplied or invalid credentials are
+errors. Test the signed downloads on clean native systems before publishing.
 
 Run checks from the repository root:
 

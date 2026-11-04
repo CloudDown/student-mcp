@@ -19,6 +19,27 @@ with (ROOT / "Cargo.toml").open("rb") as source:
 
 
 class DesktopTests(unittest.TestCase):
+    def test_optional_signing_and_notarization_fail_closed(self):
+        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(desktop.subprocess, "run") as run:
+            desktop.windows_sign(pathlib.Path("app.exe"))
+            desktop.notarize(pathlib.Path("app.dmg"))
+            run.assert_not_called()
+            desktop.macos_sign(pathlib.Path("app"))
+            self.assertIn("-", run.call_args.args[0])
+        with mock.patch.dict(os.environ, {"WINDOWS_SIGNING_THUMBPRINT":"fixture"}, clear=True), mock.patch.object(desktop.subprocess, "run") as run:
+            desktop.windows_sign(pathlib.Path("app.exe"))
+            self.assertEqual([c.args[0][1] for c in run.call_args_list], ["sign", "verify"])
+            self.assertIn("SHA256", run.call_args_list[0].args[0])
+        with mock.patch.dict(os.environ, {"MACOS_SIGNING_IDENTITY":"Developer ID fixture", "MACOS_NOTARY_PROFILE":"fixture"}, clear=True):
+            with mock.patch.object(desktop.subprocess, "run", return_value=SimpleNamespace(stdout='{"status":"Invalid"}')) as run:
+                with self.assertRaises(RuntimeError):
+                    desktop.notarize(pathlib.Path("app.dmg"))
+                self.assertEqual(run.call_count, 1)
+            with mock.patch.object(desktop.subprocess, "run", return_value=SimpleNamespace(stdout='{"status":"Accepted"}')) as run:
+                desktop.notarize(pathlib.Path("app.dmg"))
+                self.assertEqual([c.args[0][1:3] for c in run.call_args_list],
+                                 [["notarytool", "submit"], ["stapler", "staple"], ["stapler", "validate"]])
+
     def fixtures(self, root):
         paths = {}
         for architecture in ("x64", "arm64"):

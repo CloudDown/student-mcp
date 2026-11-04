@@ -489,7 +489,17 @@ fn action(
             .as_ref()
             .filter(|(old, _)| old.trim_end_matches('/') == url.trim_end_matches('/'))
             .map(|(_, token)| token.as_str());
-        *browser_login = Some(crate::browser::Login::start(service, &id, url, previous)?);
+        let allow_download = args["allow_browser_download"] == true;
+        if !allow_download && crate::browser::needs_download()? {
+            return Ok(json!({"browser_download_required":true}));
+        }
+        *browser_login = Some(crate::browser::Login::start(
+            service,
+            &id,
+            url,
+            previous,
+            allow_download,
+        )?);
         *pending = None;
         return Ok(json!({"browser_login":browser_login.as_ref().unwrap().status()}));
     }
