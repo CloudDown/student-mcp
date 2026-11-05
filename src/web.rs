@@ -387,9 +387,16 @@ enum ActionDispatch {
 }
 
 fn background_action(action: &str) -> bool {
+    // Browser-profile Outlook enable/disable is handled on the UI thread so the
+    // sign-in window can open. API/cookie sessions still use the worker.
+    if matches!(action, "mail_enable" | "mail_disable") {
+        return Settings::load()
+            .outlook()
+            .is_none_or(|config| !mail_uses_browser(&config));
+    }
     matches!(
         action,
-        "connect" | "check" | "verify" | "resend" | "disconnect" | "mail_enable" | "mail_disable"
+        "connect" | "check" | "verify" | "resend" | "disconnect"
     )
 }
 
@@ -458,6 +465,15 @@ fn action(
             }
             return Ok(json!({"message":"Cancelled"}));
         }
+        "mail_enable" | "mail_disable" => {
+            let enable = get("action") == "mail_enable";
+            if let Some(config) = Settings::load().outlook() {
+                if mail_uses_browser(&config) {
+                    return start_mail_browser(browser_login, pending, enable, get("forward_to"));
+                }
+            }
+            // Cookie/API sessions still use the background worker below.
+        }
         _ => {}
     }
     let service = get("service");
@@ -512,19 +528,73 @@ fn action(
         if !allow_download && crate::browser::needs_download()? {
             return Ok(json!({"browser_download_required":true}));
         }
+        let outlook = (service == "outlook" && !get("mailbox").is_empty()).then_some(
+            crate::browser::OutlookMailRequest {
+                mailbox: get("mailbox"),
+                forward_to: (!get("forward_to").is_empty()).then(|| get("forward_to")),
+                disable_forwarding: false,
+            },
+        );
         *browser_login = Some(crate::browser::Login::start(
             service,
             &id,
             url,
             previous,
             allow_download,
-            (service == "outlook" && !get("mailbox").is_empty()).then(|| get("mailbox")),
-            (service == "outlook" && !get("forward_to").is_empty()).then(|| get("forward_to")),
+            outlook,
         )?);
         *pending = None;
         return Ok(json!({"browser_login":browser_login.as_ref().unwrap().status()}));
     }
     Err("Unknown action".into())
+}
+
+fn mail_uses_browser(config: &crate::config::MailConfig) -> bool {
+    crate::browser::is_profile(&config.token)
+        || config.base_url == "https://outlook.cloud.microsoft"
+}
+
+fn start_mail_browser(
+    browser_login: &mut Option<crate::browser::Login>,
+    pending: &mut Option<(Settings, Box<PendingLogin>)>,
+    enable: bool,
+    forward_to: &str,
+) -> Result<Value, String> {
+    if browser_login
+        .as_ref()
+        .is_some_and(|login| login.state == "waiting" || login.running())
+    {
+        return Err("Finish or cancel the current browser sign-in first.".into());
+    }
+    let settings = Settings::load();
+    let config = settings
+        .outlook()
+        .ok_or("Connect Outlook before changing forwarding.")?;
+    let mailbox = config
+        .mailbox
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .ok_or("School mailbox missing. Reconnect Outlook with both addresses.")?;
+    if enable && forward_to.trim().is_empty() {
+        return Err("Enter the personal address that should receive forwarded mail.".into());
+    }
+    if crate::browser::needs_download()? {
+        return Ok(json!({"browser_download_required":true}));
+    }
+    *browser_login = Some(crate::browser::Login::start(
+        "outlook",
+        "outlook",
+        &config.base_url,
+        Some(&config.token),
+        false,
+        Some(crate::browser::OutlookMailRequest {
+            mailbox,
+            forward_to: enable.then_some(forward_to),
+            disable_forwarding: !enable,
+        }),
+    )?);
+    *pending = None;
+    Ok(json!({"browser_login":browser_login.as_ref().unwrap().status()}))
 }
 
 // Called only by the single connection worker, after the UI loop has checked

@@ -110,3 +110,20 @@ test('writes stop before sending if the origin changes or the official session s
   assert.equal((await page.context.browserRequest(page.input)).error,'reconnect');
   assert.equal(page.calls.length,0);
 });
+
+test('Canvas reads retain Link pagination without following redirects',async()=>{
+  const link='<https://school.example/api/v1/conversations?page=opaque%2Bnext>; rel="next"';
+  const calls=[];
+  const context={location:{origin:'https://school.example'},AbortSignal,TextDecoder,Uint8Array,
+    localStorage:{getItem:()=>null},document:{cookie:'',querySelector:()=>null},
+    fetch:async(path,options)=>{calls.push({path,options});return new Response('[]',{headers:{'lInK':link,'Content-Type':'application/json'}})}};
+  context.window=context;
+  vm.createContext(context);vm.runInContext(request,context);
+  const result=await context.browserRequest({origin:context.location.origin,path:'/api/v1/conversations?page=1',method:'GET',limit:1024});
+  assert.equal(result.link,link);
+  assert.equal(result.text,'[]');
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].options.redirect,'manual');
+  assert.equal(calls[0].options.credentials,'same-origin');
+  assert.equal(calls[0].options.method,'GET');
+});

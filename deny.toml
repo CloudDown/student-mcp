@@ -1,0 +1,37 @@
+# Developer/CI checks only. Keep every platform in the dependency graph so
+# Windows/macOS dependencies are audited even when this runs on Linux.
+[advisories]
+ignore = [
+    # zbus 5 split its name/wire crates out of the zbus repository. The Linux
+    # tray library ksni 0.3.7 still depends on zbus 5; its zbus 6 port is not
+    # released yet. Revisit when ksni updates.
+    { id = "RUSTSEC-2026-0370", reason = "zvariant is a transitive dependency of ksni 0.3.7, which has no zbus 6 release" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names is a transitive dependency of ksni 0.3.7, which has no zbus 6 release" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive is a transitive dependency of ksni 0.3.7, which has no zbus 6 release" },
+]
+
+[licenses]
+allow = [
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+# The embedded Moodle catalogue is GPL-3.0+, as declared in Cargo.toml.
+exceptions = [
+    { crate = "student-mcp", allow = ["GPL-3.0-or-later"] },
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

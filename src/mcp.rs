@@ -756,20 +756,29 @@ fn canvas_tool(settings: &Settings, name: &str, args: &Value) -> ToolResult {
     let client = crate::canvas::CanvasClient::new(config);
     match name {
         "canvas_status" => client.whoami(),
-        "canvas_my_courses" => client.courses(),
+        "canvas_my_courses" => client.courses_page(&crate::canvas::Page::from_args(args)?),
         "canvas_announcements" => {
             let courseid = match args.get("courseid") {
                 None | Some(Value::Null) => None,
                 _ => Some(require_integer(args, "courseid")?),
             };
-            client.announcements(courseid)
+            client.announcements(courseid, &crate::canvas::Page::from_args(args)?)
         }
-        "canvas_assignments" => client.assignments(require_integer(args, "courseid")?),
-        "canvas_grades" => client.grades(require_integer(args, "courseid")?),
-        "canvas_files" => client.files(require_integer(args, "courseid")?),
+        "canvas_assignments" => client.assignments(
+            require_integer(args, "courseid")?,
+            &crate::canvas::Page::from_args(args)?,
+        ),
+        "canvas_grades" => client.grades(
+            require_integer(args, "courseid")?,
+            &crate::canvas::Page::from_args(args)?,
+        ),
+        "canvas_files" => client.files(
+            require_integer(args, "courseid")?,
+            &crate::canvas::Page::from_args(args)?,
+        ),
         "canvas_file" => client.download_file(require_integer(args, "fileid")?, &file_query(args)?),
-        "canvas_calendar" => client.calendar(),
-        other => Err(format!("Unknown tool \"{other}\".")),
+        "canvas_calendar" => client.calendar(&crate::canvas::Page::from_args(args)?),
+        _ => crate::canvas::dispatch(&client, name, args),
     }
 }
 

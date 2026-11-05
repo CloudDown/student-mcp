@@ -8,6 +8,51 @@ use std::io::Read;
 use std::sync::Arc;
 use std::time::Duration;
 
+#[path = "canvas/student_tools.rs"]
+mod student_tools;
+pub(crate) use student_tools::dispatch;
+
+/// Canvas page values can be opaque bookmarks, not just integer offsets.
+pub(crate) struct Page {
+    page: String,
+    per_page: u64,
+}
+
+impl Default for Page {
+    fn default() -> Self {
+        Self {
+            page: "1".into(),
+            per_page: 50,
+        }
+    }
+}
+
+impl Page {
+    pub(crate) fn from_args(args: &Value) -> Result<Self, String> {
+        let page = match args.get("page") {
+            None => "1".into(),
+            Some(Value::String(page)) if valid_page(page) => page.clone(),
+            _ => {
+                return Err(
+                    "Provide page as a non-empty Canvas page string (max 1024 bytes).".into(),
+                )
+            }
+        };
+        let per_page = match args.get("per_page") {
+            None => 50,
+            Some(value) => value
+                .as_u64()
+                .filter(|n| (1..=100).contains(n))
+                .ok_or("Provide integer per_page between 1 and 100.")?,
+        };
+        Ok(Self { page, per_page })
+    }
+}
+
+fn valid_page(page: &str) -> bool {
+    !page.trim().is_empty() && page.len() <= 1024 && !page.chars().any(char::is_control)
+}
+
 pub struct CanvasClient {
     config: CanvasConfig,
     agent: ureq::Agent,
@@ -28,16 +73,26 @@ impl CanvasClient {
     }
 
     fn get(&self, path: &str, query: &[(&str, String)]) -> Result<Value, String> {
+        self.get_response(path, query).map(|(value, _)| value)
+    }
+
+    fn get_response(
+        &self,
+        path: &str,
+        query: &[(&str, String)],
+    ) -> Result<(Value, String), String> {
         if self.browser.enabled() {
             let mut url = url::Url::parse(&format!("{}{path}", self.config.base_url))
                 .map_err(|_| "Invalid Canvas URL.")?;
             url.query_pairs_mut()
                 .extend_pairs(query.iter().map(|(k, v)| (*k, v)));
-            return self
-                .browser
-                .request("GET", url.as_str(), None, None, false, 2 * 1024 * 1024)?
+            let reply =
+                self.browser
+                    .request("GET", url.as_str(), None, None, false, 2 * 1024 * 1024)?;
+            let link = reply.link.clone();
+            return reply
                 .json()
-                .map(|value| crate::redact::scrub(value, &self.config.token));
+                .map(|value| (crate::redact::scrub(value, &self.config.token), link));
         }
         let mut request = self
             .agent
@@ -48,8 +103,12 @@ impl CanvasClient {
             request = request.query(key, value);
         }
         let response = request.call().map_err(|error| match error {
-            ureq::Error::Status(401, _) | ureq::Error::Status(403, _) => {
+            ureq::Error::Status(401, _) => {
                 "Canvas session expired or refused. Sign in again in the app.".into()
+            }
+            ureq::Error::Status(403, _) => {
+                "Canvas denied access. Check course permissions; reconnect if the session expired."
+                    .into()
             }
             ureq::Error::Status(404, _) => "Canvas resource not found.".into(),
             ureq::Error::Status(code, _) => format!("Canvas returned HTTP error {code}."),
@@ -58,6 +117,7 @@ impl CanvasClient {
         if response.status() != 200 {
             return Err("Canvas redirected the request. Sign in again in the app.".into());
         }
+        let link = response.all("Link").join(", ");
         let mut bytes = Vec::new();
         response
             .into_reader()
@@ -69,7 +129,34 @@ impl CanvasClient {
         }
         let value: Value = serde_json::from_slice(&bytes)
             .map_err(|_| "Canvas did not return JSON. Sign in again in the app.".to_string())?;
-        Ok(crate::redact::scrub(value, &self.config.token))
+        Ok((crate::redact::scrub(value, &self.config.token), link))
+    }
+
+    /// One bounded API page. Never infer completion from the number of items:
+    /// Canvas can cap per_page or filter a page after pagination.
+    fn list(
+        &self,
+        path: &str,
+        query: &[(&str, String)],
+        page: &Page,
+        key: &str,
+    ) -> Result<Value, String> {
+        let mut query = query.to_vec();
+        query.extend([
+            ("page", page.page.clone()),
+            ("per_page", page.per_page.to_string()),
+        ]);
+        let (value, link) = self.get_response(path, &query)?;
+        if !value.is_array() {
+            return Err("Canvas did not return a list.".into());
+        }
+        let next_page = next_page(&self.config.base_url, path, &link)?;
+        if next_page.as_deref() == Some(&page.page) {
+            return Err("Canvas repeated the current page bookmark.".into());
+        }
+        Ok(
+            json!({key: value, "page": page.page, "per_page": page.per_page, "next_page": next_page}),
+        )
     }
 
     pub fn whoami(&self) -> Result<Value, String> {
@@ -85,62 +172,101 @@ impl CanvasClient {
     }
 
     pub fn courses(&self) -> Result<Value, String> {
-        let courses = self.get(
-            "/api/v1/courses",
-            &[
-                ("enrollment_state", "active".into()),
-                ("per_page", "50".into()),
-            ],
-        )?;
-        Ok(json!({ "courses": summarize_courses(&courses) }))
+        self.courses_page(&Page::default())
     }
 
-    pub fn announcements(&self, courseid: Option<i64>) -> Result<Value, String> {
-        let mut query = vec![("per_page", "20".into())];
+    pub(crate) fn courses_page(&self, page: &Page) -> Result<Value, String> {
+        let mut result = self.list(
+            "/api/v1/courses",
+            &[("enrollment_state", "active".into())],
+            page,
+            "courses",
+        )?;
+        result["courses"] = json!(summarize_courses(&result["courses"]));
+        Ok(result)
+    }
+
+    pub(crate) fn announcements(
+        &self,
+        courseid: Option<i64>,
+        page: &Page,
+    ) -> Result<Value, String> {
+        let mut query = vec![];
         if let Some(id) = courseid {
             require_id(id)?;
             query.push(("context_codes[]", format!("course_{id}")));
         } else {
-            let courses = self.courses()?;
-            let list = courses["courses"].as_array().cloned().unwrap_or_default();
-            for course in list.iter().take(10) {
-                if let Some(id) = course.get("id").and_then(Value::as_i64) {
-                    query.push(("context_codes[]", format!("course_{id}")));
+            let mut courses_page = Page::default();
+            let mut seen = std::collections::HashSet::new();
+            loop {
+                if !seen.insert(courses_page.page.clone()) || seen.len() > 20 {
+                    return Err("Canvas course pagination did not finish. Provide courseid for announcements.".into());
+                }
+                let courses = self.courses_page(&courses_page)?;
+                for course in as_list(&courses["courses"]) {
+                    if let Some(id) = course.get("id").and_then(Value::as_i64) {
+                        query.push(("context_codes[]", format!("course_{id}")));
+                    }
+                }
+                if query.len() > 100 {
+                    return Err(
+                        "More than 100 active courses. Provide courseid for announcements.".into(),
+                    );
+                }
+                match courses["next_page"].as_str() {
+                    Some(next) => courses_page.page = next.into(),
+                    None => break,
                 }
             }
-            if query.len() == 1 {
-                return Ok(json!({ "announcements": [] }));
+            if query.is_empty() {
+                return Ok(
+                    json!({ "announcements": [], "page": page.page, "per_page": page.per_page, "next_page": null }),
+                );
             }
         }
-        let posts = self.get("/api/v1/announcements", &query)?;
-        Ok(json!({ "announcements": summarize_announcements(&posts) }))
+        let mut result = self.list("/api/v1/announcements", &query, page, "announcements")?;
+        result["announcements"] = json!(summarize_announcements(&result["announcements"]));
+        result["date_scope"] = json!("Canvas default: announcements from the last two weeks.");
+        Ok(result)
     }
 
-    pub fn assignments(&self, courseid: i64) -> Result<Value, String> {
+    pub(crate) fn assignments(&self, courseid: i64, page: &Page) -> Result<Value, String> {
         require_id(courseid)?;
-        let assignments = self.get(
+        let mut result = self.list(
             &format!("/api/v1/courses/{courseid}/assignments"),
-            &[("per_page", "50".into()), ("order_by", "due_at".into())],
+            &[
+                ("order_by", "due_at".into()),
+                ("include[]", "submission".into()),
+            ],
+            page,
+            "assignments",
         )?;
-        Ok(json!({ "assignments": summarize_assignments(&assignments) }))
+        result["assignments"] = json!(summarize_assignments(&result["assignments"]));
+        Ok(result)
     }
 
-    pub fn grades(&self, courseid: i64) -> Result<Value, String> {
+    pub(crate) fn grades(&self, courseid: i64, page: &Page) -> Result<Value, String> {
         require_id(courseid)?;
-        let enrollments = self.get(
+        let mut result = self.list(
             &format!("/api/v1/courses/{courseid}/enrollments"),
-            &[("user_id", "self".into()), ("per_page", "10".into())],
+            &[("user_id", "self".into())],
+            page,
+            "grades",
         )?;
-        Ok(json!({ "grades": summarize_grades(&enrollments) }))
+        result["grades"] = json!(summarize_grades(&result["grades"]));
+        Ok(result)
     }
 
-    pub fn files(&self, courseid: i64) -> Result<Value, String> {
+    pub(crate) fn files(&self, courseid: i64, page: &Page) -> Result<Value, String> {
         require_id(courseid)?;
-        let files = self.get(
+        let mut result = self.list(
             &format!("/api/v1/courses/{courseid}/files"),
-            &[("per_page", "50".into()), ("sort", "updated_at".into())],
+            &[("sort", "updated_at".into())],
+            page,
+            "files",
         )?;
-        Ok(json!({ "files": summarize_files(&files) }))
+        result["files"] = json!(summarize_files(&result["files"]));
+        Ok(result)
     }
 
     pub fn download_file(
@@ -213,10 +339,56 @@ impl CanvasClient {
         Ok(result)
     }
 
-    pub fn calendar(&self) -> Result<Value, String> {
-        let events = self.get("/api/v1/users/self/upcoming_events", &[])?;
-        Ok(json!({ "events": summarize_events(&events) }))
+    pub(crate) fn calendar(&self, page: &Page) -> Result<Value, String> {
+        let mut result = self.list("/api/v1/users/self/upcoming_events", &[], page, "events")?;
+        result["events"] = json!(summarize_events(&result["events"]));
+        result["scope"] = json!("Canvas upcoming-events window, not the full calendar history.");
+        Ok(result)
     }
+}
+
+fn next_page(origin: &str, path: &str, link: &str) -> Result<Option<String>, String> {
+    for part in link.split(',') {
+        let Some((target, parameters)) = part.trim().split_once('>') else {
+            continue;
+        };
+        let is_next = parameters
+            .split(';')
+            .filter_map(|p| p.trim().split_once('='))
+            .any(|(key, value)| {
+                key.trim().eq_ignore_ascii_case("rel")
+                    && value
+                        .trim()
+                        .trim_matches('"')
+                        .split_whitespace()
+                        .any(|rel| rel == "next")
+            });
+        if !is_next {
+            continue;
+        }
+        let base = url::Url::parse(origin).map_err(|_| "Invalid Canvas URL.")?;
+        let url = target
+            .strip_prefix('<')
+            .and_then(|s| base.join(s).ok())
+            .ok_or("Canvas returned an invalid next-page link.")?;
+        // Only extract the bookmark. Never fetch a server-supplied URL or copy
+        // its credentials, filters, or impersonation parameters into a request.
+        if url.origin() != base.origin()
+            || url.path().trim_end_matches(".json") != path
+            || !url.username().is_empty()
+            || url.password().is_some()
+        {
+            return Err("Canvas returned a next-page link outside this endpoint.".into());
+        }
+        let page = url
+            .query_pairs()
+            .find(|(key, _)| key == "page")
+            .map(|(_, value)| value.into_owned())
+            .filter(|value| valid_page(value))
+            .ok_or("Canvas returned an unsupported next-page bookmark.".to_string())?;
+        return Ok(Some(page));
+    }
+    Ok(None)
 }
 
 fn require_id(id: i64) -> Result<(), String> {
@@ -254,6 +426,9 @@ fn summarize_announcements(value: &Value) -> Vec<Value> {
                 "title": post.get("title"),
                 "posted": post.get("posted_at"),
                 "course": post.get("context_code"),
+                "message": post.get("message"),
+                "html_url": post.get("html_url"),
+                "attachments": post.get("attachments"),
             })
         })
         .collect()
@@ -268,6 +443,15 @@ fn summarize_assignments(value: &Value) -> Vec<Value> {
                 "name": item.get("name"),
                 "due": item.get("due_at"),
                 "points": item.get("points_possible"),
+                "description": item.get("description"),
+                "submission_types": item.get("submission_types"),
+                "submission": item.get("submission"),
+                "html_url": item.get("html_url"),
+                "unlock_at": item.get("unlock_at"),
+                "lock_at": item.get("lock_at"),
+                "locked_for_user": item.get("locked_for_user"),
+                "lock_explanation": item.get("lock_explanation"),
+                "is_quiz_assignment": item.get("is_quiz_assignment"),
             })
         })
         .collect()
@@ -307,6 +491,10 @@ fn summarize_events(value: &Value) -> Vec<Value> {
         .map(|event| {
             json!({
                 "title": event.get("title"),
+                "id": event.get("id"),
+                "description": event.get("description"),
+                "context_code": event.get("context_code"),
+                "assignment": event.get("assignment"),
                 "start": event.get("start_at"),
                 "end": event.get("end_at"),
                 "type": event.get("type"),
@@ -317,16 +505,36 @@ fn summarize_events(value: &Value) -> Vec<Value> {
 
 pub fn tools() -> Vec<Value> {
     let course = json!({"type":"integer","minimum":1});
-    vec![
+    let mut tools = vec![
         json!({"name":"canvas_status","description":"Check the connected Canvas account.","annotations":{"readOnlyHint":true}}),
         json!({"name":"canvas_my_courses","description":"List the student's active Canvas courses.","annotations":{"readOnlyHint":true}}),
-        json!({"name":"canvas_announcements","description":"Course announcements. Pass courseid to limit to one course.","inputSchema":{"type":"object","properties":{"courseid":course}},"annotations":{"readOnlyHint":true}}),
-        json!({"name":"canvas_assignments","description":"Assignments and due dates for a Canvas course.","inputSchema":{"type":"object","properties":{"courseid":course},"required":["courseid"]},"annotations":{"readOnlyHint":true}}),
+        json!({"name":"canvas_announcements","description":"Recent course announcements with full message HTML (Canvas defaults to the last two weeks). Pass courseid to limit to one course. Older announcements can be read by topicid with canvas_discussion.","inputSchema":{"type":"object","properties":{"courseid":course}},"annotations":{"readOnlyHint":true}}),
+        json!({"name":"canvas_assignments","description":"Assignments, full instructions, own submission summary and due dates for a Canvas course. Use canvas_assignment for the rubric and canvas_assignment_status for feedback/history.","inputSchema":{"type":"object","properties":{"courseid":course},"required":["courseid"]},"annotations":{"readOnlyHint":true}}),
         json!({"name":"canvas_grades","description":"Visible grades for the connected student in a Canvas course.","inputSchema":{"type":"object","properties":{"courseid":course},"required":["courseid"]},"annotations":{"readOnlyHint":true}}),
         json!({"name":"canvas_files","description":"Files in a Canvas course. Pass file id to canvas_file to read a document or obtain a user-openable PDF link in links.download; do not share internal file URLs.","inputSchema":{"type":"object","properties":{"courseid":course},"required":["courseid"]},"annotations":{"readOnlyHint":true}}),
         json!({"name":"canvas_file","description":"Read a Canvas file using fileid from canvas_files. For a user-openable PDF link, use format=file and share links.download; if no link is returned, say so. PDF: original file by default. If Canvas stores the file off-site, open it on the school site instead.","inputSchema":{"type":"object","properties":{"fileid":{"type":"integer","minimum":1},"format":{"type":"string","enum":["file","text","images"]},"find":{"type":"string"},"page_from":{"type":"integer","minimum":1},"page_to":{"type":"integer","minimum":1}},"required":["fileid"]},"annotations":{"readOnlyHint":true}}),
         json!({"name":"canvas_calendar","description":"Upcoming Canvas calendar events for the student.","annotations":{"readOnlyHint":true}}),
-    ]
+    ];
+    for tool in &mut tools {
+        if matches!(
+            tool["name"].as_str(),
+            Some(
+                "canvas_my_courses"
+                    | "canvas_announcements"
+                    | "canvas_assignments"
+                    | "canvas_grades"
+                    | "canvas_files"
+                    | "canvas_calendar"
+            )
+        ) {
+            if tool.get("inputSchema").is_none() {
+                tool["inputSchema"] = json!({"type":"object","properties":{}});
+            }
+            student_tools::add_paging(tool);
+        }
+    }
+    tools.extend(student_tools::tools());
+    tools
 }
 
 pub fn activate(
@@ -355,6 +563,10 @@ pub fn activate(
     *settings = updated;
     Ok("Canvas connected.".into())
 }
+
+#[cfg(test)]
+#[path = "canvas/tests.rs"]
+mod student_tests;
 
 #[cfg(test)]
 mod tests {
@@ -398,6 +610,22 @@ mod tests {
             "canvas_files",
             "canvas_file",
             "canvas_calendar",
+            "canvas_course",
+            "canvas_modules",
+            "canvas_module_items",
+            "canvas_pages",
+            "canvas_page",
+            "canvas_assignment",
+            "canvas_assignment_status",
+            "canvas_quizzes",
+            "canvas_quiz_status",
+            "canvas_discussions",
+            "canvas_discussion",
+            "canvas_discussion_entries",
+            "canvas_discussion_replies",
+            "canvas_conversations",
+            "canvas_conversation",
+            "canvas_todo",
         ] {
             assert!(
                 names.iter().any(|name| name == required),
@@ -427,20 +655,29 @@ mod tests {
         assert_eq!(client.whoami().unwrap()["id"], 9);
         assert_eq!(client.courses().unwrap()["courses"][0]["code"], "INF100");
         assert_eq!(
-            client.announcements(Some(1)).unwrap()["announcements"][0]["title"],
+            client.announcements(Some(1), &Page::default()).unwrap()["announcements"][0]["title"],
             "Hello"
         );
         assert_eq!(
-            client.assignments(1).unwrap()["assignments"][0]["due"],
+            client.assignments(1, &Page::default()).unwrap()["assignments"][0]["due"],
             "2026-02-01"
         );
-        assert_eq!(client.grades(1).unwrap()["grades"][0]["score"], 18);
-        assert_eq!(client.files(1).unwrap()["files"][0]["id"], 4);
+        assert_eq!(
+            client.grades(1, &Page::default()).unwrap()["grades"][0]["score"],
+            18
+        );
+        assert_eq!(
+            client.files(1, &Page::default()).unwrap()["files"][0]["id"],
+            4
+        );
         let file = client
             .download_file(4, &crate::delivery::FileQuery::default())
             .unwrap();
         assert!(file["filename"].as_str().unwrap().contains("notes"));
-        assert_eq!(client.calendar().unwrap()["events"][0]["title"], "Exam");
+        assert_eq!(
+            client.calendar(&Page::default()).unwrap()["events"][0]["title"],
+            "Exam"
+        );
         worker.join().unwrap();
     }
 

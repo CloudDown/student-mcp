@@ -393,6 +393,7 @@ pub struct Reply {
     pub status: u16,
     pub mime: String,
     pub disposition: String,
+    pub link: String,
     pub bytes: Vec<u8>,
 }
 
@@ -920,8 +921,9 @@ impl Browser {
         action: &str,
         email: &str,
         to: &str,
+        enable: bool,
     ) -> Result<String, String> {
-        let args = json!([action, email, to]);
+        let args = json!([action, email, to, enable]);
         let result = self.evaluate(format!(
             "{}\noutlookForwarding(...{args})",
             include_str!("resources/browser/outlook.js")
@@ -934,8 +936,11 @@ impl Browser {
         cancelled: &AtomicBool,
         email: &str,
         to: &str,
+        enable: bool,
+        progress: &Arc<Mutex<install::Progress>>,
     ) -> Result<(), String> {
         let until = Instant::now() + Duration::from_secs(180);
+        let mut stage_started = Instant::now();
         let mut stage = 0;
         let mut submitted = false;
         while Instant::now() < until {
@@ -953,28 +958,42 @@ impl Browser {
             }
             match stage {
                 0 => {
-                    if self.outlook_forwarding_step("account", email, to)? == "opened" {
-                        stage = 1
+                    progress.lock().unwrap().phase = "outlook-account";
+                    if self.outlook_forwarding_step("account", email, to, enable)? == "opened" {
+                        stage = 1;
+                        stage_started = Instant::now();
+                    } else if stage_started.elapsed() > Duration::from_secs(20) {
+                        return Err(
+                            "Outlook account menu was not found. Forwarding was not changed."
+                                .into(),
+                        );
                     }
                 }
                 1 => {
-                    if self.outlook_forwarding_step("identity", email, to)? == "verified" {
+                    progress.lock().unwrap().phase = "outlook-identity";
+                    if self.outlook_forwarding_step("identity", email, to, enable)? == "verified" {
                         stage = 2;
+                        stage_started = Instant::now();
                         self.call("Page.navigate", json!({"url":"https://outlook.cloud.microsoft/mail/options/mail/forwarding"}))?;
+                    } else if stage_started.elapsed() > Duration::from_secs(20) {
+                        return Err("Outlook did not confirm the school address in the account menu. Forwarding was not changed.".into());
                     }
                 }
                 2 => {
-                    let state = self.outlook_forwarding_step("read", email, to)?;
+                    progress.lock().unwrap().phase = "outlook-settings";
+                    let state = self.outlook_forwarding_step("read", email, to, enable)?;
                     if state == "verified" {
                         stage = 3;
+                        stage_started = Instant::now();
                         self.call("Page.navigate", json!({"url":"https://outlook.cloud.microsoft/mail/options/mail/forwarding"}))?;
                     } else if state == "ready" && !submitted {
                         // Only one write attempt. An ambiguous result must be read
                         // back, never blindly replayed.
-                        let result = self.outlook_forwarding_step("write", email, to)?;
+                        let result = self.outlook_forwarding_step("write", email, to, enable)?;
                         if result == "submitted" {
                             submitted = true;
                             stage = 3;
+                            stage_started = Instant::now();
                             // Allow the app's own save request to complete before
                             // reloading; the readback is still the success gate.
                             std::thread::sleep(Duration::from_secs(2));
@@ -982,11 +1001,21 @@ impl Browser {
                         } else if result == "no-save" {
                             return Err("Outlook did not expose an unambiguous Save button. Forwarding was not confirmed.".into());
                         }
+                    } else if stage_started.elapsed() > Duration::from_secs(60) {
+                        return Err("Outlook forwarding settings were not available. Complete any additional sign-in in the browser; forwarding was not confirmed.".into());
                     }
                 }
                 3 => {
-                    if self.outlook_forwarding_step("read", email, to)? == "verified" {
+                    progress.lock().unwrap().phase = "outlook-verify";
+                    if self.outlook_forwarding_step("read", email, to, enable)? == "verified" {
                         stage = 4
+                    } else if stage_started.elapsed() > Duration::from_secs(35) {
+                        return Err(if enable {
+                            "Outlook did not retain the forwarding address and copy setting after reload. Forwarding was not confirmed."
+                        } else {
+                            "Outlook still shows forwarding enabled after reload. Forwarding was not turned off."
+                        }
+                        .into());
                     }
                 }
                 _ => {
@@ -999,7 +1028,10 @@ impl Browser {
             }
             std::thread::sleep(Duration::from_millis(750));
         }
-        Err("Outlook forwarding was not verified. Check the account, any extra authentication prompt, and the forwarding settings before retrying.".into())
+        Err(
+            "Outlook sign-in or forwarding verification timed out; forwarding was not confirmed."
+                .into(),
+        )
     }
 
     fn probe(&mut self) -> Result<(), String> {
@@ -1064,8 +1096,8 @@ impl Browser {
                 let Some(identity) = self.profile.identity.clone() else {
                     return Err(RECONNECT.into());
                 };
-                if self.outlook_forwarding_step("account", &identity, "")? != "opened"
-                    || self.outlook_forwarding_step("identity", &identity, "")? != "verified"
+                if self.outlook_forwarding_step("account", &identity, "", true)? != "opened"
+                    || self.outlook_forwarding_step("identity", &identity, "", true)? != "verified"
                 {
                     return Err(RECONNECT.into());
                 }
@@ -1281,6 +1313,7 @@ impl Browser {
             status: value["status"].as_u64().ok_or("Missing HTTP status.")? as u16,
             mime: value["mime"].as_str().unwrap_or("").into(),
             disposition: value["disposition"].as_str().unwrap_or("").into(),
+            link: value["link"].as_str().unwrap_or("").into(),
             bytes,
         })
     }
@@ -1359,6 +1392,13 @@ fn outlook_login_url(home: &str, mailbox_hint: Option<&str>) -> Result<String, S
 
 type LoginOutcome = Result<(String, String, Option<String>, Option<String>), String>;
 
+/// Outlook-only options for browser sign-in and forwarding setup.
+pub struct OutlookMailRequest<'a> {
+    pub mailbox: &'a str,
+    pub forward_to: Option<&'a str>,
+    pub disable_forwarding: bool,
+}
+
 pub struct Login {
     pub service: String,
     pub id: String,
@@ -1380,8 +1420,7 @@ impl Login {
         origin: &str,
         previous: Option<&str>,
         allow_download: bool,
-        mailbox_hint: Option<&str>,
-        forward_to: Option<&str>,
+        outlook: Option<OutlookMailRequest<'_>>,
     ) -> Result<Self, String> {
         let origin = match service {
             "moodle" => crate::config::normalize_moodle_url(origin)?,
@@ -1400,17 +1439,32 @@ impl Login {
         if !origin.starts_with("https://") {
             return Err("Browser login requires an HTTPS school address.".into());
         }
-        let mailbox_hint = if service == "outlook" {
-            mailbox_hint.map(outlook_mailbox_hint).transpose()?
+        let (mailbox_hint, forward_to, disable_forwarding) = if service == "outlook" {
+            match outlook {
+                Some(OutlookMailRequest {
+                    mailbox,
+                    forward_to,
+                    disable_forwarding,
+                }) => {
+                    let mailbox = Some(outlook_mailbox_hint(mailbox)?);
+                    let forward_to = if disable_forwarding {
+                        None
+                    } else {
+                        forward_to
+                            .map(crate::mail::normalize_forward_to)
+                            .transpose()?
+                    };
+                    if forward_to.is_some() && mailbox.is_none() {
+                        return Err(
+                            "Enter the school Outlook email before enabling forwarding.".into()
+                        );
+                    }
+                    (mailbox, forward_to, disable_forwarding)
+                }
+                None => (None, None, false),
+            }
         } else {
-            None
-        };
-        let forward_to = if service == "outlook" {
-            forward_to
-                .map(crate::mail::normalize_forward_to)
-                .transpose()?
-        } else {
-            None
+            (None, None, false)
         };
         // Validate an explicit override before starting; installation is done by
         // the login worker so the local UI and Cancel stay responsive.
@@ -1448,19 +1502,27 @@ impl Login {
                     &stop,
                 )?;
                 worker_progress.lock().unwrap().phase = "signin";
-                let forwarded =
-                    if service_owned == "outlook" && forward_to.is_some() && mailbox_hint.is_some()
-                    {
-                        browser.wait_outlook_forwarding(
-                            &stop,
-                            mailbox_hint.as_deref().unwrap(),
-                            forward_to.as_deref().unwrap(),
-                        )?;
+                let forwarded = if service_owned == "outlook"
+                    && mailbox_hint.is_some()
+                    && (forward_to.is_some() || disable_forwarding)
+                {
+                    let enable = !disable_forwarding;
+                    browser.wait_outlook_forwarding(
+                        &stop,
+                        mailbox_hint.as_deref().unwrap(),
+                        forward_to.as_deref().unwrap_or(""),
+                        enable,
+                        &worker_progress,
+                    )?;
+                    if enable {
                         forward_to.clone()
                     } else {
-                        browser.wait_ready(&stop, Duration::from_secs(300))?;
                         None
-                    };
+                    }
+                } else {
+                    browser.wait_ready(&stop, Duration::from_secs(300))?;
+                    None
+                };
                 if let Some(sso) = browser.moodle_sso.as_mut() {
                     let token = sso.token.take().ok_or(moodle::UNAVAILABLE)?;
                     let client = crate::moodle::MoodleClient::new(&crate::config::MoodleConfig {
@@ -1537,12 +1599,17 @@ impl Login {
                     })
                 }
                 "outlook" => {
+                    let previous = settings.outlook.clone();
                     settings.outlook = Some(crate::config::MailSettings {
                         url: Some(url),
                         token: Some(token),
-                        mailbox,
+                        mailbox: mailbox
+                            .or_else(|| previous.as_ref().and_then(|p| p.mailbox.clone())),
+                        // Disable clears the active flag but keeps the last destination
+                        // so the diagram can turn forwarding back on without retyping.
                         forwarding: forwarded.is_some(),
-                        forward_to: forwarded,
+                        forward_to: forwarded
+                            .or_else(|| previous.as_ref().and_then(|p| p.forward_to.clone())),
                     });
                 }
                 "canvas" => {
@@ -1746,7 +1813,7 @@ mod tests {
             ("brightspace", "http://school.example"),
             ("brightspace", "https://user:password@school.example"),
         ] {
-            assert!(Login::start(service, "test", origin, None, false, None, None).is_err());
+            assert!(Login::start(service, "test", origin, None, false, None).is_err());
         }
     }
 

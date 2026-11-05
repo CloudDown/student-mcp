@@ -65,7 +65,8 @@ async function browserRequest(input) {
     const bytes = new Uint8Array(size); let offset = 0;
     for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
     const result = {status: response.status, mime: response.headers.get('content-type') || '',
-      disposition: response.headers.get('content-disposition') || ''};
+      disposition: response.headers.get('content-disposition') || '',
+      link: response.headers.get('link') || ''};
     if (input.binary) {
       let text = '';
       for (let i = 0; i < bytes.length; i += 8192) text += String.fromCharCode(...bytes.subarray(i, i + 8192));

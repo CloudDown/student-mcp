@@ -19,11 +19,9 @@ try {
     if(path==='/update')return route.fulfill({json:{available:false}});
     if(path==='/action'){
       const action=route.request().postDataJSON();actions.push(action);
-      if(action.action==='mail_enable'){
-        if((action.forward_to||'').includes('gmail')){
-          return route.fulfill({json:{error:'Your school blocks automatic forwarding.'},status:400});
-        }
-        return route.fulfill({json:{message:'Forwarding on'}});
+      if(action.action==='mail_enable'||action.action==='mail_disable'){
+        state.browser_login={service:'outlook',id:'outlook',state:'waiting',error:null,progress:{phase:action.action==='mail_disable'?'outlook-verify':'outlook-settings'}};
+        return route.fulfill({json:{browser_login:state.browser_login}});
       }
       if(action.action==='browser_connect'){
         if(needsBrowser&&!action.allow_browser_download)return route.fulfill({json:{browser_download_required:true}});
@@ -143,10 +141,11 @@ try {
   assert.equal(await page.getByLabel('Personal mail',{exact:true}).inputValue(),'you@gmail.com');
   await page.getByLabel('Personal mail',{exact:true}).fill('you@gmail.com');
   await page.getByRole('button',{name:'Turn on forwarding',exact:true}).click();
-  await page.locator('.mail-arrow.blocked').waitFor();
-  await page.getByText('Your school blocks automatic forwarding.',{exact:true}).waitFor();
-  assert.equal(await page.locator('.mail-arrow.blocked').count(),1);
-  state.mail={connected:true,forwarding:true,forward_to:'you@gmail.com',mailbox:'student@school.edu',url:'https://outlook.office.com'};
+  assert.equal(actions.at(-1).action,'mail_enable');
+  assert.equal(actions.at(-1).forward_to,'you@gmail.com');
+  await page.getByText('Setting up forwarding in Outlook…',{exact:true}).waitFor();
+  state.browser_login={service:'outlook',id:'outlook',state:'connected'};
+  state.mail={connected:true,forwarding:true,forward_to:'you@gmail.com',mailbox:'student@school.edu',url:'https://outlook.cloud.microsoft'};
   state.notice=null;
   await page.evaluate(()=>{state.notice=null;return refresh()});
   await page.getByText('Forwarding on',{exact:true}).waitFor();
@@ -159,6 +158,7 @@ try {
   await page.getByText('Mail de l’école',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Désactiver',exact:true}).click();
   assert.equal(actions.at(-1).action,'mail_disable');
+  await page.getByText('Vérification du transfert enregistré…',{exact:true}).waitFor();
   assert.deepEqual(errors,[]);
   console.log('Browser UI passed: preparation, download progress, installation, sign-in, completion, manual fallback, cancellation and mail transfer diagram.');
 } finally {await browser.close()}

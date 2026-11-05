@@ -55,15 +55,32 @@ copy stays in Outlook, then sends a test message to the mailbox. When
 active, the arrow shows **Forwarding on** (French: *Transfert actif*).
 Error `5.7.520` turns the arrow red as **Your school blocks automatic
 forwarding.** (French: *Ton école bloque le transfert automatique*).
-**Turn off** deletes that rule. Mail transfer is local UI only; it is
-not an MCP tool.
+**Turn off** deletes that rule when the older Outlook API is available.
+On `outlook.cloud.microsoft`, **Turn on** / **Turn off** reopen the
+sign-in browser and change Outlook’s own forwarding settings, then
+reload to confirm. Mail transfer is local UI only; it is not an MCP tool.
 
 **Canvas.** Same browser sign-in as Brightspace. Enter the school Canvas
 address (ZoneCours HEC: `https://zonecours2.hec.ca`) and **Connect with
 browser**. student-mcp stores a private browser profile, not a personal
 access token (student tokens expire and are against Instructure policy).
-Read-only tools: courses, announcements, assignments and dates, grades,
-files and calendar.
+The 24 read-only tools cover courses and syllabus, modules and module items,
+pages, full announcements and assignment instructions, rubrics, own submissions
+and feedback/history, grades, files, upcoming events, Classic Quizzes and own
+quiz status, discussions and replies, inbox conversations and the to-do feed.
+Reading a conversation explicitly preserves its unread state.
+
+Lists return `next_page`: pass it back as `page` with the same other arguments
+until it is null. `per_page` defaults to 50 (maximum 100); Canvas can return fewer
+items and still have another page. Modules and discussion entries have separate
+item/reply tools so embedded previews are not mistaken for complete contents.
+Page bodies, syllabus and instructions retain the HTML supplied by Canvas.
+Announcements use Canvas's default recent two-week window; the calendar and
+to-do tools expose Canvas's dashboard feeds, not a complete historical archive.
+New Quizzes can appear as assignments: use `canvas_assignment_status` for their
+visible submission results. Permissions and locked content remain enforced by
+the school. These tools have local HTTP/MCP and browser-bridge fixture coverage;
+institution-specific behavior still needs validation with a connected account.
 
 **Brightspace / Omnivox: browser sign-in.** Enter your school's
 address and choose **Connect with browser**. An installed Chromium-based browser
@@ -350,6 +367,87 @@ student-mcp version
   link. The app reconnects automatically, keeping that address. Firewalls or
   srv.us outages can also block it. A stable URL does not make an offline app
    reachable.
+
+## Developer checks and MCP Inspector
+
+These tools run on the developer machine or in GitHub Actions only. They are
+not application dependencies and are not included in the release installers.
+
+### Rust checks
+
+Install once:
+
+```sh
+rustup component add clippy rustfmt
+cargo install cargo-deny --version 0.20.2 --locked
+```
+
+Run from the repository root:
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo deny --locked check
+```
+
+Use `cargo fmt --all` to apply formatting. CI runs these checks on pushes and
+pull requests. `deny.toml` checks RustSec advisories, allowed licenses and
+dependency sources across all platforms; duplicate versions are warnings.
+Review advisory findings rather than adding blanket ignores. Its license check
+covers Cargo packages, not bundled browser downloads or external assets.
+
+### MCP Inspector
+
+Requires Node **22.23.4+, 24.22.1+, or 26.12.1+** on those supported major lines.
+Install the tested Inspector version on your development machine:
+
+```sh
+npm install --global @modelcontextprotocol/inspector@2.14.0
+```
+
+From the repository root, build once before connecting, then open the Inspector:
+
+```sh
+cargo build --locked --bin student-mcp
+mcp-inspector --config tools/inspector.json
+```
+
+Select `student-mcp`, connect, and use **Tools** to inspect schemas and invoke
+tools. The config launches the local source build over stdio. It uses your normal
+student-mcp accounts; `STUDENT_MCP_CONFIG_FILE` selects a separate configuration
+when passed to the server with Inspector's `-e` option. Keep credentials out of
+`tools/inspector.json`.
+
+For a CLI-only protocol/schema check, without invoking school tools:
+
+```sh
+mcp-inspector --cli --config tools/inspector.json --server student-mcp --method tools/list --strict
+```
+
+## Local code graph
+
+[Graphify](https://github.com/Graphify-Labs/graphify) is an optional developer tool
+for exploring connections between the Rust backend, browser bridges and tooling.
+From the repository root (Python 3.10+ and `uv`):
+
+```sh
+uv tool install graphifyy==0.9.70
+sh tools/graphify.sh
+graphify query "browser profile login"
+graphify explain "token_login_agent"
+```
+
+The script parses code locally with tree-sitter, inspects the Cargo workspace,
+and generates `graphify-out/graph.json`, `GRAPH_REPORT.md` and `graph.html`.
+Open `graphify-out/graph.html` in a browser to explore the graph. Re-run the script
+after source edits or branch changes; extraction reuses its local cache.
+The commands above were validated with Graphify 0.9.70.
+
+The build uses no LLM or API key. `.graphifyignore` excludes the vendored Moodle
+catalogue and images; Graphify also respects `.gitignore`. Generated files stay
+local and are not shipped with the app. `AGENTS.md` gives coding assistants the
+query workflow. Graph edges are navigation hints: confirm behavior in source,
+especially Rust macros, dynamic calls and Rust/JavaScript boundaries.
 
 ## Release maintenance
 

@@ -1,0 +1,6 @@
+# The vendored Moodle API catalogue overwhelms the architecture graph.
+src/services/moodle/catalog/
+
+# Binary assets and illustrative screenshots are not source code.
+src/resources/assets/
+tools/screens/

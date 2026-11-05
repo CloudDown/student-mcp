@@ -105,6 +105,20 @@ ne doit jamais entrer dans git.
 - Ne jamais journaliser ni renvoyer le jeton de profil. Les tests navigateur
   locaux n’utilisent aucun identifiant réel : voir `tools/BROWSER-AUTH.md`.
 
+## Graphe de code local (Graphify)
+
+Pour une exploration transversale, si `graphify-out/graph.json` existe, commencer
+par `graphify query "<symboles ou question>"` ou `graphify explain "<symbole>"`.
+Lire ensuite les sources indiquées pour confirmer ; le graphe AST ne prouve pas
+les appels dynamiques, les macros Rust ou les échanges Rust ↔ JavaScript.
+Une recherche ciblée reste adaptée si le fichier est déjà connu.
+
+Construire ou rafraîchir après des changements : `sh tools/graphify.sh`.
+Extraction locale du code et du workspace Cargo, sans LLM. Le catalogue Moodle
+vendu avec le projet et les images sont exclus ; les sorties restent hors git.
+Si Graphify est absent, utiliser les recherches habituelles.
+Installation et exemples : `tools/GUIDE.md`, section « Local code graph ».
+
 ## Layout
 
 - `src/web.rs` / `src/resources/web/index.html` — configuration web locale (hors tunnel)

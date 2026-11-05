@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "student-mcp": {
+      "type": "stdio",
+      "command": "cargo",
+      "args": ["run", "--quiet", "--locked", "--bin", "student-mcp"]
+    }
+  }
+}
