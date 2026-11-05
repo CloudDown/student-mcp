@@ -702,7 +702,8 @@ impl MoodleClient {
                 .filter_map(|course| course.get("id").and_then(Value::as_i64))
                 .collect::<Vec<_>>(),
             "total": results.len(),
-            "results": results
+            "results": results,
+            "fileurlHint": "fileurl is an internal Moodle reference, not a direct download link. For a link the user can open, call moodle_file with fileurl and share its links.download. Never add or reveal a Moodle token."
         }))
     }
 
@@ -1414,7 +1415,8 @@ fn compact_course_contents(courseid: i64, raw: &Value, query: Option<&str>) -> V
     json!({
         "courseid": courseid,
         "count": sections.len(),
-        "sections": sections
+        "sections": sections,
+        "fileurlHint": "fileurl is an internal Moodle reference, not a direct download link. For a link the user can open, call moodle_file with fileurl and share its links.download. Never add or reveal a Moodle token."
     })
 }
 

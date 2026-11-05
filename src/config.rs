@@ -98,6 +98,7 @@ impl std::fmt::Debug for OmnivoxSettings {
 pub struct MailSettings {
     pub url: Option<String>,
     pub token: Option<String>,
+    pub mailbox: Option<String>,
     pub forward_to: Option<String>,
     #[serde(default)]
     pub forwarding: bool,
@@ -108,6 +109,7 @@ impl std::fmt::Debug for MailSettings {
         f.debug_struct("MailSettings")
             .field("url", &self.url)
             .field("token", &"[redacted]")
+            .field("mailbox", &self.mailbox)
             .field("forward_to", &self.forward_to)
             .field("forwarding", &self.forwarding)
             .finish()
@@ -118,6 +120,7 @@ impl std::fmt::Debug for MailSettings {
 pub struct MailConfig {
     pub base_url: String,
     pub token: String,
+    pub mailbox: Option<String>,
     pub forward_to: Option<String>,
     pub forwarding: bool,
 }
@@ -662,6 +665,7 @@ impl Settings {
         Some(MailConfig {
             base_url: normalize_outlook_url(saved.url.as_deref()?).ok()?,
             token: token.to_string(),
+            mailbox: saved.mailbox.clone(),
             forward_to: saved.forward_to.clone(),
             forwarding: saved.forwarding,
         })
@@ -820,6 +824,7 @@ pub fn normalize_outlook_url(input: &str) -> Result<String, String> {
     let url = parse_site_url(input)?;
     let host = url.host_str().unwrap_or("").to_ascii_lowercase();
     let outlook = host == "outlook.office.com"
+        || host == "outlook.cloud.microsoft"
         || host == "outlook.office365.com"
         || host == "outlook.live.com"
         || host.ends_with(".office.com")
@@ -1127,6 +1132,10 @@ pub(crate) mod tests {
 
     #[test]
     fn outlook_urls_accept_office_hosts_and_localhost() {
+        assert_eq!(
+            normalize_outlook_url("https://outlook.cloud.microsoft/mail/").unwrap(),
+            "https://outlook.cloud.microsoft"
+        );
         assert_eq!(
             normalize_outlook_url("outlook.office.com").unwrap(),
             "https://outlook.office.com"

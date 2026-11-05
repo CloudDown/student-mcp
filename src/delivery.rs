@@ -62,7 +62,8 @@ pub(crate) fn read_document(
                 0,
             ) {
                 if let Some(links) = crate::share::links_for(&id) {
-                    result["links"] = json!({"download": links.download, "expiresInHours": 3});
+                    let local_only = links.download.contains("://127.0.0.1");
+                    result["links"] = json!({"download": links.download, "expiresInHours": 3, "localOnly": local_only});
                 }
             } else {
                 result["linkNote"] = json!("The temporary link store is full. The original file is attached instead; existing links remain valid until expiry or app shutdown.");
@@ -72,7 +73,7 @@ pub(crate) fn read_document(
             use base64::Engine;
             result["file"] = json!({"filename": filename, "mimeType": "application/pdf", "data": base64::engine::general_purpose::STANDARD.encode(bytes)});
         }
-        result["note"] = json!("Original PDF. If your client cannot read the attached resource, open links.download or request format=text for selected pages. For scans or diagrams, request format=images with page_from/page_to. No local OCR is performed. Temporary links require this app to remain running.");
+        result["note"] = json!("Original PDF. Share links.download when the user asks for a PDF link; never substitute an internal course file URL. If links.localOnly is true, the link only works on the machine running this app. If no link is available, say so. Temporary links expire after 3 hours and require this app to remain running. For scans or diagrams, request format=images with page_from/page_to. No local OCR is performed.");
         return Ok(result);
     }
     let total_pages = pdf_page_count(bytes).ok_or("Cannot inspect this PDF. Install Poppler, or request format=file to read the original without local processing.")?;

@@ -5,6 +5,12 @@ on the local configuration page. Enter the HTTPS address, finish the normal
 sign-in/MFA in the browser window, and wait for the app to confirm access.
 No password or MFA code is passed through the MCP tools.
 
+For Outlook, enter the school and personal email addresses instead of a URL.
+Outlook may redirect to `outlook.cloud.microsoft`; the app uses its own browser
+settings panel, not the retired REST API. It checks the school account and
+reloads the forwarding panel after saving; ambiguous results fail closed. This
+path has synthetic coverage but must be validated with a real signed-in account.
+
 ## Browser and lifecycle
 
 - You can keep Safari or Firefox as your default browser and use the local page

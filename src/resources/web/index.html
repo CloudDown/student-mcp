@@ -22,7 +22,7 @@ h1{font-size:clamp(2rem,6vw,2.75rem);line-height:1.1;letter-spacing:-.035em;font
 .eye-slash[hidden]{display:none}
 .service-head{padding-top:0;margin-bottom:2rem}.service-head h1{font-size:2.125rem;font-weight:650;letter-spacing:-.03em}.logo-frame{width:4.5rem;height:4.5rem;border-radius:1.25rem;margin-bottom:1.25rem}
 .subtitle{font-size:1rem;line-height:1.5;color:var(--subtle);margin-top:.75rem}.back{position:static;width:44px;height:44px;border:0;background:#e9e9ee;box-shadow:none;margin:0}.page-nav{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:44px;margin:0 0 1.25rem}.page-nav .tools-entry{margin-left:auto}
-.back{padding:0;flex-shrink:0}.back svg{display:block;width:22px;height:22px;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.back{padding:0;flex-shrink:0;display:inline-grid;place-items:center}.back svg{display:block;width:22px;height:22px;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;margin:0}
 .form-screen{max-width:none}.field{margin-bottom:1rem}.field-head{min-height:2.75rem;margin-bottom:.25rem;display:flex;align-items:center;gap:.25rem}.field label,.field-title{font-size:.875rem;font-weight:550;color:var(--ink);flex:1;min-width:0}
 .field-head .help,.field-head .eye{margin-left:0}.field-head .help{color:var(--subtle);font-size:1.125rem;font-weight:700;letter-spacing:.08em;line-height:1}
 .help-panel{margin:.25rem 0 .75rem;padding:.875rem 1rem;border-radius:.875rem;background:#f0f0f4;color:var(--subtle);font-size:.8125rem;line-height:1.55}
@@ -133,16 +133,54 @@ button{transition:background 140ms ease-out,transform 140ms ease-out}button:acti
 .language-menu button span{visibility:hidden;color:var(--blue)}
 .language-menu button[aria-pressed="true"]{color:var(--blue);font-weight:600;background:#0066cc0d}
 .language-menu button[aria-pressed="true"] span{visibility:visible}
-.tools-entry svg{stroke:currentColor}
+.tools-entry svg{stroke:currentColor;fill:none}
 .tools-heading{position:relative;padding-top:0;margin-bottom:2rem}
 .tools-heading h1{font-size:2.125rem}
 .tools-heading .subtitle{margin:.5rem 0 0}
-.tools-list{display:flex;flex-direction:column;gap:.75rem}
-.tool-card{padding:1.25rem;background:var(--white);border:1px solid var(--border);border-radius:1.25rem;box-shadow:var(--shadow)}
+.service-head+.form-screen{margin-top:0;margin-bottom:0}
+.app.tools-view{width:min(100%,76rem)}
+.tools-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,17rem),1fr));gap:1rem;align-items:start}
+.tool-card{min-width:0;padding:1.25rem;background:var(--white);border:1px solid var(--border);border-radius:1.25rem;box-shadow:var(--shadow)}
 .tool-card h2{font:600 .875rem/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere;margin:0}
 .tool-card p{font-size:.875rem;line-height:1.6;color:var(--subtle);margin:.625rem 0 0;overflow-wrap:anywhere}
 @media(hover:hover){.language-menu button:hover{background:var(--hover)}}
 @media(prefers-reduced-transparency:reduce),(prefers-contrast:more){.language-menu,.language-control>.icon-button{background:#fff;backdrop-filter:none}}
+/* Mail transfer: simple school → personal diagram. */
+.app.mail-page{width:min(100%,48rem)}
+.mail-flow{display:flex;flex-direction:column;align-items:center;gap:1.5rem;width:100%;margin:0 auto}
+.mail-diagram{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:start;gap:1rem 1.25rem;width:100%;padding:2rem 1.5rem;border:1px solid var(--border);border-radius:1.25rem;background:var(--white);box-shadow:var(--shadow)}
+.mail-node{display:flex;flex-direction:column;align-items:center;gap:.75rem;min-width:0;text-align:center}
+.mail-node-icon{display:grid;place-items:center;width:4.25rem;height:4.25rem;border-radius:1.125rem;background:var(--hover);border:1px solid var(--border);flex:none}
+.mail-node-icon img,.mail-node-icon svg{width:2.25rem;height:2.25rem;object-fit:contain}
+.mail-node-icon svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;color:var(--subtle)}
+.mail-node-title{font-size:1rem;font-weight:600;letter-spacing:-.01em;color:var(--ink)}
+.mail-node-detail{width:100%;font-size:.875rem;line-height:1.4;color:var(--subtle);overflow-wrap:anywhere}
+.mail-node .input{width:100%;height:3.25rem;font-size:1rem;text-align:center;padding:0 .75rem}
+.mail-arrow{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.35rem;min-width:4.5rem;padding-top:1.5rem;color:var(--muted)}
+.mail-arrow svg{width:2.5rem;height:2.5rem;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.mail-arrow.active{color:var(--green)}
+.mail-arrow.blocked{color:var(--red)}
+.mail-arrow-label{font-size:.8125rem;font-weight:600;line-height:1.3;text-align:center;max-width:8rem}
+.mail-actions{display:flex;flex-direction:column;gap:.75rem;width:100%}
+.mail-actions .full-button{margin:0}
+.mail-disable{display:block;margin:.25rem auto 0;padding:.5rem .75rem;border:0;background:transparent;color:var(--subtle);font-size:.8125rem;font-weight:550;text-decoration:underline;text-underline-offset:.2em}
+@media(hover:hover) and (pointer:fine){.mail-disable:hover{color:var(--ink)}}
+@media(max-width:480px){.mail-diagram{gap:.5rem;padding:1.25rem .75rem}.mail-node-icon{width:3rem;height:3rem;border-radius:.875rem}.mail-node-icon img,.mail-node-icon svg{width:1.625rem;height:1.625rem}.mail-node-title{font-size:.875rem}.mail-node .input{font-size:.875rem;padding:0 .375rem}.mail-arrow{min-width:2.5rem;padding-top:1rem}.mail-arrow svg{width:1.625rem;height:1.625rem}.mail-arrow-label{font-size:.6875rem;max-width:4.5rem}}
+/* Keep the existing look, but give controls one consistent hierarchy and shape. */
+.full-button{min-height:3rem;padding:.75rem 1rem;border-radius:.75rem;font-size:.9375rem;font-weight:600;line-height:1.25}
+.full-button.secondary{color:var(--ink);background:#fff;border:1px solid var(--border)}
+.manage-card .manage-actions{gap:.5rem;margin:0;padding:.75rem 1rem;border-top:1px solid var(--border)}
+.manage-card .manage-actions button{min-height:3rem;padding:.625rem .75rem;border:1px solid var(--border);border-radius:.75rem;background:#fff;font-size:.875rem;font-weight:600}
+.manage-card .manage-actions button+button{border-left:1px solid var(--border)}
+.manage-card .manage-actions .secondary{color:var(--ink)}
+.manage-card .manage-actions button.danger{border-color:#f0d2d4;background:#fff7f7;color:var(--red)}
+.links-heading{margin:0 0 1.25rem}
+.links-heading h1{margin:0;font-size:1.5rem;line-height:1.25;letter-spacing:-.025em;font-weight:650}
+.link-settings{display:grid;gap:1.25rem}
+.link-setting .section-label{margin:0 0 .5rem;font-size:.9375rem;font-weight:600;letter-spacing:0;text-transform:none}
+.back,.language-control>.icon-button,.mail-button{border:1px solid var(--border);border-radius:.75rem;background:#fff;box-shadow:none;backdrop-filter:none;color:var(--subtle)}
+@media(hover:hover) and (pointer:fine){.full-button.secondary:hover,.back:hover,.language-control>.icon-button:hover,.mail-button:hover{background:var(--hover);color:var(--ink)}.manage-card .manage-actions button.danger:hover{background:var(--red-soft)}}
+@media(max-width:360px){.manage-card .manage-actions{gap:.375rem;padding:.625rem .75rem}.manage-card .manage-actions button{padding:.5rem .375rem}}
 </style></head>
 <body>
 <div class="language-control">
@@ -178,11 +216,17 @@ const translations={
  'Download and continue':['Télécharger et continuer','Descargar y continuar'],
  'Not now':['Pas maintenant','Ahora no'],
  'Mail transfer':['Transfert du courrier','Reenvío de correo'],
+ 'School mail':['Mail de l’école','Correo de la escuela'],
+ 'Personal mail':['Mail perso','Correo personal'],
+ 'Outlook address':['Adresse Outlook','Dirección de Outlook'],
  'Forward to':['Transférer vers','Reenviar a'],
  'Keep a copy in Outlook':['Garder une copie dans Outlook','Conservar una copia en Outlook'],
+ 'Connect to Outlook':['Se connecter à Outlook','Conectar a Outlook'],
  'Turn on forwarding':['Activer le transfert','Activar el reenvío'],
- 'Turn off forwarding':['Désactiver le transfert','Desactivar el reenvío'],
- 'Your school blocks automatic forwarding.':['Ton école bloque le transfert automatique','Tu escuela bloquea el reenvío automático'],
+ 'Turn off':['Désactiver','Desactivar'],
+ 'Forwarding on':['Transfert actif','Reenvío activo'],
+  'Your school blocks automatic forwarding.':['Ton école bloque le transfert automatique','Tu escuela bloquea el reenvío automático'],
+  'Outlook moved to outlook.cloud.microsoft. student-mcp cannot verify this session or enable forwarding with its retired Outlook API. In Outlook, open Settings → Mail → Forwarding, enable forwarding, enter your personal address and save. student-mcp will not show forwarding as active.':['Outlook a changé d’adresse pour outlook.cloud.microsoft. student-mcp ne peut pas vérifier cette session ni activer le transfert avec son ancienne API Outlook. Dans Outlook, ouvrez Paramètres → Courrier → Transfert, activez le transfert, saisissez votre adresse personnelle et enregistrez. student-mcp n’affichera pas le transfert comme actif.','Outlook se trasladó a outlook.cloud.microsoft. student-mcp no puede verificar esta sesión ni activar el reenvío con su antigua API. En Outlook, abre Configuración → Correo → Reenvío, activa el reenvío, introduce tu dirección personal y guarda. student-mcp no mostrará el reenvío como activo.'],
  'Preparing the sign-in browser…':['Préparation du navigateur de connexion…','Preparando el navegador de inicio de sesión…'],
  'Downloading Chrome for Testing…':['Téléchargement de Chrome for Testing…','Descargando Chrome for Testing…'],
  'Installing the sign-in browser…':['Installation du navigateur de connexion…','Instalando el navegador de inicio de sesión…'],
@@ -200,7 +244,7 @@ const translations={
  'Loading tools…':['Chargement des outils…','Cargando herramientas…'],
  'Could not load tools.':['Impossible de charger les outils.','No se pudieron cargar las herramientas.'],
  'No tools available.':['Aucun outil disponible.','No hay herramientas disponibles.'],
- 'AI connection':['Connexion IA','Conexión de IA'], 'Launch at startup':['Lancer au démarrage','Iniciar al arrancar'],
+  'AI connection':['Connexion IA','Conexión de IA'], 'Local link':['Lien local','Enlace local'], 'Public link':['Lien public','Enlace público'], 'Launch at startup':['Lancer au démarrage','Iniciar al arrancar'],
  'Creating your public link…':['Création de votre lien public…','Creando tu enlace público…'],
  'Reconnecting your public link…':['Reconnexion de votre lien public…','Reconectando tu enlace público…'],
  'Public link unavailable — click to retry':['Lien public indisponible — réessayer','Enlace público no disponible — reintentar'],
@@ -401,7 +445,7 @@ function localize(screen){
  const walker=document.createTreeWalker(screen,NodeFilter.SHOW_TEXT);
  while(walker.nextNode()){
   const node=walker.currentNode;
-  if(node.parentElement.closest('.account-row-title,.link-detail,.notice,.hint,[data-server-text]'))continue;
+  if(node.parentElement.closest('.account-row-title,.link-detail,.mail-node-detail,.notice,.hint,[data-server-text]'))continue;
   const text=node.textContent.trim();
   if(text)node.textContent=node.textContent.replace(text,t(text));
  }
@@ -451,17 +495,35 @@ function notice(){return state.notice?.error?`<div class="notice error" role="al
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function icon(name){const paths={mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',copy:'<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 5V4a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h1"/>',check:'<path d="m5 12 4 4L19 6"/>',back:'<path d="m12 5-7 7 7 7M5 12h14"/>',refresh:'<path d="M19 8a8 8 0 1 0 1 7M19 3v5h-5"/>'};return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name]||paths.back}</svg>`}
 
+function mailArrow(mode){
+ const label=mode==='active'?t('Forwarding on'):mode==='blocked'?t('Your school blocks automatic forwarding.'):'';
+ return `<div class="mail-arrow ${mode||''}" aria-hidden="${label?'false':'true'}"><svg viewBox="0 0 24 24"><path d="M4 12h14"/><path d="m14 6 6 6-6 6"/></svg>${label?`<span class="mail-arrow-label">${esc(label)}</span>`:''}</div>`;
+}
 function mailScreen(){
  const m=state.mail||{};
  const waiting=state.browserLogin?.state==='waiting'&&state.browserLogin.service==='outlook';
+ const blocked=!!(state.notice?.error&&state.notice.text=== 'Your school blocks automatic forwarding.');
+ const arrow=m.forwarding?'active':blocked?'blocked':'';
  const head=`<header class="service-head">${pageNav('home','Back to services')}<h1>${t('Mail transfer')}</h1><div class="subtitle">Outlook</div></header>`;
  if(state.browserDownload)return `${head}<section class="form-screen"><p>${t('No compatible browser found. Download Chrome for Testing from Google (about 200 MB)? Your default browser stays the same.')}</p><button class="full-button primary" data-action="download-browser">Download and continue</button><button class="full-button secondary" data-action="decline-browser">Not now</button></section>`;
  if(waiting)return `${head}<section class="form-screen"><p role="status">${browserProgress()}</p><button class="full-button secondary" data-action="cancel">Cancel</button></section>`;
- if(!m.connected)return `${head}<section class="form-screen"><form id="browser-connect-form">${input('url','Outlook address','https://outlook.office.com','url',m.url||'https://outlook.office.com')}<p class="footnote">${t('Sign in on your school’s website. A private browser profile remembers this account; MFA may be requested again.')}</p>${notice()}<button class="full-button primary" type="submit" ${state.busy?'disabled':''}>Connect with browser</button></form></section>`;
- return `${head}<section class="form-screen"><p class="footnote">${t('Keep a copy in Outlook')}</p><form id="mail-form">${input('forward_to','Forward to','you@gmail.com','email',m.forward_to||'')}${notice()}<button class="full-button primary" ${state.busy?'disabled':''}>${t('Turn on forwarding')}</button></form>${m.forwarding?`<button class="full-button secondary" data-action="mail-disable" ${state.busy?'disabled':''}>${t('Turn off forwarding')}</button>`:''}</section>`;
+ const schoolDetail=m.connected
+  ?`<div class="mail-node-detail">${esc(m.mailbox||m.url||'outlook.office.com')}</div>`
+  :`<input id="f-mailbox" class="input" name="mailbox" type="email" form="browser-connect-form" placeholder="name@school.edu" value="${esc(state.draft.mailbox??'')}" autocomplete="username" required>`;
+ const personalDetail=`<input id="f-forward_to" class="input" name="forward_to" type="email" form="${m.connected?'mail-form':'browser-connect-form'}" placeholder="you@gmail.com" value="${esc(state.draft.forward_to??m.forward_to??'')}" autocomplete="email" ${m.connected?'':'required'}>`;
+ const diagram=`<div class="mail-diagram" role="group" aria-label="${t('Mail transfer')}">
+  <div class="mail-node"><div class="mail-node-icon"><img src="/assets/outlook.png" alt=""></div>${m.connected?`<div class="mail-node-title">${t('School mail')}</div>`:`<label class="mail-node-title" for="f-mailbox">${t('School mail')}</label>`}${schoolDetail}</div>
+  ${mailArrow(arrow)}
+  <div class="mail-node"><div class="mail-node-icon">${icon('mail')}</div><label class="mail-node-title" for="f-forward_to">${t('Personal mail')}</label>${personalDetail}</div>
+ </div>`;
+ const alert=blocked?'':notice();
+ const actions=m.connected
+  ?`<form id="mail-form" class="mail-actions">${alert}${m.forwarding?'':`<button class="full-button primary" ${state.busy?'disabled':''}>${t('Turn on forwarding')}</button>`}</form>${m.forwarding?`<button class="mail-disable" type="button" data-action="mail-disable" ${state.busy?'disabled':''}>${t('Turn off')}</button>`:''}<p class="footnote" style="text-align:center;margin-top:1rem">${t('Keep a copy in Outlook')}</p>`
+  :`<form id="browser-connect-form" class="mail-actions"><p class="footnote" style="text-align:center">${t('Sign in on your school’s website. A private browser profile remembers this account; MFA may be requested again.')}</p>${notice()}<button class="full-button primary" type="submit" ${state.busy?'disabled':''}>${t('Connect to Outlook')}</button></form>`;
+ return `${head}<section class="form-screen mail-flow">${diagram}${actions}</section>`;
 }
 function home(){const tiles=['moodle','omnivox','brightspace','canvas'].map(s=>{const account=state.accounts.find(a=>a.service===s),connected=!!account,enabled=account?.enabled!==false;return `<button class="tile ${connected?'connected':''} ${connected&&!enabled?'service-off':''}" data-open="${s}" aria-label="${names[s]} ${connected?'manage connection':'connect'}"><img src="/assets/${s}.png" alt=""><span>${names[s]}</span>${connected?'<i class="dot"></i>':''}</button>`}).join('');const ready=state.tunnel.startsWith('Ready(');let value=ready?state.link:state.tunnel.startsWith('Starting')?'Creating your public link…':state.tunnel.startsWith('Reconnecting')?'Reconnecting your public link…':state.tunnel.startsWith('Failed')?'Public link unavailable — click to retry':state.tunnel==='Stopped'?'Public link off — click to enable':'Connect a service to create your link';return `<section class="home"><div class="tiles">${tiles}</div><button class="mail-button${state.mail?.connected?' connected':''}" data-screen="mail" aria-label="${t('Mail transfer')}">${icon('mail')}${state.mail?.connected?'<i class="dot"></i>':''}</button><div class="link-card"><button class="link-open" data-screen="links"><span class="link-title">AI connection</span><span class="link-value">${esc(value)}</span></button><button class="icon-button copy-home" data-copy="home" aria-label="Copy link" ${ready?'':'disabled'}>${icon('copy')}</button></div><label class="startup-row">Launch at startup<input class="switch" type="checkbox" name="autostart" ${state.autostart?'checked':''} ${state.busy?'disabled':''}></label>${notice()}</section>`}
-function pageNav(backScreen,backLabel,tools=false){return `<div class="page-nav"><button class="back" data-screen="${backScreen}" aria-label="${backLabel}">${icon('back')}</button>${tools?`<button class="back tools-entry" data-tools aria-label="MCP tools" title="MCP tools"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6a5 5 0 0 0-6 6l-5 5a2.1 2.1 0 0 0 3 3l5-5a5 5 0 0 0 6-6l-3 3-3-3 3-3Z"/></svg></button>`:''}</div>`}
+function pageNav(backScreen,backLabel,tools=false){return `<div class="page-nav"><button class="back" data-screen="${backScreen}" aria-label="${backLabel}">${icon('back')}</button>${tools?`<button class="back tools-entry" data-tools aria-label="MCP tools" title="MCP tools"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4.1 4.1 0 0 0-5.8 5.8l-5.2 5.2a2 2 0 0 0 2.8 2.8l5.2-5.2a4.1 4.1 0 0 0 5.8-5.8l-2.5 2.5-2.8-2.8 2.5-2.5Z"/></svg></button>`:''}</div>`}
 function header(service){return `<header class="service-head">${pageNav('home','Back to services',true)}<div class="logo-frame"><img src="/assets/${service}.png" alt=""></div><h1>${names[service]}</h1><div class="subtitle">${service==='moodle'&&state.otherSchool?'Your Moodle account':subtitles[service]}</div></header>`}
 function accountHost(account){try{return new URL(account.url).host}catch{return account.url||names[state.service]}}
 function accountChoices(){const accounts=state.accounts.filter(a=>a.service===state.service);if(accounts.length<2)return '';return `<div class="account-choices" role="group" aria-label="${t('Accounts')}">${accounts.map(a=>{const active=a.id===state.accountId,host=accountHost(a);return `<button class="account-row ${active?'active':''}" data-account="${esc(a.id)}" aria-current="${active?'true':'false'}" aria-label="${esc(host+(active?t(', selected'):''))}"><span class="account-row-main"><span class="account-row-title">${esc(host)}</span></span>${active?'<span class="account-mark" aria-hidden="true">✓</span>':''}</button>`}).join('')}</div>`}
@@ -476,7 +538,7 @@ function brightspaceCookieHelp(){
  return `${intro[language]}<ol><li>${t('DevTools → Application/Storage → Cookies')}</li><li><code>d2lSessionVal</code> → ${first[language]}</li><li><code>d2lSecureSessionVal</code> → ${second[language]}</li></ol>`;
 }
 function brightspaceReady(v,a){return !!(v.url||a?.url)&&!!v.d2l_session&&!!v.d2l_secure}
-function loginScreenContent(){const a=selected(),s=state.service;if(!state.manualLogin)return `<form id="browser-connect-form">${input('url',s==='omnivox'?'College address':'Site address',s==='omnivox'?'https://cegepxxx.omnivox.ca':s==='moodle'?'https://studium.umontreal.ca':s==='canvas'?'https://zonecours2.hec.ca':'https://school.brightspace.com','url',a?.url||'')}<p class="footnote">${t(s==='moodle'?'Sign in on your school’s website. Only the Moodle mobile token is saved, never your password.':'Sign in on your school’s website. A private browser profile remembers this account; MFA may be requested again.')}</p><p class="footnote">${t('Keep Safari or Firefox as your default. If needed, student-mcp downloads a dedicated Chromium-based browser for school sign-in.')}</p>${notice()}<button class="full-button primary" type="submit" ${state.busy?'disabled':''}>Connect with browser</button>${s==='canvas'?'':`<button class="full-button secondary" type="button" data-action="manual-login">Other connection methods</button>`}</form>`;let fields='',ready=false;if(s==='moodle'){fields=input('url','Site address','https://studium.umontreal.ca','url',a?.url||'')+input('username','Username','firstname.lastname','text','','username')+input('password','Password','Moodle password','password','','current-password');ready=!!state.draft.username&&!!state.draft.password}
+function loginScreenContent(){const a=selected(),s=state.service;if(!state.manualLogin)return `<form id="browser-connect-form">${input('url',s==='omnivox'?'College address':'Site address',s==='omnivox'?'https://cegepxxx.omnivox.ca':s==='moodle'?'https://studium.umontreal.ca':s==='canvas'?'https://zonecours2.hec.ca':'https://school.brightspace.com','url',a?.url||'')}${notice()}<button class="full-button primary" type="submit" ${state.busy?'disabled':''}>Connect with browser</button>${s==='canvas'?'':`<button class="full-button secondary" type="button" data-action="manual-login">Other connection methods</button>`}</form>`;let fields='',ready=false;if(s==='moodle'){fields=input('url','Site address','https://studium.umontreal.ca','url',a?.url||'')+input('username','Username','firstname.lastname','text','','username')+input('password','Password','Moodle password','password','','current-password');ready=!!state.draft.username&&!!state.draft.password}
 if(s==='omnivox'){fields=input('url','College address','https://cegepxxx.omnivox.ca','url',a?.url||'')+input('username','Student number','0000000','text','','username')+input('password','Password','Omnivox password','password','','current-password');ready=!!(state.draft.url||a?.url)&&!!state.draft.username&&!!state.draft.password}
 if(s==='brightspace'){fields=input('url','Site address','https://mycourses2.mcgill.ca','url',a?.url||'')+input('d2l_session','d2lSessionVal','Cookie value','password','','off',brightspaceCookieHelp())+input('d2l_secure','d2lSecureSessionVal','Cookie value','password','','off');ready=brightspaceReady(state.draft,a)}
 return `<form id="connect-form">${fields}${notice()}${state.busy?'<p class="busy">Checking the connection…</p>':''}<button class="full-button primary" ${!ready||state.busy?'disabled':''}>${state.busy?'Connecting…':a?'Save changes':`Connect to ${names[s]}`}</button></form>`}
@@ -489,12 +551,13 @@ function localCard(){return `<div class="card" data-link-card="local"><div class
 function publicCard(){const publicReady=state.tunnel.startsWith('Ready(');return `<div class="card" data-link-card="public">${publicReady?`<div class="status-row"><span><i class="status-dot"></i>Public link active</span><button class="icon-button" data-copy="public" aria-label="Copy public link">${icon('copy')}</button></div><div class="link-detail">${esc(state.link)}</div>`:`<p class="subtitle">${esc(publicMessage())}</p>${state.tunnel.startsWith('Failed(')?`<div class="hint">${esc(state.tunnel)}</div>`:''}${state.tunnel.startsWith('Starting')||state.tunnel.startsWith('Reconnecting')?'<p class="busy">This can take a few seconds.</p>':''}`}</div>`}
 function linkScreen(){return `
  ${pageNav('home','Back to services')}
- <label class="section-label">LOCAL LINK <input class="switch" type="checkbox" name="local" ${state.local?'checked':''}></label>
-  ${localCard()}
- <label class="section-label">PUBLIC LINK <input class="switch" type="checkbox" name="public" ${state.public?'checked':''}></label>
- ${publicCard()}
-  ${notice()}`}
-function publicMessage(){if(!state.public||state.tunnel==='Stopped')return 'Public link is off. Turn the switch on to restore your stable HTTPS link through srv.us. No account needed.';if(state.tunnel.startsWith('Starting'))return 'Opening your stable HTTPS link through srv.us.';if(state.tunnel.startsWith('Reconnecting'))return 'Reconnecting to srv.us. Your saved link stays the same.';if(state.tunnel.startsWith('Failed'))return 'The public link was not created. Turn the switch on to try again.';return 'No service is connected yet. Turn the switch on to create the HTTPS link anyway.'}
+ <header class="links-heading"><h1>${t('AI connection')}</h1></header>
+ <section class="link-settings" aria-label="${t('AI connection')}">
+  <div class="link-setting"><label class="section-label">${t('Local link')}<input class="switch" type="checkbox" name="local" ${state.local?'checked':''}></label>${localCard()}</div>
+  <div class="link-setting"><label class="section-label">${t('Public link')}<input class="switch" type="checkbox" name="public" ${state.public?'checked':''}></label>${publicCard()}</div>
+ </section>
+ ${notice()}`}
+ function publicMessage(){if(!state.public||state.tunnel==='Stopped')return 'Public link off.';if(state.tunnel.startsWith('Starting'))return 'Opening your stable HTTPS link through srv.us.';if(state.tunnel.startsWith('Reconnecting'))return 'Reconnecting to srv.us. Your saved link stays the same.';if(state.tunnel.startsWith('Failed'))return 'The public link was not created. Turn the switch on to try again.';return 'No service is connected yet. Turn the switch on to create the HTTPS link anyway.'}
 let updateState={},updateSubmitting=false,updateActionError='';
 function renderUpdate(){
  const u=updateState,button=$('update-button'),status=$('update-status'),text=$('update-label');
@@ -516,9 +579,11 @@ $('update-button').addEventListener('click',async()=>{
  catch(e){updateActionError=e.message}
  finally{updateSubmitting=false;renderUpdate()}
 });
-let renderedScreen='',refreshing=false;
+ let renderedScreen='',refreshing=false,linksPending=0,linksVersion=0,linksQueue=Promise.resolve();
 function render(){
  renderUpdate();
+ document.querySelector('.app').classList.toggle('tools-view',state.screen==='tools');
+ document.querySelector('.app').classList.toggle('mail-page',state.screen==='mail');
  const screen=$('screen'),route=state.screen+':'+state.service;
  const active=document.activeElement;
   const focus=active&&screen.contains(active)?{id:active.id,attr:['data-screen','data-copy','data-action','data-eye','data-help','data-open','data-account','data-add','name'].find(a=>active.hasAttribute(a)),value:null}:null;
@@ -530,24 +595,24 @@ function render(){
  renderedScreen=route;
 }
 async function refresh(background=false){
- if(refreshing)return;refreshing=true;
+  if(refreshing)return;refreshing=true;const linkRequestVersion=linksVersion;
  try{
   const d=await api('/state');
   updateState=await api('/update');renderUpdate();
   // Polling may update status, but must never replace an active form or pending settings.
   const changed=JSON.stringify([state.accounts,state.link,state.localLink,state.tunnel,state.autostart])!==JSON.stringify([d.accounts,d.link,d.local_link,d.tunnel,d.autostart]);
-  state.accounts=d.accounts;state.mail=d.mail||{connected:false};state.link=d.link;state.localLink=d.local_link;state.tunnel=d.tunnel;
+   state.accounts=d.accounts;state.mail=d.mail||{connected:false};state.link=d.link;state.localLink=d.local_link;if(!linksPending&&linkRequestVersion===linksVersion)state.tunnel=d.tunnel;
   const browserChanged=JSON.stringify(state.browserLogin)!==JSON.stringify(d.browser_login||null);
   state.browserLogin=d.browser_login||null;
   if(browserChanged&&state.browserLogin?.service===state.service){
-   if(state.browserLogin.state==='connected'){state.accountId=state.browserLogin.id;state.editing=false;state.draft={};state.notice=null;state.health={text:'Connected'}}
+    if(state.browserLogin.state==='connected'){state.accountId=state.browserLogin.id;state.editing=false;state.draft=state.service==='outlook'?{forward_to:state.draft.forward_to}:{};state.notice=null;state.health={text:'Connected'}}
    if(state.browserLogin.state==='failed'){if(state.browserLogin.origin)state.draft.url=state.browserLogin.origin;state.notice={text:state.browserLogin.error,error:true};state.editing=true}
    if(state.screen==='service'||state.screen==='mail')render();
   }
   state.autostart=!!d.autostart;
-  if(!background||state.screen!=='links'){state.local=d.local;state.public=d.public}
+   if((!background||state.screen!=='links')&&!linksPending&&linkRequestVersion===linksVersion){state.local=d.local;state.public=d.public}
   if(!background){state.verification=d.verification;render()}
-  else if(changed&&(state.screen==='home'||state.screen==='links'))render();
+   else if(changed&&!linksPending&&(state.screen==='home'||state.screen==='links'))render();
   }catch(e){if(!background){state.notice={text:e.message,error:true};render()}else $('live').textContent=t('Connection status unavailable. Retrying…')}
  finally{refreshing=false}
 }
@@ -596,9 +661,9 @@ document.addEventListener('click',async e=>{
  else if(action==='mail-disable')send({action:'mail_disable'});else if(action==='stop')send({action:'stop'});
 });
 function connectReady(form){const v=Object.fromEntries(new FormData(form)),a=selected();if(state.service==='moodle')return !!v.username&&!!v.password;if(state.service==='omnivox')return !!(v.url||a?.url)&&!!v.username&&!!v.password;if(state.service==='brightspace')return brightspaceReady(v,a);return !!(v.url||a?.url)&&(!!v.token||!!v.username&&!!v.password)}
- document.addEventListener('change',e=>{if(e.target.name==='local'||e.target.name==='public'){const local=e.target.name==='local'?e.target.checked:state.local,publicOn=e.target.name==='public'?e.target.checked:state.public;state.local=local;state.public=publicOn;const card=document.querySelector('[data-link-card="'+e.target.name+'"]');if(card){card.outerHTML=e.target.name==='local'?localCard():publicCard();localize($('screen'))}else render();api('/action',{action:'links',local,public:publicOn}).catch(err=>{state.notice={text:err.message,error:true};render()})}else if(e.target.name==='autostart'){state.autostart=e.target.checked;send({action:'autostart',enabled:state.autostart})}else if(e.target.name==='service_enabled'){const account=selected();if(account)send({action:'service_enabled',service:state.service,id:account.id,enabled:e.target.checked})}});
+  document.addEventListener('change',e=>{if(e.target.name==='local'||e.target.name==='public'){const local=e.target.name==='local'?e.target.checked:state.local,publicOn=e.target.name==='public'?e.target.checked:state.public,version=++linksVersion;state.local=local;state.public=publicOn;if(e.target.name==='public')state.tunnel=publicOn?'Starting':'Stopped';linksPending++;const card=document.querySelector('[data-link-card="'+e.target.name+'"]');if(card){card.outerHTML=e.target.name==='local'?localCard():publicCard();localize($('screen'))}else render();linksQueue=linksQueue.catch(()=>{}).then(()=>api('/action',{action:'links',local,public:publicOn})).then(async()=>{if(version===linksVersion){linksPending=0;await refresh()}},async err=>{if(version===linksVersion){linksPending=0;state.notice={text:err.message,error:true};await refresh();render()}})}else if(e.target.name==='autostart'){state.autostart=e.target.checked;send({action:'autostart',enabled:state.autostart})}else if(e.target.name==='service_enabled'){const account=selected();if(account)send({action:'service_enabled',service:state.service,id:account.id,enabled:e.target.checked})}});
 document.addEventListener('input',e=>{if(e.target.name)state.draft[e.target.name]=e.target.value;if(e.target.form?.id==='connect-form')e.target.form.querySelector('button[type="submit"],button:not([type])').disabled=!connectReady(e.target.form)});
 document.addEventListener('change',e=>{if(e.target.id==='account-picker'){state.accountId=e.target.value==='__new__'?'':e.target.value;state.editing=e.target.value==='__new__';state.draft={};state.visible={};state.help={};state.health=null;state.verification=null;state.otherSchool=state.service==='moodle'&&!!selected()&&selected().url!=='https://moodle.polymtl.ca';if(selected())checkSelected();render()}if(e.target.name==='other_school'){state.otherSchool=e.target.checked;render()}});
-document.addEventListener('submit',e=>{if(e.target.id==='browser-connect-form'){e.preventDefault();const d=Object.fromEntries(new FormData(e.target));const mail=state.screen==='mail';send({action:'browser_connect',service:mail?'outlook':state.service,id:mail?'outlook':(state.accountId||''),url:d.url||selected()?.url||(mail?'https://outlook.office.com':'')})}else if(e.target.id==='connect-form'){e.preventDefault();const form=e.target,d=Object.fromEntries(new FormData(form)),a=selected();if(!connectReady(form))return;d.service=state.service;d.action='connect';d.id=state.accountId||'';if(state.service==='moodle')d.url=d.url||a?.url||'https://moodle.polymtl.ca';if(state.service==='brightspace'){const session=(d.d2l_session||'').trim(),secure=(d.d2l_secure||'').trim();if(session||secure){d.token=`d2lSessionVal=${session}; d2lSecureSessionVal=${secure}`}delete d.d2l_session;delete d.d2l_secure}for(const name of ['password','token','d2l_session','d2l_secure'])state.draft[name]='';send(d)}else if(e.target.id==='mail-form'){e.preventDefault();const d=Object.fromEntries(new FormData(e.target));send({action:'mail_enable',forward_to:d.forward_to||''})}else if(e.target.id==='verify-form'){e.preventDefault();const code=e.target.elements.code.value;state.draft.code='';send({action:'verify',code})}});
+ document.addEventListener('submit',e=>{if(e.target.id==='browser-connect-form'){e.preventDefault();const d=Object.fromEntries(new FormData(e.target));const mail=state.screen==='mail';send({action:'browser_connect',service:mail?'outlook':state.service,id:mail?'outlook':(state.accountId||''),url:d.url||selected()?.url||(mail?'https://outlook.office.com':''),...(mail?{mailbox:d.mailbox,forward_to:d.forward_to}: {})})}else if(e.target.id==='connect-form'){e.preventDefault();const form=e.target,d=Object.fromEntries(new FormData(form)),a=selected();if(!connectReady(form))return;d.service=state.service;d.action='connect';d.id=state.accountId||'';if(state.service==='moodle')d.url=d.url||a?.url||'https://moodle.polymtl.ca';if(state.service==='brightspace'){const session=(d.d2l_session||'').trim(),secure=(d.d2l_secure||'').trim();if(session||secure){d.token=`d2lSessionVal=${session}; d2lSecureSessionVal=${secure}`}delete d.d2l_session;delete d.d2l_secure}for(const name of ['password','token','d2l_session','d2l_secure'])state.draft[name]='';send(d)}else if(e.target.id==='mail-form'){e.preventDefault();const d=Object.fromEntries(new FormData(e.target));send({action:'mail_enable',forward_to:d.forward_to||''})}else if(e.target.id==='verify-form'){e.preventDefault();const code=e.target.elements.code.value;state.draft.code='';send({action:'verify',code})}});
 refresh();const timer=setInterval(()=>{if(!document.hidden&&!state.busy)refresh(true)},1500);
 </script></body></html>

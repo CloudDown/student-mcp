@@ -232,6 +232,7 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                     Some(include_bytes!("resources/assets/brightspace-icon.png"))
                 }
                 "/assets/canvas.png" => Some(include_bytes!("resources/assets/canvas-icon.png")),
+                "/assets/outlook.png" => Some(include_bytes!("resources/assets/outlook-icon.png")),
                 _ => None,
             };
             if let Some(image) = image {
@@ -263,7 +264,7 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                     accounts.push(json!({"service":service,"id":id,"url":url,"enabled":current.service_enabled(service)}));
                 }
             }
-            let mail = current.outlook().map(|c| json!({"connected":true,"forward_to":c.forward_to,"forwarding":c.forwarding,"url":c.base_url})).unwrap_or(json!({"connected":false}));
+            let mail = current.outlook().map(|c| json!({"connected":true,"mailbox":c.mailbox,"forward_to":c.forward_to,"forwarding":c.forwarding,"url":c.base_url})).unwrap_or(json!({"connected":false}));
             (200, "application/json", json!({"accounts":accounts,"mail":mail,"verification":pending.as_ref().map(|(_,p)| &p.prompt),"browser_login":browser_login.as_ref().map(crate::browser::Login::status),"link":mcp_endpoint(tunnel.origin().unwrap_or(&format!("http://127.0.0.1:{port}")), &gateway.token),"local_link":mcp_endpoint(&format!("http://127.0.0.1:{port}"), &gateway.token),"tunnel":format!("{:?}",tunnel.state),"public":current.gateway.public_enabled(),"local":enabled.load(Ordering::SeqCst),"autostart":crate::autostart::enabled().unwrap_or(false)}).to_string().into_bytes(),false)
         } else if request.method() == &Method::Get && path == "/update" {
             (
@@ -517,6 +518,8 @@ fn action(
             url,
             previous,
             allow_download,
+            (service == "outlook" && !get("mailbox").is_empty()).then(|| get("mailbox")),
+            (service == "outlook" && !get("forward_to").is_empty()).then(|| get("forward_to")),
         )?);
         *pending = None;
         return Ok(json!({"browser_login":browser_login.as_ref().unwrap().status()}));

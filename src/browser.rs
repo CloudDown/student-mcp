@@ -24,6 +24,7 @@ mod moodle;
 
 const PREFIX: &str = "browser-profile:";
 const RECONNECT: &str = "Browser session needs attention. Open student-mcp and choose Change login → Connect with browser.";
+const OUTLOOK_NEW_WEB_UNSUPPORTED: &str = "Outlook moved to outlook.cloud.microsoft. student-mcp cannot verify this session or enable forwarding with its retired Outlook API. In Outlook, open Settings → Mail → Forwarding, enable forwarding, enter your personal address and save. student-mcp will not show forwarding as active.";
 const ACCOUNT_CHANGED: &str = "The browser is signed into a different account. Add it as a new account, or disconnect this one before reconnecting.";
 const MOBILE_LOGIN: &str =
     "/intr/Module/Identification/Login/Mobile/LoginMobile.aspx?typeUtilisateur=Etudiant";
@@ -511,7 +512,14 @@ struct Browser {
 
 impl Browser {
     fn launch(token: &str, service: &str, origin: &str, visible: bool) -> Result<Self, String> {
-        Self::launch_cancellable(token, service, origin, visible, &AtomicBool::new(false))
+        Self::launch_cancellable(
+            token,
+            service,
+            origin,
+            visible,
+            None,
+            &AtomicBool::new(false),
+        )
     }
 
     fn launch_cancellable(
@@ -519,6 +527,7 @@ impl Browser {
         service: &str,
         origin: &str,
         visible: bool,
+        mailbox_hint: Option<&str>,
         cancelled: &AtomicBool,
     ) -> Result<Self, String> {
         install::check_cancelled(cancelled)?;
@@ -718,6 +727,8 @@ impl Browser {
             let home = sso.launch_url();
             browser.call("Fetch.enable", json!({"patterns":[{"urlPattern":format!("{origin}/admin/tool/mobile/launch.php*"),"requestStage":"Response"}]}))?;
             home
+        } else if service == "outlook" && visible {
+            outlook_login_url(&browser.profile.home, mailbox_hint)?
         } else {
             browser.profile.home.clone()
         };
@@ -889,7 +900,9 @@ impl Browser {
                     self.checkpoint()?;
                     return Ok(());
                 }
-                Err(error) if error == ACCOUNT_CHANGED => return Err(error),
+                Err(error) if error == ACCOUNT_CHANGED || error == OUTLOOK_NEW_WEB_UNSUPPORTED => {
+                    return Err(error)
+                }
                 Err(_) => {}
             }
             std::thread::sleep(Duration::from_millis(750));
@@ -900,6 +913,93 @@ impl Browser {
             RECONNECT
         }
         .into())
+    }
+
+    fn outlook_forwarding_step(
+        &mut self,
+        action: &str,
+        email: &str,
+        to: &str,
+    ) -> Result<String, String> {
+        let args = json!([action, email, to]);
+        let result = self.evaluate(format!(
+            "{}\noutlookForwarding(...{args})",
+            include_str!("resources/browser/outlook.js")
+        ))?;
+        Ok(result["state"].as_str().unwrap_or("waiting").to_owned())
+    }
+
+    fn wait_outlook_forwarding(
+        &mut self,
+        cancelled: &AtomicBool,
+        email: &str,
+        to: &str,
+    ) -> Result<(), String> {
+        let until = Instant::now() + Duration::from_secs(180);
+        let mut stage = 0;
+        let mut submitted = false;
+        while Instant::now() < until {
+            if cancelled.load(Ordering::SeqCst) {
+                return Err("Cancelled".into());
+            }
+            if self.child.try_wait().ok().flatten().is_some() {
+                return Err("Sign-in browser was closed.".into());
+            }
+            let location = self.evaluate("location.href".into())?;
+            let url = url::Url::parse(location.as_str().unwrap_or("")).map_err(|_| RECONNECT)?;
+            if !outlook_new_web(&url) {
+                std::thread::sleep(Duration::from_millis(750));
+                continue;
+            }
+            match stage {
+                0 => {
+                    if self.outlook_forwarding_step("account", email, to)? == "opened" {
+                        stage = 1
+                    }
+                }
+                1 => {
+                    if self.outlook_forwarding_step("identity", email, to)? == "verified" {
+                        stage = 2;
+                        self.call("Page.navigate", json!({"url":"https://outlook.cloud.microsoft/mail/options/mail/forwarding"}))?;
+                    }
+                }
+                2 => {
+                    let state = self.outlook_forwarding_step("read", email, to)?;
+                    if state == "verified" {
+                        stage = 3;
+                        self.call("Page.navigate", json!({"url":"https://outlook.cloud.microsoft/mail/options/mail/forwarding"}))?;
+                    } else if state == "ready" && !submitted {
+                        // Only one write attempt. An ambiguous result must be read
+                        // back, never blindly replayed.
+                        let result = self.outlook_forwarding_step("write", email, to)?;
+                        if result == "submitted" {
+                            submitted = true;
+                            stage = 3;
+                            // Allow the app's own save request to complete before
+                            // reloading; the readback is still the success gate.
+                            std::thread::sleep(Duration::from_secs(2));
+                            self.call("Page.navigate", json!({"url":"https://outlook.cloud.microsoft/mail/options/mail/forwarding"}))?;
+                        } else if result == "no-save" {
+                            return Err("Outlook did not expose an unambiguous Save button. Forwarding was not confirmed.".into());
+                        }
+                    }
+                }
+                3 => {
+                    if self.outlook_forwarding_step("read", email, to)? == "verified" {
+                        stage = 4
+                    }
+                }
+                _ => {
+                    self.profile.origin = "https://outlook.cloud.microsoft".into();
+                    self.profile.home = "https://outlook.cloud.microsoft/mail/".into();
+                    self.profile.identity = Some(email.into());
+                    self.checkpoint()?;
+                    return Ok(());
+                }
+            }
+            std::thread::sleep(Duration::from_millis(750));
+        }
+        Err("Outlook forwarding was not verified. Check the account, any extra authentication prompt, and the forwarding settings before retrying.".into())
     }
 
     fn probe(&mut self) -> Result<(), String> {
@@ -957,6 +1057,20 @@ impl Browser {
             home.set_fragment(None);
             self.profile.home = home.to_string();
         } else if self.profile.service == "outlook" {
+            if outlook_new_web(&url) {
+                if origin != self.profile.origin {
+                    return Err(RECONNECT.into());
+                }
+                let Some(identity) = self.profile.identity.clone() else {
+                    return Err(RECONNECT.into());
+                };
+                if self.outlook_forwarding_step("account", &identity, "")? != "opened"
+                    || self.outlook_forwarding_step("identity", &identity, "")? != "verified"
+                {
+                    return Err(RECONNECT.into());
+                }
+                return Ok(());
+            }
             if origin != self.profile.origin
                 || (url.scheme() != "https" && !origin.starts_with("http://127.0.0.1"))
             {
@@ -965,11 +1079,14 @@ impl Browser {
             let user = self
                 .request("GET", "/api/v2.0/me", None, None, false, 2 * 1024 * 1024)?
                 .json()?;
-            if user.get("EmailAddress").and_then(Value::as_str).is_none()
-                && user.get("Id").and_then(Value::as_str).is_none()
-            {
+            let mailbox = user
+                .get("EmailAddress")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            if mailbox.is_none() && user.get("Id").and_then(Value::as_str).is_none() {
                 return Err(RECONNECT.into());
             }
+            self.profile.identity = mailbox;
             self.profile.home = format!("{origin}/mail/");
         } else if self.profile.service == "canvas" {
             if origin != self.profile.origin
@@ -1207,13 +1324,48 @@ impl Drop for Browser {
     }
 }
 
+fn outlook_new_web(url: &url::Url) -> bool {
+    url.scheme() == "https"
+        && url.host_str() == Some("outlook.cloud.microsoft")
+        && (url.path() == "/mail" || url.path().starts_with("/mail/"))
+}
+
+fn outlook_mailbox_hint(input: &str) -> Result<String, String> {
+    let email = crate::mail::normalize_forward_to(input)
+        .map_err(|_| "Enter your school Outlook email address.".to_string())?;
+    let (_, host) = email.split_once('@').unwrap();
+    if email.matches('@').count() != 1
+        || !host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
+    {
+        return Err("Enter your school Outlook email address.".into());
+    }
+    Ok(email)
+}
+
+fn outlook_login_url(home: &str, mailbox_hint: Option<&str>) -> Result<String, String> {
+    let Some(mailbox_hint) = mailbox_hint else {
+        return Ok(home.into());
+    };
+    let mut url = url::Url::parse(home).map_err(|_| "Invalid Outlook login address.")?;
+    // Outlook's root forwards login_hint to Microsoft sign-in; keep the
+    // verified /mail/ page as the profile home for future sessions.
+    url.set_path("/");
+    url.query_pairs_mut()
+        .append_pair("login_hint", mailbox_hint);
+    Ok(url.to_string())
+}
+
+type LoginOutcome = Result<(String, String, Option<String>, Option<String>), String>;
+
 pub struct Login {
     pub service: String,
     pub id: String,
     pub state: String,
     pub error: Option<String>,
     cancelled: Arc<AtomicBool>,
-    result: mpsc::Receiver<Result<(String, String), String>>,
+    result: mpsc::Receiver<LoginOutcome>,
     worker: Option<std::thread::JoinHandle<()>>,
     token: String,
     created: bool,
@@ -1228,6 +1380,8 @@ impl Login {
         origin: &str,
         previous: Option<&str>,
         allow_download: bool,
+        mailbox_hint: Option<&str>,
+        forward_to: Option<&str>,
     ) -> Result<Self, String> {
         let origin = match service {
             "moodle" => crate::config::normalize_moodle_url(origin)?,
@@ -1246,6 +1400,18 @@ impl Login {
         if !origin.starts_with("https://") {
             return Err("Browser login requires an HTTPS school address.".into());
         }
+        let mailbox_hint = if service == "outlook" {
+            mailbox_hint.map(outlook_mailbox_hint).transpose()?
+        } else {
+            None
+        };
+        let forward_to = if service == "outlook" {
+            forward_to
+                .map(crate::mail::normalize_forward_to)
+                .transpose()?
+        } else {
+            None
+        };
         // Validate an explicit override before starting; installation is done by
         // the login worker so the local UI and Cancel stay responsive.
         let system_browser = system_executable()?;
@@ -1278,10 +1444,23 @@ impl Login {
                     &service_owned,
                     &worker_origin,
                     true,
+                    mailbox_hint.as_deref(),
                     &stop,
                 )?;
                 worker_progress.lock().unwrap().phase = "signin";
-                browser.wait_ready(&stop, Duration::from_secs(300))?;
+                let forwarded =
+                    if service_owned == "outlook" && forward_to.is_some() && mailbox_hint.is_some()
+                    {
+                        browser.wait_outlook_forwarding(
+                            &stop,
+                            mailbox_hint.as_deref().unwrap(),
+                            forward_to.as_deref().unwrap(),
+                        )?;
+                        forward_to.clone()
+                    } else {
+                        browser.wait_ready(&stop, Duration::from_secs(300))?;
+                        None
+                    };
                 if let Some(sso) = browser.moodle_sso.as_mut() {
                     let token = sso.token.take().ok_or(moodle::UNAVAILABLE)?;
                     let client = crate::moodle::MoodleClient::new(&crate::config::MoodleConfig {
@@ -1293,9 +1472,15 @@ impl Login {
                     install::check_cancelled(&stop)?;
                     drop(browser);
                     remove(&worker_token)?;
-                    return Ok((token, worker_origin));
+                    return Ok((token, worker_origin, None, None));
                 }
-                Ok((worker_token, browser.profile.origin.clone()))
+                let mailbox = browser.profile.identity.clone();
+                Ok((
+                    worker_token,
+                    browser.profile.origin.clone(),
+                    mailbox,
+                    forwarded,
+                ))
             })();
             let _ = tx.send(outcome);
         });
@@ -1323,7 +1508,7 @@ impl Login {
             Err(mpsc::TryRecvError::Empty) => return,
             Err(_) => Err("Sign-in worker stopped.".into()),
         };
-        let result = result.and_then(|(token, url)| {
+        let result = result.and_then(|(token, url, mailbox, forwarded)| {
             let mut settings = crate::config::Settings::load().for_account(&self.service, &self.id);
             match self.service.as_str() {
                 "moodle" => {
@@ -1355,7 +1540,9 @@ impl Login {
                     settings.outlook = Some(crate::config::MailSettings {
                         url: Some(url),
                         token: Some(token),
-                        ..Default::default()
+                        mailbox,
+                        forwarding: forwarded.is_some(),
+                        forward_to: forwarded,
                     });
                 }
                 "canvas" => {
@@ -1559,7 +1746,55 @@ mod tests {
             ("brightspace", "http://school.example"),
             ("brightspace", "https://user:password@school.example"),
         ] {
-            assert!(Login::start(service, "test", origin, None, false).is_err());
+            assert!(Login::start(service, "test", origin, None, false, None, None).is_err());
+        }
+    }
+
+    #[test]
+    fn outlook_login_hint_prefills_mailbox_without_changing_profile_origin() {
+        let email = outlook_mailbox_hint(" Student+1@School.EDU ").unwrap();
+        let home = outlook_login_url("https://outlook.office.com/mail/", Some(&email)).unwrap();
+        let url = url::Url::parse(&home).unwrap();
+        assert_eq!(
+            url.origin().ascii_serialization(),
+            "https://outlook.office.com"
+        );
+        assert_eq!(url.path(), "/");
+        assert_eq!(
+            url.query_pairs()
+                .find(|(key, _)| key == "login_hint")
+                .unwrap()
+                .1,
+            email
+        );
+        assert_eq!(
+            outlook_login_url("https://outlook.office.com/mail/", None).unwrap(),
+            "https://outlook.office.com/mail/"
+        );
+        for invalid in [
+            "not-an-email",
+            "student@school.edu@other.example",
+            "student@school.edu?redirect=evil",
+        ] {
+            assert!(outlook_mailbox_hint(invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn redirected_outlook_web_is_not_mistaken_for_a_verified_legacy_session() {
+        for address in [
+            "https://outlook.cloud.microsoft/mail/",
+            "https://outlook.cloud.microsoft/mail/options/mail/forwarding",
+        ] {
+            assert!(outlook_new_web(&url::Url::parse(address).unwrap()));
+        }
+        for address in [
+            "https://outlook.office.com/mail/",
+            "https://outlook.cloud.microsoft.evil.example/mail/",
+            "https://outlook.cloud.microsoft/signin",
+            "http://outlook.cloud.microsoft/mail/",
+        ] {
+            assert!(!outlook_new_web(&url::Url::parse(address).unwrap()));
         }
     }
 
@@ -1687,7 +1922,9 @@ mod tests {
             assert!(tx
                 .send(Ok((
                     format!("{PREFIX}{}", "a".repeat(32)),
-                    "https://school.example".into()
+                    "https://school.example".into(),
+                    None,
+                    None
                 )))
                 .is_err());
             assert!(crate::config::Settings::load()
@@ -1723,8 +1960,13 @@ mod tests {
                 origin: "https://school.example".into(),
             };
             let token = format!("{PREFIX}{}", "a".repeat(32));
-            tx.send(Ok((token.clone(), "https://school.example".into())))
-                .unwrap();
+            tx.send(Ok((
+                token.clone(),
+                "https://school.example".into(),
+                None,
+                None,
+            )))
+            .unwrap();
             login.poll();
             assert_eq!(login.state, "connected");
             assert!(!login.status().to_string().contains(&token));
@@ -1742,7 +1984,7 @@ mod tests {
             let (tx, result) = mpsc::channel();
             login.result = result;
             login.state = "waiting".into();
-            tx.send(Ok((token, "https://school.example".into())))
+            tx.send(Ok((token, "https://school.example".into(), None, None)))
                 .unwrap();
             login.poll();
             assert_eq!(login.state, "failed");

@@ -139,10 +139,10 @@ fn definitions_for_services(
         let moodle = json!([
             { "name": "moodle_status", "description": "Check the Moodle connection and show which site and account this token belongs to.", "annotations": { "readOnlyHint": true } },
             { "name": "moodle_my_courses", "description": "List enrolled courses as a compact summary (id, names, dates). Hidden and ended courses are omitted unless include_hidden is true.", "inputSchema": { "type": "object", "properties": { "include_hidden": { "type": "boolean", "description": "Include hidden and ended courses." } } }, "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_search", "description": "Search the student's courses and materials. Prefer this to locate a TD, quiz or file. Pass courseid to search one course; a course code in the query (MATH101) does the same. Matches TD5 to names like 'TD Chapitre 5'.", "inputSchema": { "type": "object", "properties": { "query": { "type": "string" }, "courseid": { "type": "integer", "minimum": 1, "description": "Limit the search to one course." }, "page": { "type": "integer", "minimum": 0 } }, "required": ["query"] }, "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_course_content", "description": "Compact section tree of a course: section names, activities, and fileurl values. Optional query keeps matching modules (e.g. TD5). Pass fileurl to moodle_file; do not fetch it with a generic HTTP tool.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 }, "query": { "type": "string", "description": "Keep modules whose name or filename matches, such as TD5 or chapitre 5." } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_search", "description": "Search the student's courses and materials. Prefer this to locate a TD, quiz or file. Pass courseid to search one course; a course code in the query (MATH101) does the same. Matches TD5 to names like 'TD Chapitre 5'. fileurl is not a user download link: call moodle_file and share links.download instead.", "inputSchema": { "type": "object", "properties": { "query": { "type": "string" }, "courseid": { "type": "integer", "minimum": 1, "description": "Limit the search to one course." }, "page": { "type": "integer", "minimum": 0 } }, "required": ["query"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_course_content", "description": "Compact section tree of a course: section names, activities, and fileurl values. Optional query keeps matching modules (e.g. TD5). fileurl is an internal reference, not a user download link. Call moodle_file and share links.download instead; do not fetch fileurl with a generic HTTP tool.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 }, "query": { "type": "string", "description": "Keep modules whose name or filename matches, such as TD5 or chapitre 5." } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_resources", "description": "Flat list of pages, files, URLs, folders and books, without section names. Prefer moodle_course_content to find a TD or week.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_file", "description": "Read a course document using fileurl. PDF: original file by default; format=text for selected pages or format=images for diagrams/scans. Office/OpenDocument: extracted text, tables, slides and sheet cell values in bounded text blocks; page_from/page_to select blocks, not physical pages. Supports docx/pptx/xlsx/xls/odt/odp/ods; legacy doc/ppt need local antiword/catppt. Charts/images/equations may be missing from Office text: export to PDF for visual analysis. find searches extracted text. Follow nextPageFrom when truncated. Never send the Moodle token to another tool.", "inputSchema": { "type": "object", "properties": { "fileurl": { "type": "string" }, "format": { "type": "string", "enum": ["file", "text", "images"], "description": "PDF representation. Office files return extracted text; images requires PDF." }, "find": { "type": "string", "description": "Phrase to find in extracted text." }, "page_from": { "type": "integer", "minimum": 1 }, "page_to": { "type": "integer", "minimum": 1 } }, "required": ["fileurl"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_file", "description": "Read a course document using fileurl. For a user-openable PDF link, use format=file and share links.download, not fileurl; if no link is returned, say so. PDF: original file by default; format=text for selected pages or format=images for diagrams/scans. Office/OpenDocument: extracted text, tables, slides and sheet cell values in bounded text blocks; page_from/page_to select blocks, not physical pages. Supports docx/pptx/xlsx/xls/odt/odp/ods; legacy doc/ppt need local antiword/catppt. Charts/images/equations may be missing from Office text: export to PDF for visual analysis. find searches extracted text. Follow nextPageFrom when truncated. Never send the Moodle token to another tool.", "inputSchema": { "type": "object", "properties": { "fileurl": { "type": "string" }, "format": { "type": "string", "enum": ["file", "text", "images"], "description": "PDF representation. Office files return extracted text; images requires PDF." }, "find": { "type": "string", "description": "Phrase to find in extracted text." }, "page_from": { "type": "integer", "minimum": 1 }, "page_to": { "type": "integer", "minimum": 1 } }, "required": ["fileurl"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_assignments", "description": "List visible assignments; optionally filter to specific course IDs.", "inputSchema": { "type": "object", "properties": { "courseids": { "type": "array", "items": { "type": "integer" } } } }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_assignment_status", "description": "Submission and grading status for one assignment, including uploaded files.", "inputSchema": { "type": "object", "properties": { "assignid": { "type": "integer", "minimum": 1 } }, "required": ["assignid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_quizzes", "description": "List visible quizzes; optionally filter to specific course IDs.", "inputSchema": { "type": "object", "properties": { "courseids": { "type": "array", "items": { "type": "integer" } } } }, "annotations": { "readOnlyHint": true } },
@@ -1240,6 +1240,48 @@ mod protocol_tests {
                     assert!(tool["inputSchema"]["properties"].get("required").is_none());
                 }
             }
+        }
+    }
+
+    #[test]
+    fn document_tools_direct_agents_to_shareable_pdf_links() {
+        let settings = Settings {
+            moodle: Some(MoodleSettings {
+                url: Some("https://moodle.example.org".into()),
+                token: Some("test-token".into()),
+                ..Default::default()
+            }),
+            brightspace: Some(crate::config::BrightspaceSettings {
+                url: Some("https://school.example".into()),
+                token: Some("test-token".into()),
+                allow_write: Some(false),
+            }),
+            omnivox: Some(crate::config::OmnivoxSettings {
+                url: Some("https://school.omnivox.ca".into()),
+                token: Some("test-token".into()),
+                ..Default::default()
+            }),
+            canvas: Some(crate::config::CanvasSettings {
+                url: Some("https://canvas.example.org".into()),
+                token: Some("test-token".into()),
+            }),
+            ..Default::default()
+        };
+        let tools = tool_definitions(&settings);
+        for name in [
+            "moodle_file",
+            "brightspace_file",
+            "omnivox_file",
+            "canvas_file",
+        ] {
+            let tool = tools.iter().find(|tool| tool["name"] == name).unwrap();
+            assert!(
+                tool["description"]
+                    .as_str()
+                    .unwrap()
+                    .contains("links.download"),
+                "{name}"
+            );
         }
     }
 

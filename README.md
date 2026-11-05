@@ -38,7 +38,11 @@ If Chrome, Edge or Brave is already installed, that browser is used. A download 
 
 When the page says you are connected, go back to the home screen.
 
-The envelope button forwards school Outlook to another address (for example Gmail) and keeps a copy in Outlook. If your school blocks automatic forwarding, the page says so instead of pretending it worked.
+The envelope button opens **Mail transfer**: enter your school Outlook email on the left and your personal address (such as `you@gmail.com`) on the right. **Connect to Outlook** opens Outlook with your school email prefilled. On `outlook.cloud.microsoft`, student-mcp attempts to verify the account from the account menu, configure forwarding through Outlook’s own **Settings → Mail → Forwarding** panel, then reload and confirm the destination and copy setting before reporting success. If Outlook changes its controls, requires extra authentication or blocks forwarding, it reports an error instead of claiming activation. This browser path needs validation against a real signed-in Outlook session; no account was changed during development.
+
+<p align="center"><img src="tools/screens/mail-connect.png" width="100%" alt="Mail transfer sign-in with school Outlook email and personal mail destination fields" /></p>
+
+<p align="center"><img src="tools/screens/mail.png" width="100%" alt="Illustrative mail transfer state, not a verified live Outlook session" /></p>
 
 ## 3. Copy your AI link
 

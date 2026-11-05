@@ -253,14 +253,17 @@ pub fn activate(
     let client = MailClient::new(crate::config::MailConfig {
         base_url: base_url.clone(),
         token: token.into(),
+        mailbox: None,
         forward_to: None,
         forwarding: false,
     });
     let me = client.me()?;
+    let mailbox = me.get("email").and_then(Value::as_str).map(str::to_string);
     let mut updated = settings.clone();
     updated.outlook = Some(crate::config::MailSettings {
         url: Some(base_url),
         token: Some(token.into()),
+        mailbox: mailbox.clone(),
         forward_to: None,
         forwarding: false,
     });
@@ -270,7 +273,7 @@ pub fn activate(
     *settings = updated;
     Ok(format!(
         "Connected to Outlook as {}.",
-        me.get("email").and_then(Value::as_str).unwrap_or("mailbox")
+        mailbox.as_deref().unwrap_or("mailbox")
     ))
 }
 
@@ -278,6 +281,12 @@ pub fn enable(settings: &mut crate::config::Settings, forward_to: &str) -> Resul
     let config = settings
         .outlook()
         .ok_or("Connect Outlook before enabling forwarding.")?;
+    if config.base_url == "https://outlook.cloud.microsoft" {
+        return Err(
+            "Reconnect Outlook with both addresses to configure forwarding in the sign-in browser."
+                .into(),
+        );
+    }
     let client = MailClient::new(config.clone());
     let me = client.me()?;
     let mailbox = me
@@ -292,6 +301,9 @@ pub fn enable(settings: &mut crate::config::Settings, forward_to: &str) -> Resul
     }
     let mut updated = settings.clone();
     if let Some(saved) = updated.outlook.as_mut() {
+        if saved.mailbox.as_deref() != Some(mailbox) {
+            saved.mailbox = Some(mailbox.into());
+        }
         saved.forward_to = Some(forward_to.clone());
         saved.forwarding = true;
     }
@@ -306,6 +318,9 @@ pub fn enable(settings: &mut crate::config::Settings, forward_to: &str) -> Resul
 
 pub fn disable(settings: &mut crate::config::Settings) -> Result<String, String> {
     let config = settings.outlook().ok_or("Outlook is not connected.")?;
+    if config.base_url == "https://outlook.cloud.microsoft" {
+        return Err("Outlook forwarding cannot be switched off here yet. Use Outlook Settings → Mail → Forwarding.".into());
+    }
     MailClient::new(config).disable()?;
     let mut updated = settings.clone();
     if let Some(saved) = updated.outlook.as_mut() {
@@ -339,6 +354,7 @@ mod tests {
             MailConfig {
                 base_url: origin,
                 token: "session=fixture".into(),
+                mailbox: None,
                 forward_to: None,
                 forwarding: false,
             },
