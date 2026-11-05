@@ -26,7 +26,7 @@ The installer adds student-mcp to the application menu. Windows or macOS may war
 
 Launch it from the Start menu, Applications, or your app launcher. A local page opens. Closing the tab leaves a tray icon; quit from there when you are done.
 
-<p align="center"><img src="tools/screens/home.png" width="100%" alt="student-mcp home: Moodle, Omnivox and Brightspace tiles, AI connection card and launch at startup" /></p>
+<p align="center"><img src="tools/screens/home.png" width="100%" alt="student-mcp home: Moodle, Omnivox, Brightspace and Canvas tiles, mail button, AI connection card and launch at startup" /></p>
 
 ## 2. Connect your school
 
