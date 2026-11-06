@@ -94,14 +94,7 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         links = page.split(b'function linkScreen(){', 1)[1].split(b'function publicMessage(', 1)[0]
         assert b'Launch at startup' in home and b'name="autostart"' in home
         assert b'name="advanced"' not in home and b'Allow changes' not in manage
-        assert b'data-screen="mail"' in home and b"t('Mail transfer')" in home
-        assert b"mail-diagram" in page and b"School mail" in page and b"Personal mail" in page
-        assert b"Connect to Outlook" in page and b"Forwarding on" in page
-        assert b"Your school blocks automatic forwarding." in page
-        assert b"Ton \xc3\xa9cole bloque le transfert automatique" in page
-        assert b"Transfert actif" in page and b"Mail de l" in page
-        logo_outlook = request("/assets/outlook.png", auth=False)
-        assert logo_outlook[0] == 200 and logo_outlook[1].startswith(b"\x89PNG\r\n\x1a\n")
+        assert b"Mail transfer" not in page and b"/assets/outlook.png" not in page
         assert b'name="autostart"' not in links
         assert manage.index(b'class="status-row"') < manage.index(b'data-add') < manage.index(b'class="manage-actions"')
         assert b'accountChoices()' in manage and b'account-list' not in manage

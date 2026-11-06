@@ -43,9 +43,3 @@ The Brightspace brand belongs to D2L; its use here identifies the service only.
 https://cdn.jsdelivr.net/npm/simple-icons@15.4.0/icons/canvas.svg
 Rasterized at 256 × 256 with Canvas red `#E72429`. The Canvas brand belongs
 to Instructure; its use here identifies the service only.
-
-`outlook-icon.png` is the Microsoft Outlook mark from
-[Simple Icons](https://simpleicons.org/) (CC0):
-https://cdn.jsdelivr.net/npm/simple-icons@15.18.0/icons/microsoftoutlook.svg
-Rasterized at 256 × 256 with Outlook blue `#0078D4`. The Outlook brand belongs
-to Microsoft; its use here identifies the school mailbox only.

@@ -18,7 +18,7 @@ mod update;
 mod web;
 
 use services::moodle::catalog;
-use services::{brightspace, canvas, mail, moodle, omnivox};
+use services::{brightspace, canvas, moodle, omnivox};
 
 pub use config::VERSION;
 pub use stdio::run as run_stdio;

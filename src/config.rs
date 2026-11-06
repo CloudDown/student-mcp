@@ -95,38 +95,6 @@ impl std::fmt::Debug for OmnivoxSettings {
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
-pub struct MailSettings {
-    pub url: Option<String>,
-    pub token: Option<String>,
-    pub mailbox: Option<String>,
-    pub forward_to: Option<String>,
-    #[serde(default)]
-    pub forwarding: bool,
-}
-
-impl std::fmt::Debug for MailSettings {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("MailSettings")
-            .field("url", &self.url)
-            .field("token", &"[redacted]")
-            .field("mailbox", &self.mailbox)
-            .field("forward_to", &self.forward_to)
-            .field("forwarding", &self.forwarding)
-            .finish()
-    }
-}
-
-#[derive(Clone)]
-pub struct MailConfig {
-    pub base_url: String,
-    pub token: String,
-    pub mailbox: Option<String>,
-    pub forward_to: Option<String>,
-    pub forwarding: bool,
-}
-
-#[derive(Clone, Default, Serialize, Deserialize)]
-#[serde(default)]
 pub struct BrightspaceSettings {
     pub url: Option<String>,
     pub token: Option<String>,
@@ -190,8 +158,6 @@ pub struct Settings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub brightspace: Option<BrightspaceSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub outlook: Option<MailSettings>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub canvas: Option<CanvasSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scale: Option<f32>,
@@ -215,8 +181,6 @@ pub struct Account {
     pub moodle: Option<MoodleSettings>,
     pub omnivox: Option<OmnivoxSettings>,
     pub brightspace: Option<BrightspaceSettings>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub outlook: Option<MailSettings>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub canvas: Option<CanvasSettings>,
 }
@@ -290,7 +254,6 @@ impl Settings {
             "moodle" => self.moodle().map(|c| c.base_url),
             "omnivox" => self.omnivox().map(|c| c.base_url),
             "brightspace" => self.brightspace().map(|c| c.base_url),
-            "outlook" => self.outlook().map(|c| c.base_url),
             "canvas" => self.canvas().map(|c| c.base_url),
             _ => None,
         };
@@ -303,7 +266,6 @@ impl Settings {
                     "moodle" => account.moodle.as_ref().and_then(|c| c.url.clone()),
                     "omnivox" => account.omnivox.as_ref().and_then(|c| c.url.clone()),
                     "brightspace" => account.brightspace.as_ref().and_then(|c| c.url.clone()),
-                    "outlook" => account.outlook.as_ref().and_then(|c| c.url.clone()),
                     "canvas" => account.canvas.as_ref().and_then(|c| c.url.clone()),
                     _ => None,
                 };
@@ -326,7 +288,6 @@ impl Settings {
                 "moodle" => scoped.moodle = account.and_then(|a| a.moodle.clone()),
                 "omnivox" => scoped.omnivox = account.and_then(|a| a.omnivox.clone()),
                 "brightspace" => scoped.brightspace = account.and_then(|a| a.brightspace.clone()),
-                "outlook" => scoped.outlook = account.and_then(|a| a.outlook.clone()),
                 "canvas" => scoped.canvas = account.and_then(|a| a.canvas.clone()),
                 _ => {}
             }
@@ -456,7 +417,6 @@ impl Settings {
                     "moodle" => root.moodle = self.moodle.clone(),
                     "omnivox" => root.omnivox = self.omnivox.clone(),
                     "brightspace" => root.brightspace = self.brightspace.clone(),
-                    "outlook" => root.outlook = self.outlook.clone(),
                     "canvas" => root.canvas = self.canvas.clone(),
                     _ => {}
                 }
@@ -473,15 +433,11 @@ impl Settings {
                     brightspace: (service == "brightspace")
                         .then(|| self.brightspace.clone())
                         .flatten(),
-                    outlook: (service == "outlook")
-                        .then(|| self.outlook.clone())
-                        .flatten(),
                     canvas: (service == "canvas").then(|| self.canvas.clone()).flatten(),
                 };
                 if account.moodle.is_some()
                     || account.omnivox.is_some()
                     || account.brightspace.is_some()
-                    || account.outlook.is_some()
                     || account.canvas.is_some()
                 {
                     root.accounts.push(account);
@@ -572,7 +528,6 @@ impl Settings {
             "moodle" => self.moodle = None,
             "omnivox" => self.omnivox = None,
             "brightspace" => self.brightspace = None,
-            "outlook" => self.outlook = None,
             "canvas" => self.canvas = None,
             _ => {}
         }
@@ -653,21 +608,6 @@ impl Settings {
             base_url: normalize_brightspace_url(saved.url.as_deref()?).ok()?,
             token: token.to_string(),
             allow_write: saved.allow_write.unwrap_or(false),
-        })
-    }
-
-    pub fn outlook(&self) -> Option<MailConfig> {
-        let saved = self.outlook.as_ref()?;
-        let token = saved.token.as_deref()?.trim();
-        if token.is_empty() {
-            return None;
-        }
-        Some(MailConfig {
-            base_url: normalize_outlook_url(saved.url.as_deref()?).ok()?,
-            token: token.to_string(),
-            mailbox: saved.mailbox.clone(),
-            forward_to: saved.forward_to.clone(),
-            forwarding: saved.forwarding,
         })
     }
 
@@ -818,26 +758,6 @@ pub fn normalize_brightspace_url(input: &str) -> Result<String, String> {
         return Err("Use your Brightspace site address, e.g. https://mycourses.mcgill.ca.".into());
     }
     Ok(url.origin().ascii_serialization())
-}
-
-pub fn normalize_outlook_url(input: &str) -> Result<String, String> {
-    let url = parse_site_url(input)?;
-    let host = url.host_str().unwrap_or("").to_ascii_lowercase();
-    let outlook = host == "outlook.office.com"
-        || host == "outlook.cloud.microsoft"
-        || host == "outlook.office365.com"
-        || host == "outlook.live.com"
-        || host.ends_with(".office.com")
-        || host.ends_with(".office365.com");
-    if outlook
-        || parse_site_url(input).ok().is_some_and(|u| {
-            u.host_str()
-                .is_some_and(|h| h == "127.0.0.1" || h == "localhost" || h == "::1")
-        })
-    {
-        return Ok(url.origin().ascii_serialization());
-    }
-    Err("Use https://outlook.office.com or your school Outlook address.".into())
 }
 
 pub fn normalize_canvas_url(input: &str) -> Result<String, String> {
@@ -1005,7 +925,6 @@ pub(crate) mod tests {
                 }),
                 omnivox: None,
                 brightspace: None,
-                outlook: None,
                 canvas: None,
             });
         })
@@ -1128,27 +1047,6 @@ pub(crate) mod tests {
         assert!(!token_matches("abc", Some("abd")));
         assert!(token_matches("abc", Some("abc")));
         assert!(!token_matches("abc", None));
-    }
-
-    #[test]
-    fn outlook_urls_accept_office_hosts_and_localhost() {
-        assert_eq!(
-            normalize_outlook_url("https://outlook.cloud.microsoft/mail/").unwrap(),
-            "https://outlook.cloud.microsoft"
-        );
-        assert_eq!(
-            normalize_outlook_url("outlook.office.com").unwrap(),
-            "https://outlook.office.com"
-        );
-        assert_eq!(
-            normalize_outlook_url("https://outlook.office365.com/mail/").unwrap(),
-            "https://outlook.office365.com"
-        );
-        assert_eq!(
-            normalize_outlook_url("http://127.0.0.1:1234/mail/").unwrap(),
-            "http://127.0.0.1:1234"
-        );
-        assert!(normalize_outlook_url("https://evil.example").is_err());
     }
 
     #[test]
@@ -1412,7 +1310,6 @@ pub(crate) mod tests {
                     ..Default::default()
                 }),
                 brightspace: None,
-                outlook: None,
                 canvas: None,
             });
             settings.save().unwrap();

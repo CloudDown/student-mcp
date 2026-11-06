@@ -44,22 +44,6 @@ automatically when configured. Turn it off to remove the startup entry.
 
 ## 2. Connecting a service
 
-**Outlook mail transfer.** The envelope button opens a simple diagram:
-school Outlook on the left, personal mail on the right. Enter the school
-Outlook email (not a URL); the browser opens `https://outlook.office.com`
-with that email as a login hint. After the
-mailbox is verified, enter the destination address and **Turn on
-forwarding**. student-mcp creates an inbox rule named
-`student-mcp-forward` that **forwards** (it does not redirect), so a
-copy stays in Outlook, then sends a test message to the mailbox. When
-active, the arrow shows **Forwarding on** (French: *Transfert actif*).
-Error `5.7.520` turns the arrow red as **Your school blocks automatic
-forwarding.** (French: *Ton école bloque le transfert automatique*).
-**Turn off** deletes that rule when the older Outlook API is available.
-On `outlook.cloud.microsoft`, **Turn on** / **Turn off** reopen the
-sign-in browser and change Outlook’s own forwarding settings, then
-reload to confirm. Mail transfer is local UI only; it is not an MCP tool.
-
 **Canvas.** Same browser sign-in as Brightspace. Enter the school Canvas
 address (ZoneCours HEC: `https://zonecours2.hec.ca`) and **Connect with
 browser**. student-mcp stores a private browser profile, not a personal

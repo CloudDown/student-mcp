@@ -232,7 +232,6 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                     Some(include_bytes!("resources/assets/brightspace-icon.png"))
                 }
                 "/assets/canvas.png" => Some(include_bytes!("resources/assets/canvas-icon.png")),
-                "/assets/outlook.png" => Some(include_bytes!("resources/assets/outlook-icon.png")),
                 _ => None,
             };
             if let Some(image) = image {
@@ -259,13 +258,12 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
             }
         } else if request.method() == &Method::Get && path == "/state" {
             let mut accounts = Vec::new();
-            for service in ["moodle", "omnivox", "brightspace", "outlook", "canvas"] {
+            for service in ["moodle", "omnivox", "brightspace", "canvas"] {
                 for (id, url) in current.account_list(service) {
                     accounts.push(json!({"service":service,"id":id,"url":url,"enabled":current.service_enabled(service)}));
                 }
             }
-            let mail = current.outlook().map(|c| json!({"connected":true,"mailbox":c.mailbox,"forward_to":c.forward_to,"forwarding":c.forwarding,"url":c.base_url})).unwrap_or(json!({"connected":false}));
-            (200, "application/json", json!({"accounts":accounts,"mail":mail,"verification":pending.as_ref().map(|(_,p)| &p.prompt),"browser_login":browser_login.as_ref().map(crate::browser::Login::status),"link":mcp_endpoint(tunnel.origin().unwrap_or(&format!("http://127.0.0.1:{port}")), &gateway.token),"local_link":mcp_endpoint(&format!("http://127.0.0.1:{port}"), &gateway.token),"tunnel":format!("{:?}",tunnel.state),"public":current.gateway.public_enabled(),"local":enabled.load(Ordering::SeqCst),"autostart":crate::autostart::enabled().unwrap_or(false)}).to_string().into_bytes(),false)
+            (200, "application/json", json!({"accounts":accounts,"verification":pending.as_ref().map(|(_,p)| &p.prompt),"browser_login":browser_login.as_ref().map(crate::browser::Login::status),"link":mcp_endpoint(tunnel.origin().unwrap_or(&format!("http://127.0.0.1:{port}")), &gateway.token),"local_link":mcp_endpoint(&format!("http://127.0.0.1:{port}"), &gateway.token),"tunnel":format!("{:?}",tunnel.state),"public":current.gateway.public_enabled(),"local":enabled.load(Ordering::SeqCst),"autostart":crate::autostart::enabled().unwrap_or(false)}).to_string().into_bytes(),false)
         } else if request.method() == &Method::Get && path == "/update" {
             (
                 200,
@@ -387,13 +385,6 @@ enum ActionDispatch {
 }
 
 fn background_action(action: &str) -> bool {
-    // Browser-profile Outlook enable/disable is handled on the UI thread so the
-    // sign-in window can open. API/cookie sessions still use the worker.
-    if matches!(action, "mail_enable" | "mail_disable") {
-        return Settings::load()
-            .outlook()
-            .is_none_or(|config| !mail_uses_browser(&config));
-    }
     matches!(
         action,
         "connect" | "check" | "verify" | "resend" | "disconnect"
@@ -465,19 +456,10 @@ fn action(
             }
             return Ok(json!({"message":"Cancelled"}));
         }
-        "mail_enable" | "mail_disable" => {
-            let enable = get("action") == "mail_enable";
-            if let Some(config) = Settings::load().outlook() {
-                if mail_uses_browser(&config) {
-                    return start_mail_browser(browser_login, pending, enable, get("forward_to"));
-                }
-            }
-            // Cookie/API sessions still use the background worker below.
-        }
         _ => {}
     }
     let service = get("service");
-    if !["moodle", "omnivox", "brightspace", "outlook", "canvas"].contains(&service) {
+    if !["moodle", "omnivox", "brightspace", "canvas"].contains(&service) {
         return Err("Unknown service".into());
     }
     if get("action") == "service_enabled" {
@@ -497,7 +479,6 @@ fn action(
         "moodle" => settings.moodle().map(|c| (c.base_url, c.token)),
         "brightspace" => settings.brightspace().map(|c| (c.base_url, c.token)),
         "omnivox" => settings.omnivox().map(|c| (c.base_url, c.token)),
-        "outlook" => settings.outlook().map(|c| (c.base_url, c.token)),
         "canvas" => settings.canvas().map(|c| (c.base_url, c.token)),
         _ => None,
     };
@@ -509,14 +490,7 @@ fn action(
             return Err("Finish or cancel the current browser sign-in first.".into());
         }
         let url = if get("url").is_empty() {
-            saved
-                .as_ref()
-                .map(|(url, _)| url.as_str())
-                .unwrap_or(if service == "outlook" {
-                    "https://outlook.office.com"
-                } else {
-                    ""
-                })
+            saved.as_ref().map(|(url, _)| url.as_str()).unwrap_or("")
         } else {
             get("url")
         };
@@ -528,20 +502,12 @@ fn action(
         if !allow_download && crate::browser::needs_download()? {
             return Ok(json!({"browser_download_required":true}));
         }
-        let outlook = (service == "outlook" && !get("mailbox").is_empty()).then_some(
-            crate::browser::OutlookMailRequest {
-                mailbox: get("mailbox"),
-                forward_to: (!get("forward_to").is_empty()).then(|| get("forward_to")),
-                disable_forwarding: false,
-            },
-        );
         *browser_login = Some(crate::browser::Login::start(
             service,
             &id,
             url,
             previous,
             allow_download,
-            outlook,
         )?);
         *pending = None;
         return Ok(json!({"browser_login":browser_login.as_ref().unwrap().status()}));
@@ -549,69 +515,11 @@ fn action(
     Err("Unknown action".into())
 }
 
-fn mail_uses_browser(config: &crate::config::MailConfig) -> bool {
-    crate::browser::is_profile(&config.token)
-        || config.base_url == "https://outlook.cloud.microsoft"
-}
-
-fn start_mail_browser(
-    browser_login: &mut Option<crate::browser::Login>,
-    pending: &mut Option<(Settings, Box<PendingLogin>)>,
-    enable: bool,
-    forward_to: &str,
-) -> Result<Value, String> {
-    if browser_login
-        .as_ref()
-        .is_some_and(|login| login.state == "waiting" || login.running())
-    {
-        return Err("Finish or cancel the current browser sign-in first.".into());
-    }
-    let settings = Settings::load();
-    let config = settings
-        .outlook()
-        .ok_or("Connect Outlook before changing forwarding.")?;
-    let mailbox = config
-        .mailbox
-        .as_deref()
-        .filter(|value| !value.is_empty())
-        .ok_or("School mailbox missing. Reconnect Outlook with both addresses.")?;
-    if enable && forward_to.trim().is_empty() {
-        return Err("Enter the personal address that should receive forwarded mail.".into());
-    }
-    if crate::browser::needs_download()? {
-        return Ok(json!({"browser_download_required":true}));
-    }
-    *browser_login = Some(crate::browser::Login::start(
-        "outlook",
-        "outlook",
-        &config.base_url,
-        Some(&config.token),
-        false,
-        Some(crate::browser::OutlookMailRequest {
-            mailbox,
-            forward_to: enable.then_some(forward_to),
-            disable_forwarding: !enable,
-        }),
-    )?);
-    *pending = None;
-    Ok(json!({"browser_login":browser_login.as_ref().unwrap().status()}))
-}
-
 // Called only by the single connection worker, after the UI loop has checked
 // that no interactive browser login is running. Owns the MFA challenge while
 // working; never owns the UI server, tray or tunnel.
 fn connection_action(args: &Value, pending: &mut Pending) -> Result<Value, String> {
     let get = |key| args.get(key).and_then(Value::as_str).unwrap_or("");
-    if get("action") == "mail_enable" {
-        let mut settings = Settings::load();
-        let message = crate::mail::enable(&mut settings, get("forward_to"))?;
-        return Ok(json!({"message":message}));
-    }
-    if get("action") == "mail_disable" {
-        let mut settings = Settings::load();
-        let message = crate::mail::disable(&mut settings)?;
-        return Ok(json!({"message":message}));
-    }
     if matches!(get("action"), "verify" | "resend") {
         let (settings, challenge) = pending.as_mut().ok_or("No pending verification")?;
         if get("action") == "resend" {
@@ -623,7 +531,7 @@ fn connection_action(args: &Value, pending: &mut Pending) -> Result<Value, Strin
         return Ok(json!({"message":message}));
     }
     let service = get("service");
-    if !["moodle", "omnivox", "brightspace", "outlook", "canvas"].contains(&service) {
+    if !["moodle", "omnivox", "brightspace", "canvas"].contains(&service) {
         return Err("Unknown service".into());
     }
     let id = if get("id").is_empty() {
@@ -636,7 +544,6 @@ fn connection_action(args: &Value, pending: &mut Pending) -> Result<Value, Strin
         let saved = match service {
             "brightspace" => settings.brightspace().map(|c| (c.base_url, c.token)),
             "omnivox" => settings.omnivox().map(|c| (c.base_url, c.token)),
-            "outlook" => settings.outlook().map(|c| (c.base_url, c.token)),
             "canvas" => settings.canvas().map(|c| (c.base_url, c.token)),
             _ => None,
         };
@@ -671,7 +578,6 @@ fn connection_action(args: &Value, pending: &mut Pending) -> Result<Value, Strin
             let allow_write = settings.changes_allowed("brightspace");
             crate::brightspace::activate(&mut settings, get("url"), get("token"), allow_write)?
         }
-        "outlook" => crate::mail::activate(&mut settings, get("url"), get("token"))?,
         "canvas" => crate::canvas::activate(&mut settings, get("url"), get("token"))?,
         _ => {
             if get("token").is_empty() {

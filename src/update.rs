@@ -14,6 +14,7 @@ const MAX_DOWNLOAD: u64 = 256 * 1024 * 1024;
 struct State {
     release: Option<Value>,
     checked: Option<Instant>,
+    failures: u32,
     checking: bool,
     installing: bool,
     ready: bool,
@@ -40,6 +41,29 @@ fn version(value: &str) -> Option<(u64, u64, u64)> {
     parts.next().is_none().then_some(result)
 }
 
+/// Short, translatable reason instead of ureq's URL + transport diagnostics.
+fn reason(error: &ureq::Error, fallback: &'static str) -> String {
+    match error {
+        ureq::Error::Transport(transport) => match transport.kind() {
+            // A DNS hiccup at startup or a dropped Wi-Fi link; the next check retries.
+            ureq::ErrorKind::Dns
+            | ureq::ErrorKind::ConnectionFailed
+            | ureq::ErrorKind::Io
+            | ureq::ErrorKind::ProxyConnect => "No network connection".into(),
+            _ => fallback.into(),
+        },
+        _ => fallback.into(),
+    }
+}
+
+/// Check hourly, but retry a failed attempt quickly and back off while offline.
+fn delay_after(previous_failures: u32) -> Duration {
+    match previous_failures {
+        0 => Duration::from_secs(3600),
+        failures => Duration::from_secs(60 << (failures - 1).min(6)).min(Duration::from_secs(3600)),
+    }
+}
+
 fn asset_name() -> Result<String, String> {
     match std::env::consts::OS {
         "windows" => Ok("student-mcp-setup.exe".into()),
@@ -56,13 +80,11 @@ fn asset_name() -> Result<String, String> {
 impl Updater {
     pub fn check(&self) {
         let mut state = self.0.lock().unwrap();
-        if state.checking
-            || state.installing
-            || state.ready
-            || state
-                .checked
-                .is_some_and(|at| at.elapsed() < Duration::from_secs(3600))
-        {
+        if state.checking || state.installing || state.ready {
+            return;
+        }
+        let wait = delay_after(state.failures);
+        if state.checked.is_some_and(|at| at.elapsed() < wait) {
             return;
         }
         state.checking = true;
@@ -73,9 +95,9 @@ impl Updater {
                 let response = agent()
                     .get("https://api.github.com/repos/CloudDown/student-mcp/releases/latest")
                     .call()
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| reason(&e, "Update check failed"))?;
                 serde_json::from_reader(response.into_reader().take(1024 * 1024))
-                    .map_err(|e| e.to_string())
+                    .map_err(|_| "Update check failed".to_string())
             })();
             let mut state = this.0.lock().unwrap();
             state.checking = false;
@@ -83,9 +105,13 @@ impl Updater {
             match release {
                 Ok(release) => {
                     state.release = Some(release);
+                    state.failures = 0;
                     state.error = None;
                 }
-                Err(error) => state.error = Some(error),
+                Err(error) => {
+                    state.failures = state.failures.saturating_add(1);
+                    state.error = Some(error);
+                }
             }
         });
     }
@@ -189,7 +215,7 @@ fn install(tag: &str) -> Result<(), String> {
     agent
         .get(&format!("{base}/SHA256SUMS.txt"))
         .call()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| reason(&e, "Update failed"))?
         .into_reader()
         .take(64 * 1024)
         .read_to_string(&mut sums)
@@ -197,7 +223,7 @@ fn install(tag: &str) -> Result<(), String> {
     let source = agent
         .get(&format!("{base}/{name}"))
         .call()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| reason(&e, "Update failed"))?
         .into_reader();
     install_download(source, &sums, &name)
 }
@@ -413,6 +439,15 @@ mod tests {
         for invalid in ["v1.2.3-beta", "../1.2.3", "1.2", "1.2.3.4"] {
             assert_eq!(version(invalid), None);
         }
+    }
+    #[test]
+    fn failed_checks_retry_quickly_then_back_off() {
+        assert_eq!(delay_after(0), Duration::from_secs(3600));
+        assert_eq!(delay_after(1), Duration::from_secs(60));
+        assert_eq!(delay_after(2), Duration::from_secs(120));
+        assert_eq!(delay_after(6), Duration::from_secs(1920));
+        assert_eq!(delay_after(7), Duration::from_secs(3600));
+        assert_eq!(delay_after(u32::MAX), Duration::from_secs(3600));
     }
     #[test]
     fn update_checksum_requires_exact_asset_and_content() {

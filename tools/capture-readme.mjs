@@ -7,7 +7,6 @@ const out=new URL('./screens/',import.meta.url);
 mkdirSync(out,{recursive:true});
 const state={
   accounts:[],
-  mail:{connected:false},
   browser_login:null,
   verification:null,
   tunnel:'Idle',
@@ -60,14 +59,5 @@ await page.getByRole('button',{name:'Back to services',exact:true}).click();
 await page.getByRole('button',{name:'Omnivox connect',exact:true}).click();
 await page.getByRole('button',{name:'Connect with browser',exact:true}).waitFor();
 await shot('omnivox.png');
-await page.getByRole('button',{name:'Back to services',exact:true}).click();
-await page.getByRole('button',{name:'Mail transfer',exact:true}).click();
-await page.getByLabel('School mail',{exact:true}).fill('student@school.edu');
-await page.getByLabel('Personal mail',{exact:true}).fill('you@gmail.com');
-await shot('mail-connect.png');
-state.mail={connected:true,forwarding:true,mailbox:'student@school.edu',forward_to:'you@gmail.com',url:'https://outlook.office.com'};
-await page.evaluate(()=>refresh());
-await page.getByText('Forwarding on',{exact:true}).waitFor();
-await shot('mail.png');
 await browser.close();
 console.log('Captured README screens (1540×866; fictitious empty account state).');

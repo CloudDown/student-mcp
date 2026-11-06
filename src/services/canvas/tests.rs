@@ -315,7 +315,6 @@ fn new_tools_use_shared_account_selection_and_catalogue() {
         moodle: None,
         brightspace: None,
         omnivox: None,
-        outlook: None,
     });
     settings.canvas = Some(CanvasSettings {
         url: Some("https://unused.example".into()),

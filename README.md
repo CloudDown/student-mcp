@@ -26,7 +26,7 @@ The installer adds student-mcp to the application menu. Windows or macOS may war
 
 Launch it from the Start menu, Applications, or your app launcher. A local page opens. Closing the tab leaves a tray icon; quit from there when you are done.
 
-<p align="center"><img src="tools/screens/home.png" width="100%" alt="student-mcp home: Moodle, Omnivox, Brightspace and Canvas tiles, mail button, AI connection card and launch at startup" /></p>
+<p align="center"><img src="tools/screens/home.png" width="100%" alt="student-mcp home: Moodle, Omnivox, Brightspace and Canvas tiles, AI connection card and launch at startup" /></p>
 
 ## 2. Connect your school
 
@@ -38,11 +38,7 @@ If Chrome, Edge or Brave is already installed, that browser is used. A download 
 
 When the page says you are connected, go back to the home screen.
 
-The envelope button opens **Mail transfer**: enter your school Outlook email on the left and your personal address (such as `you@gmail.com`) on the right. **Connect to Outlook** opens Outlook with your school email prefilled. On `outlook.cloud.microsoft`, student-mcp attempts to verify the account from the account menu, configure forwarding through Outlook’s own **Settings → Mail → Forwarding** panel, then reload and confirm the destination and copy setting before reporting success. If Outlook changes its controls, requires extra authentication or blocks forwarding, it reports an error instead of claiming activation. This browser path needs validation against a real signed-in Outlook session; no account was changed during development.
-
-<p align="center"><img src="tools/screens/mail-connect.png" width="100%" alt="Mail transfer sign-in with school Outlook email and personal mail destination fields" /></p>
-
-<p align="center"><img src="tools/screens/mail.png" width="100%" alt="Illustrative mail transfer state, not a verified live Outlook session" /></p>
+<p align="center"><img src="tools/screens/omnivox.png" width="100%" alt="Omnivox sign-in with Connect with browser" /></p>
 
 ## 3. Copy your AI link
 
@@ -75,8 +71,6 @@ Paste the **complete** `https://…/mcp/…` link into the assistant’s MCP con
 4. Ask your first question.
 
 You should be able to go from install to that question in a few minutes on Windows or macOS, with no terminal.
-
-<p align="center"><img src="tools/screens/omnivox.png" width="100%" alt="Omnivox sign-in with Connect with browser" /></p>
 
 ## Privacy
 

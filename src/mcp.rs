@@ -968,13 +968,6 @@ pub fn test_service(settings: &Settings, id: &str) -> Result<String, String> {
                 info.get("release").and_then(Value::as_str).unwrap_or("?")
             ))
         }
-        "outlook" => {
-            let config = settings
-                .outlook()
-                .ok_or("Outlook is not connected anymore.")?;
-            crate::mail::MailClient::new(config).me()?;
-            Ok("Outlook connected.".into())
-        }
         "canvas" => {
             let config = settings
                 .canvas()
@@ -1010,7 +1003,6 @@ mod protocol_tests {
                 }),
                 omnivox: None,
                 brightspace: None,
-                outlook: None,
                 canvas: None,
             }],
             ..Default::default()

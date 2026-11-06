@@ -1,16 +1,9 @@
 # Persistent browser sign-in
 
-Brightspace, Omnivox, Canvas and Outlook mail transfer offer **Connect with browser**
+Brightspace, Omnivox and Canvas offer **Connect with browser**
 on the local configuration page. Enter the HTTPS address, finish the normal
 sign-in/MFA in the browser window, and wait for the app to confirm access.
 No password or MFA code is passed through the MCP tools.
-
-For Outlook, enter the school and personal email addresses instead of a URL.
-Outlook may redirect to `outlook.cloud.microsoft`; the app uses its own browser
-settings panel, not the retired REST API. **Turn on** / **Turn off** reopen that
-browser path, change the forwarding switch, then reload the panel to confirm.
-Ambiguous results fail closed. This path has synthetic coverage but must be
-validated with a real signed-in account.
 
 ## Browser and lifecycle
 

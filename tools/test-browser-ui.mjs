@@ -9,7 +9,7 @@ try {
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.addInitScript(()=>localStorage.setItem('student-mcp.language','en'));
   const html=readFileSync(new URL('../src/resources/web/index.html',import.meta.url),'utf8');
-  const state={accounts:[],mail:{connected:false},browser_login:null,verification:null,tunnel:'Idle',local:true,public:false,autostart:false,link:'',local_link:''};
+  const state={accounts:[],browser_login:null,verification:null,tunnel:'Idle',local:true,public:false,autostart:false,link:'',local_link:''};
   const actions=[];
   let needsBrowser=false;
   await page.route('http://student.test/**',async route=>{
@@ -19,10 +19,6 @@ try {
     if(path==='/update')return route.fulfill({json:{available:false}});
     if(path==='/action'){
       const action=route.request().postDataJSON();actions.push(action);
-      if(action.action==='mail_enable'||action.action==='mail_disable'){
-        state.browser_login={service:'outlook',id:'outlook',state:'waiting',error:null,progress:{phase:action.action==='mail_disable'?'outlook-verify':'outlook-settings'}};
-        return route.fulfill({json:{browser_login:state.browser_login}});
-      }
       if(action.action==='browser_connect'){
         if(needsBrowser&&!action.allow_browser_download)return route.fulfill({json:{browser_download_required:true}});
         state.browser_login={service:action.service,id:'fixture',state:'waiting',error:null,progress:{phase:'preparing'}};
@@ -104,61 +100,6 @@ try {
   assert.equal(await page.getByRole('checkbox',{name:'Allow changes'}).count(),0);
   await page.getByRole('button',{name:'Back to services',exact:true}).click();
   needsBrowser=false;
-  await page.getByRole('button',{name:'Mail transfer',exact:true}).click();
-  await page.setViewportSize({width:1280,height:800});
-  assert.ok((await page.locator('.mail-diagram').boundingBox()).width>=600);
-  await page.setViewportSize({width:320,height:700});
-  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
-  await page.setViewportSize({width:1280,height:800});
-  const schoolMail=page.getByLabel('School mail',{exact:true});
-  await schoolMail.waitFor();
-  assert.equal(await schoolMail.getAttribute('type'),'email');
-  assert.equal(await schoolMail.inputValue(),'');
-  await page.getByText('School mail',{exact:true}).waitFor();
-  await page.getByLabel('Personal mail',{exact:true}).fill('you@gmail.com');
-  assert.equal(await page.getByLabel('Personal mail',{exact:true}).inputValue(),'you@gmail.com');
-  await schoolMail.fill('student@school.edu');
-  await page.getByRole('button',{name:'Connect to Outlook',exact:true}).click();
-  assert.equal(actions.at(-1).action,'browser_connect');
-  assert.equal(actions.at(-1).service,'outlook');
-  assert.equal(actions.at(-1).url,'https://outlook.office.com');
-  assert.equal(actions.at(-1).mailbox,'student@school.edu');
-  assert.equal(actions.at(-1).forward_to,'you@gmail.com');
-  await page.getByRole('button',{name:'Cancel',exact:true}).waitFor();
-  state.browser_login={...state.browser_login,state:'failed',error:'Outlook moved to outlook.cloud.microsoft. student-mcp cannot verify this session or enable forwarding with its retired Outlook API. In Outlook, open Settings → Mail → Forwarding, enable forwarding, enter your personal address and save. student-mcp will not show forwarding as active.',origin:'https://outlook.office.com'};
-  await page.evaluate(()=>refresh());
-  await page.getByRole('alert').getByText(/Outlook moved to outlook.cloud.microsoft/).waitFor();
-  assert.equal(await page.getByText('Forwarding on',{exact:true}).count(),0);
-  await page.getByRole('button',{name:'Change language',exact:true}).click();
-  await page.getByRole('button',{name:'Français',exact:true}).click();
-  await page.getByRole('alert').getByText(/Outlook a changé d’adresse/).waitFor();
-  await page.getByRole('button',{name:'Changer de langue',exact:true}).click();
-  await page.getByRole('button',{name:'English',exact:true}).click();
-  state.mail={connected:true,forwarding:false,mailbox:'student@school.edu',url:'https://outlook.office.com'};
-  state.browser_login={service:'outlook',id:'outlook',state:'connected'};
-  await page.evaluate(()=>refresh());
-  await page.getByText('student@school.edu',{exact:true}).waitFor();
-  assert.equal(await page.getByLabel('Personal mail',{exact:true}).inputValue(),'you@gmail.com');
-  await page.getByLabel('Personal mail',{exact:true}).fill('you@gmail.com');
-  await page.getByRole('button',{name:'Turn on forwarding',exact:true}).click();
-  assert.equal(actions.at(-1).action,'mail_enable');
-  assert.equal(actions.at(-1).forward_to,'you@gmail.com');
-  await page.getByText('Setting up forwarding in Outlook…',{exact:true}).waitFor();
-  state.browser_login={service:'outlook',id:'outlook',state:'connected'};
-  state.mail={connected:true,forwarding:true,forward_to:'you@gmail.com',mailbox:'student@school.edu',url:'https://outlook.cloud.microsoft'};
-  state.notice=null;
-  await page.evaluate(()=>{state.notice=null;return refresh()});
-  await page.getByText('Forwarding on',{exact:true}).waitFor();
-  assert.equal(await page.locator('.mail-arrow.active').count(),1);
-  await page.getByRole('button',{name:'Turn off',exact:true}).waitFor();
-  await page.getByRole('button',{name:'Change language',exact:true}).click();
-  await page.getByRole('button',{name:'Français',exact:true}).click();
-  await page.getByRole('heading',{name:'Transfert du courrier',exact:true}).waitFor();
-  await page.getByText('Transfert actif',{exact:true}).waitFor();
-  await page.getByText('Mail de l’école',{exact:true}).waitFor();
-  await page.getByRole('button',{name:'Désactiver',exact:true}).click();
-  assert.equal(actions.at(-1).action,'mail_disable');
-  await page.getByText('Vérification du transfert enregistré…',{exact:true}).waitFor();
   assert.deepEqual(errors,[]);
-  console.log('Browser UI passed: preparation, download progress, installation, sign-in, completion, manual fallback, cancellation and mail transfer diagram.');
+  console.log('Browser UI passed: preparation, download progress, installation, sign-in, completion, manual fallback and cancellation.');
 } finally {await browser.close()}
