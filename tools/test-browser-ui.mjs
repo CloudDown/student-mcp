@@ -2,7 +2,8 @@
 import {readFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import assert from 'node:assert/strict';
-const {chromium}=await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : 'playwright');
+const loaded=await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : 'playwright');
+const chromium=loaded.chromium||loaded.default?.chromium;
 const browser=await chromium.launch({headless:true,executablePath:process.env.STUDENT_MCP_BROWSER});
 try {
   const page=await browser.newPage();
@@ -17,8 +18,10 @@ try {
     if(path==='/')return route.fulfill({contentType:'text/html',body:html});
     if(path==='/state')return route.fulfill({json:state});
     if(path==='/update')return route.fulfill({json:{available:false}});
+    if(path.startsWith('/assistant/')){const id=path.slice('/assistant/'.length);return route.fulfill({json:{assistant:id,local:id!=='chatgpt',detected:id==='claude',configured:false}})}
     if(path==='/action'){
       const action=route.request().postDataJSON();actions.push(action);
+      if(action.action==='assistant_setup')return route.fulfill({json:{assistant:action.assistant,local:true,detected:true,configured:true}});
       if(action.action==='browser_connect'){
         if(needsBrowser&&!action.allow_browser_download)return route.fulfill({json:{browser_download_required:true}});
         state.browser_login={service:action.service,id:'fixture',state:'waiting',error:null,progress:{phase:'preparing'}};
@@ -114,6 +117,25 @@ try {
   assert.equal(await page.getByRole('checkbox',{name:'Allow changes'}).count(),0);
   await page.getByRole('button',{name:'Back to services',exact:true}).click();
   needsBrowser=false;
+  await page.getByRole('button',{name:'Set up Claude',exact:true}).click();
+  await page.getByText('Local app detected',{exact:true}).waitFor();
+  assert.equal(await page.locator('img.guide-shot[src="/assets/guide-claude-connectors.webp"]').count(),1);
+  await page.getByRole('button',{name:'Set up on this computer',exact:true}).click();
+  await page.getByText(/This updates the assistant’s MCP settings/).waitFor();
+  await page.getByRole('button',{name:'Confirm setup',exact:true}).click();
+  await page.getByText('Local setup is ready',{exact:true}).waitFor();
+  assert.equal(actions.at(-1).action,'assistant_setup');
+  assert.equal(actions.at(-1).assistant,'claude');
+  await page.getByRole('button',{name:'Back to services',exact:true}).click();
+  await page.getByRole('button',{name:'Set up ChatGPT',exact:true}).click();
+  await page.getByText('ChatGPT connects to remote MCP servers. Your public HTTPS link is required.',{exact:true}).waitFor();
+  assert.equal(await page.locator('img.guide-shot[src="/assets/guide-chatgpt-plugins.webp"]').count(),1);
+  assert.equal(await page.getByRole('button',{name:'Open link settings',exact:true}).count(),1);
+  await page.getByRole('button',{name:'Back to services',exact:true}).click();
+  await page.getByRole('button',{name:'Set up Gemini',exact:true}).click();
+  await page.getByText('No supported local app was found.',{exact:true}).waitFor();
+  assert.equal(await page.locator('img.guide-shot[src="/assets/guide-gemini-connected-apps.webp"]').count(),1);
+  await page.getByRole('button',{name:'Back to services',exact:true}).click();
   assert.deepEqual(errors,[]);
-  console.log('Browser UI passed: preparation, download progress, installation, sign-in, completion, manual fallback and cancellation.');
+  console.log('Browser UI passed: preparation, download progress, installation, sign-in, completion, manual fallback, cancellation and assistant setup.');
 } finally {await browser.close()}

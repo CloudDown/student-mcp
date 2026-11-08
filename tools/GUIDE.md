@@ -30,6 +30,8 @@ No ZIPs are published.
 Your browser opens a local page with accounts, login, verification, and MCP link
 settings. Its separate loopback listener is never forwarded through the tunnel.
 For Claude web, wait for a public HTTPS link; a localhost link only works locally.
+The three assistant icons under **Your link** open setup guides; see
+[Local AI assistant](#3-local-ai-assistant).
 
 ### Close the tab, keep the app running
 
@@ -38,7 +40,7 @@ area / status bar) stays visible while the app is up: click it or use
 **Open student-mcp** to reopen the page, and **Quit student-mcp** to stop the
 server and tunnel. You can also stop from the page with **Arrêter student-mcp**.
 Launch student-mcp again if the tray is gone and you need the page.
-On the home page, turn on **Launch at startup** to start automatically when you
+On the link settings screen, turn on **Launch at startup** to start automatically when you
 sign in after boot, without opening a browser tab. The public link reconnects
 automatically when configured. Turn it off to remove the startup entry.
 
@@ -232,6 +234,17 @@ References: [D2L API authentication](https://docs.valence.desire2learn.com/basic
   - Windows: `%LOCALAPPDATA%\student-mcp\student-mcp.exe`
 - Use the main binary, not `student-mcp-desktop`: the desktop launcher always
    opens the browser page, while the main binary starts MCP stdio without arguments.
+- The three icons under **Your link** open a guided setup page for Claude,
+  ChatGPT or Gemini. Claude Desktop and Gemini CLI can be configured in one
+  click when the app is already installed: the page merges `student-mcp` into
+  `claude_desktop_config.json` or `~/.gemini/settings.json`, keeps the other
+  MCP servers, saves a timestamped backup first and never writes a school
+  credential or the MCP bearer token. Restart the assistant afterwards.
+  ChatGPT, Claude on the web and Gemini on the web use the public HTTPS link
+  instead; the same pages show the official steps and a copy button.
+- Automatic setup refuses a config that is not a JSON object, is a symlink or
+  cannot be read. It is opt-in: nothing is written until **Set up on this
+  computer**, then **Confirm setup**.
 - The tool list follows the window: add or remove a service and the tools appear
   or disappear on the next call (the config is re-read every time).
 - Tool naming, parameters, annotations and result shape follow

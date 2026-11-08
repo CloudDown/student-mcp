@@ -105,6 +105,23 @@ ne doit jamais entrer dans git.
 - Ne jamais journaliser ni renvoyer le jeton de profil. Les tests navigateur
   locaux n’utilisent aucun identifiant réel : voir `tools/BROWSER-AUTH.md`.
 
+## Configuration des assistants locaux
+
+`src/assistants.rs` écrit dans la configuration de Claude Desktop
+(`claude_desktop_config.json`) ou de Gemini CLI (`~/.gemini/settings.json`)
+seulement après **Set up on this computer** puis **Confirm setup** dans l’UI.
+
+- Fusionner `mcpServers.student-mcp` sans supprimer les autres serveurs.
+- Sauvegarder le fichier existant avant toute écriture, puis remplacer
+  atomiquement (fichier temporaire `0600`, permissions conservées).
+- Refuser un fichier qui n’est pas un objet JSON, un lien symbolique ou un
+  `mcpServers` invalide ; ne jamais l’écraser.
+- Ne jamais écrire d’identifiant scolaire, de cookie ni de jeton MCP. Le local
+  passe par stdio ; le web utilise le lien public.
+- `status()` est en lecture seule ; seul `configure()` écrit.
+- ChatGPT n’a pas de configuration locale : son écran explique le lien HTTPS
+  public et ouvre les réglages officiels.
+
 ## Graphe de code local (Graphify)
 
 Pour une exploration transversale, si `graphify-out/graph.json` existe, commencer
@@ -122,6 +139,7 @@ Installation et exemples : `tools/GUIDE.md`, section « Local code graph ».
 ## Layout
 
 - `src/web.rs` / `src/resources/web/index.html` — configuration web locale (hors tunnel)
+- `src/assistants.rs` — configuration opt-in de Claude Desktop / Gemini CLI (fusion JSON, sauvegarde)
 - `src/browser.rs` — profils Chromium par compte, CDP, login interactif
 - `src/resources/browser/` — pont mobile Omnivox et requête navigateur
 - `src/services/{moodle,omnivox,brightspace}/mod.rs` — connecteurs par service

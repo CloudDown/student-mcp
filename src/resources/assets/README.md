@@ -43,3 +43,35 @@ The Brightspace brand belongs to D2L; its use here identifies the service only.
 https://cdn.jsdelivr.net/npm/simple-icons@15.4.0/icons/canvas.svg
 Rasterized at 256 × 256 with Canvas red `#E72429`. The Canvas brand belongs
 to Instructure; its use here identifies the service only.
+
+`claude-icon.png`, `chatgpt-icon.png` and `gemini-icon.png` are the square app
+symbols from [Simple Icons](https://simpleicons.org/) (CC0), downloaded on
+2026-11-08 from simple-icons@13:
+
+- https://cdn.jsdelivr.net/npm/simple-icons@13/icons/claude.svg
+- https://cdn.jsdelivr.net/npm/simple-icons@13/icons/openai.svg
+- https://cdn.jsdelivr.net/npm/simple-icons@13/icons/googlegemini.svg
+
+Rasterized at 128 × 128: Claude in terracotta `#D97757`, OpenAI in `#0D0D0D`,
+Gemini with a blue-to-purple gradient (`#4E8CFF` → `#9B72CB` → `#D96570`).
+The brands belong to Anthropic, OpenAI and Google; their use identifies the
+assistants the link can be pasted into, without implying endorsement.
+
+# Assistant setup guides
+
+`guide-claude-connectors.webp`, `guide-chatgpt-plugins.webp` and
+`guide-gemini-connected-apps.webp` are cropped screenshots of the official
+setup instructions, captured on 2026-11-08. They show the vendor's own steps,
+not the user's link, account or connector. Sources:
+
+- Claude: https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp
+  ("Add a custom connector", Pro and Max steps).
+- ChatGPT: https://developers.openai.com/plugins/deploy/connect-chatgpt
+  ("Add the MCP server").
+- Gemini: https://support.google.com/gemini/answer/17209137
+  ("Connect a custom app").
+
+They are lossy WebP (quality 84) to keep the binary small, and served as
+`image/webp` by the local UI. Screenshots of vendor interfaces are used only to
+explain setup; the products and brands remain their owners' property. Refresh a
+capture whenever the vendor documentation changes.

@@ -774,6 +774,16 @@ pub fn normalize_canvas_url(input: &str) -> Result<String, String> {
 }
 
 fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    write_private_with_permissions(path, bytes, None)
+}
+
+/// Write a private file atomically. A caller that replaces an existing file can
+/// pass its permissions so the temporary 0600 copy does not narrow them.
+pub(crate) fn write_private_with_permissions(
+    path: &Path,
+    bytes: &[u8],
+    permissions: Option<std::fs::Permissions>,
+) -> std::io::Result<()> {
     use std::io::Write;
     let temp = path.with_extension(format!("json.tmp-{}", random_hex(8)));
     let result = (|| {
@@ -788,6 +798,9 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         file.write_all(bytes)?;
         file.sync_all()?;
         drop(file);
+        if let Some(permissions) = permissions {
+            std::fs::set_permissions(&temp, permissions)?;
+        }
         std::fs::rename(&temp, path)
     })();
     if result.is_err() {

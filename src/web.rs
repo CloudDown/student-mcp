@@ -224,18 +224,55 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                 false,
             )
         } else if request.method() == &Method::Get && path.starts_with("/assets/") {
-            let image: Option<&'static [u8]> = match path.as_str() {
-                "/assets/app-icon.png" => Some(include_bytes!("resources/assets/app-icon-64.png")),
-                "/assets/moodle.png" => Some(include_bytes!("resources/assets/moodle-icon.png")),
-                "/assets/omnivox.png" => Some(include_bytes!("resources/assets/omnivox-icon.png")),
-                "/assets/brightspace.png" => {
-                    Some(include_bytes!("resources/assets/brightspace-icon.png"))
-                }
-                "/assets/canvas.png" => Some(include_bytes!("resources/assets/canvas-icon.png")),
+            let image: Option<(&'static [u8], &'static str)> = match path.as_str() {
+                "/assets/app-icon.png" => Some((
+                    include_bytes!("resources/assets/app-icon-64.png"),
+                    "image/png",
+                )),
+                "/assets/moodle.png" => Some((
+                    include_bytes!("resources/assets/moodle-icon.png"),
+                    "image/png",
+                )),
+                "/assets/omnivox.png" => Some((
+                    include_bytes!("resources/assets/omnivox-icon.png"),
+                    "image/png",
+                )),
+                "/assets/brightspace.png" => Some((
+                    include_bytes!("resources/assets/brightspace-icon.png"),
+                    "image/png",
+                )),
+                "/assets/canvas.png" => Some((
+                    include_bytes!("resources/assets/canvas-icon.png"),
+                    "image/png",
+                )),
+                "/assets/claude.png" => Some((
+                    include_bytes!("resources/assets/claude-icon.png"),
+                    "image/png",
+                )),
+                "/assets/chatgpt.png" => Some((
+                    include_bytes!("resources/assets/chatgpt-icon.png"),
+                    "image/png",
+                )),
+                "/assets/gemini.png" => Some((
+                    include_bytes!("resources/assets/gemini-icon.png"),
+                    "image/png",
+                )),
+                "/assets/guide-claude-connectors.webp" => Some((
+                    include_bytes!("resources/assets/guide-claude-connectors.webp"),
+                    "image/webp",
+                )),
+                "/assets/guide-chatgpt-plugins.webp" => Some((
+                    include_bytes!("resources/assets/guide-chatgpt-plugins.webp"),
+                    "image/webp",
+                )),
+                "/assets/guide-gemini-connected-apps.webp" => Some((
+                    include_bytes!("resources/assets/guide-gemini-connected-apps.webp"),
+                    "image/webp",
+                )),
                 _ => None,
             };
-            if let Some(image) = image {
-                (200, "image/png", image.to_vec(), false)
+            if let Some((image, mime)) = image {
+                (200, mime, image.to_vec(), false)
             } else {
                 (404, "text/plain", Vec::new(), false)
             }
@@ -264,6 +301,21 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                 }
             }
             (200, "application/json", json!({"accounts":accounts,"verification":pending.as_ref().map(|(_,p)| &p.prompt),"browser_login":browser_login.as_ref().map(crate::browser::Login::status),"link":mcp_endpoint(tunnel.origin().unwrap_or(&format!("http://127.0.0.1:{port}")), &gateway.token),"local_link":mcp_endpoint(&format!("http://127.0.0.1:{port}"), &gateway.token),"tunnel":format!("{:?}",tunnel.state),"public":current.gateway.public_enabled(),"local":enabled.load(Ordering::SeqCst),"autostart":crate::autostart::enabled().unwrap_or(false)}).to_string().into_bytes(),false)
+        } else if request.method() == &Method::Get && path.starts_with("/assistant/") {
+            match crate::assistants::status(&path["/assistant/".len()..]) {
+                Ok(status) => (
+                    200,
+                    "application/json",
+                    status.to_string().into_bytes(),
+                    false,
+                ),
+                Err(error) => (
+                    400,
+                    "application/json",
+                    json!({"error":error}).to_string().into_bytes(),
+                    false,
+                ),
+            }
         } else if request.method() == &Method::Get && path == "/update" {
             (
                 200,
@@ -421,6 +473,7 @@ fn action(
 ) -> Result<Value, String> {
     let get = |key| args.get(key).and_then(Value::as_str).unwrap_or("");
     match get("action") {
+        "assistant_setup" => return crate::assistants::configure(get("assistant")),
         "stop" => return Ok(json!({"stop":true})),
         "autostart" => {
             crate::autostart::set(args["enabled"] == true)?;

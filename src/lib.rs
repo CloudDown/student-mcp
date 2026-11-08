@@ -1,3 +1,4 @@
+mod assistants;
 mod autostart;
 mod browser;
 mod cache;

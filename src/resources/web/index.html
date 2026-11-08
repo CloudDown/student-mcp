@@ -156,14 +156,42 @@ button{transition:background 140ms ease-out,transform 140ms ease-out}button:acti
 .back,.language-control>.icon-button{border:1px solid var(--border);border-radius:.75rem;background:#fff;box-shadow:none;backdrop-filter:none;color:var(--subtle)}
 @media(hover:hover) and (pointer:fine){.full-button.secondary:hover,.back:hover,.language-control>.icon-button:hover{background:var(--hover);color:var(--ink)}.manage-card .manage-actions button.danger:hover{background:var(--red-soft)}}
 @media(max-width:360px){.manage-card .manage-actions{gap:.375rem;padding:.625rem .75rem}.manage-card .manage-actions button{padding:.5rem .375rem}}
-/* Home: the release's layout, with two thin step arrows. */
-.step{display:grid;place-items:center;height:2.25rem;color:#bfbfca}
-.step svg{display:block;width:1rem;height:1rem;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-.tiles+.step{margin-top:.75rem}
-.step+.link-card{margin-top:.5rem}
-.link-card+.step{margin-top:.5rem}
-.end-node{display:grid;place-items:center;width:2.75rem;height:2.75rem;margin:.75rem auto 0;border-radius:.875rem;background:#fff;border:1px solid var(--border);box-shadow:var(--shadow);color:var(--muted)}
-.end-node svg{display:block;width:1.25rem;height:1.25rem;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+/* Home: a radial mind map, with measured branches that stay attached at every size. */
+.app.home-view{width:min(100%,64rem)}
+.home>.find{width:min(100%,32rem);align-self:center}
+.mind-map{position:relative;width:min(100%,56rem);margin:0 auto;display:grid;grid-template-columns:7rem minmax(16rem,20rem) 7rem;grid-template-rows:repeat(2,auto) auto;column-gap:clamp(4rem,9vw,8.5rem);row-gap:2rem;justify-content:center;align-items:center;padding:1rem 0 .5rem;isolation:isolate}
+.mind-map .tiles{display:contents}
+.mind-map .tile{z-index:1;width:7rem;justify-self:center}
+.mind-map .tile:nth-child(1){grid-column:1;grid-row:1}
+.mind-map .tile:nth-child(2){grid-column:1;grid-row:2}
+.mind-map .tile:nth-child(3){grid-column:3;grid-row:1}
+.mind-map .tile:nth-child(4){grid-column:3;grid-row:2}
+.mind-map .link-card{grid-column:2;grid-row:1/3;align-self:center;width:100%;margin:0;z-index:1}
+.map-lines{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:0}
+.map-halo,.map-branch{fill:none;stroke-linecap:round;stroke-linejoin:round}
+.map-halo{stroke:#fff;stroke-width:4.5;opacity:.72}
+.map-branch{stroke:url(#map-branch-gradient);stroke-width:1.65}
+.map-port{fill:#91accb;stroke:#f5f5f7;stroke-width:1.5}
+.ais{display:flex;justify-content:center;gap:.75rem}
+.mind-map .ais{grid-column:2;grid-row:3;z-index:1;margin-top:.25rem}
+.ai{display:grid;place-items:center;width:3.25rem;height:3.25rem;padding:0;border-radius:1rem;background:#fff;border:1px solid var(--border);box-shadow:var(--shadow)}
+@media(hover:hover) and (pointer:fine){.ai:hover{border-color:#b8b8c2;box-shadow:0 8px 24px #2020340c;transform:translateY(-2px)}}
+.ai img{display:block;object-fit:contain}
+.ai-claude img{width:1.625rem;height:1.625rem}
+.ai-chatgpt img{width:1.5625rem;height:1.5625rem}
+.ai-gemini img{width:1.6875rem;height:1.6875rem}
+@media(max-width:44rem){
+ .app.home-view{width:min(100%,34rem)}
+ .mind-map{width:100%;display:flex;flex-direction:column;gap:0;padding:0}
+ .mind-map .tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.85rem;width:100%;position:relative;z-index:1}
+ .mind-map .tile{width:auto}
+ .mind-map .tile:nth-child(n){grid-column:auto;grid-row:auto}
+ .mind-map .link-card{margin:3rem 0 0}
+ .mind-map .ais{margin-top:3rem}
+}
+@media(max-width:380px){.mind-map .tiles{gap:.65rem}}
+/* On the link screen, the startup switch is a separate setting: one hairline, no card. */
+.link-settings+.startup-row{margin-top:.5rem;padding:1rem .25rem 0;border:0;border-top:1px solid var(--border);border-radius:0;background:transparent;box-shadow:none;color:var(--subtle);font-size:.8125rem;font-weight:500}
 /* Institution search: the shortest path from "my school" to the right service. */
 .find{position:relative;z-index:3;display:flex;align-items:center;gap:.625rem;width:100%;margin:0 0 1.5rem;padding:0 1rem;height:3.25rem;background:#fff;border:1px solid var(--border);border-radius:1.25rem;box-shadow:var(--shadow)}
 .find:focus-within{border-color:#b9c6e0;box-shadow:0 0 0 4px #0066cc14}
@@ -188,6 +216,19 @@ button{transition:background 140ms ease-out,transform 140ms ease-out}button:acti
 .copy-pill svg{display:block;width:1rem;height:1rem;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .copy-pill.copy-confirmed{color:var(--green);border-color:#bcdcc6;background:#f2f9f4}
 .service-enabled-copy{display:flex;flex-direction:column;gap:.125rem;min-width:0;text-align:left}
+/* Connected services keep a quiet but unmistakable green wash, including on hover. */
+.tile.connected:not(.service-off),.tile.connected:not(.service-off):hover{border-color:#86bd98;background:radial-gradient(circle at 88% 10%,#43a56b30 0%,#43a56b18 28%,transparent 67%),linear-gradient(155deg,#fff 38%,#eff8f2 100%)}
+.tile.service-off,.tile.service-off:hover{background:#fff}
+@media(prefers-contrast:more){.tile.connected:not(.service-off),.tile.connected:not(.service-off):hover{border:2px solid var(--green);background:linear-gradient(155deg,#fff 35%,#e5f4e9 100%)}}
+/* Assistant setup and official visual guides. */
+.app.assistant-view{width:min(100%,50rem)}
+.assistant-head .logo-frame{background:#fff}
+.assistant-local{display:grid;gap:1rem;margin-bottom:1.5rem;padding:1.25rem}
+.assistant-local-copy{display:flex;align-items:flex-start;gap:.75rem}.assistant-local-copy .status-dot{margin-top:.45em}.assistant-local-copy>div{min-width:0}.assistant-local-copy p{margin:.25rem 0 0;color:var(--subtle);font-size:.875rem;line-height:1.55}
+.assistant-confirm{padding:1rem;border-radius:.875rem;background:#f0f0f4}.assistant-confirm p{margin:0 0 1rem;font-size:.875rem;line-height:1.55}.assistant-confirm-actions{display:flex;gap:.75rem}.assistant-confirm-actions>*{flex:1}
+.guide-link-card{display:flex;align-items:center;gap:.75rem;margin:1.5rem 0;padding:.75rem 1rem}.guide-link-card>div{flex:1;min-width:0}.guide-link-card .link-value{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.guide-link-card .copy-pill{height:2.75rem}
+.guide-steps{display:grid;gap:1rem;margin-top:1.5rem}.guide-step{position:relative;padding:1.25rem 1.25rem 1.25rem 4rem}.guide-number{position:absolute;left:1.25rem;top:1.25rem;display:grid;place-items:center;width:2rem;height:2rem;border-radius:50%;background:#edf3fa;color:#426587;font-size:.8125rem;font-weight:650}.guide-step h2{margin:0;font-size:1rem;line-height:2rem;font-weight:650}.guide-step p{margin:.5rem 0 0;color:var(--subtle);font-size:.9375rem;line-height:1.65}.guide-step .full-button{margin-top:1rem}.guide-shot-link{display:block;margin-top:1rem;border-radius:.875rem}.guide-shot{display:block;width:100%;height:auto;margin:0;border:1px solid var(--border);border-radius:.875rem;background:#fff}.guide-shot-link:hover .guide-shot{border-color:#b8b8c2}.guide-caption{margin:.5rem 0 0!important;font-size:.75rem!important}.guide-source{display:inline-flex;margin-top:1rem;color:var(--blue);font-size:.8125rem;text-decoration:none}.guide-source:hover{text-decoration:underline}.guide-note{margin:1rem 0 0;padding:1rem 1.25rem;border-radius:1rem;background:#edf3fa;color:#49627c;font-size:.8125rem;line-height:1.6}.guide-footnote{margin:1.5rem 0 0;color:var(--subtle);font-size:.8125rem;line-height:1.6}.full-button.guide-link{display:inline-flex;align-items:center;justify-content:center;width:auto;text-decoration:none}
+@media(max-width:380px){.guide-step{padding:1rem 1rem 1rem 3.5rem}.guide-number{left:1rem;top:1rem}.assistant-confirm-actions{flex-direction:column}.guide-link-card{align-items:flex-start;flex-direction:column}}
 .screen h1:focus,.screen h1:focus-visible{outline:none}
 </style></head>
 <body>
@@ -249,6 +290,34 @@ const translations={
  'Your cégep or university':['Ton cégep ou ton université','Tu institución'], 'No school found':['Aucun établissement trouvé','No se encontró la institución'],
  'Copy':['Copier','Copiar'], 'Link settings':['Réglages du lien','Ajustes del enlace'],
  'Your assistant':['Ton assistant','Tu asistente'],
+ 'Set up Claude':['Configurer Claude','Configurar Claude'], 'Set up ChatGPT':['Configurer ChatGPT','Configurar ChatGPT'], 'Set up Gemini':['Configurer Gemini','Configurar Gemini'],
+ 'Connect your assistant':['Connecter ton assistant','Conectar tu asistente'], 'Choose a local app or the web.':['Choisis une application locale ou le web.','Elige una aplicación local o la web.'],
+ 'Checking local setup…':['Vérification de la configuration locale…','Comprobando la configuración local…'],
+ 'Local app detected':['Application locale détectée','Aplicación local detectada'], 'Local setup is ready':['Configuration locale terminée','Configuración local lista'],
+ 'Restart the assistant to finish setup.':['Redémarre l’assistant pour terminer la configuration.','Reinicia el asistente para terminar la configuración.'],
+ 'Set up on this computer':['Configurer sur cet ordinateur','Configurar en este ordenador'],
+ 'This updates the assistant’s MCP settings. Your other servers stay unchanged and a backup is created.':['Cette action modifie les réglages MCP de l’assistant. Tes autres serveurs restent inchangés et une sauvegarde est créée.','Esto actualiza los ajustes MCP del asistente. Tus otros servidores no cambian y se crea una copia de seguridad.'],
+ 'Confirm setup':['Confirmer la configuration','Confirmar configuración'], 'Configured':['Configuré','Configurado'],
+ 'No supported local app was found.':['Aucune application locale compatible n’a été détectée.','No se encontró una aplicación local compatible.'],
+ 'Open Claude Desktop once, then return here, or use the web guide.':['Ouvre Claude Desktop une fois, puis reviens ici, ou utilise le guide web.','Abre Claude Desktop una vez y vuelve aquí, o usa la guía web.'],
+ 'Install Gemini CLI or use the Gemini web guide.':['Installe Gemini CLI ou utilise le guide web de Gemini.','Instala Gemini CLI o usa la guía web de Gemini.'],
+ 'ChatGPT connects to remote MCP servers. Your public HTTPS link is required.':['ChatGPT se connecte à des serveurs MCP distants. Ton lien HTTPS public est nécessaire.','ChatGPT se conecta a servidores MCP remotos. Se necesita tu enlace HTTPS público.'],
+ 'Your public link':['Ton lien public','Tu enlace público'], 'Enable your public link':['Activer ton lien public','Activar tu enlace público'],
+ 'Your public link is not ready. Open link settings and turn on From the web.':['Ton lien public n’est pas prêt. Ouvre les réglages du lien et active Depuis le web.','Tu enlace público no está listo. Abre los ajustes del enlace y activa Desde la web.'],
+ 'Open link settings':['Ouvrir les réglages du lien','Abrir ajustes del enlace'], 'Open official settings':['Ouvrir les réglages officiels','Abrir ajustes oficiales'], 'Official guide':['Guide officiel','Guía oficial'],
+ 'Prepare your link':['Préparer ton lien','Prepara tu enlace'], 'Copy the complete public HTTPS link. Keep it private.':['Copie le lien HTTPS public complet. Garde-le privé.','Copia el enlace HTTPS público completo. Manténlo privado.'],
+ 'Open Claude connectors':['Ouvrir les connecteurs Claude','Abrir conectores de Claude'], 'Go to Customize > Connectors, select + Add, then Add custom connector.':['Va dans Personnaliser > Connecteurs, choisis + Ajouter, puis Ajouter un connecteur personnalisé.','Ve a Personalizar > Conectores, selecciona + Añadir y luego Añadir conector personalizado.'],
+ 'Add the MCP server':['Ajouter le serveur MCP','Añadir el servidor MCP'], 'Name it student-mcp and paste your public link. Choose No sign in if Claude asks for authentication.':['Nomme-le student-mcp et colle ton lien public. Choisis Aucune connexion si Claude demande une authentification.','Llámalo student-mcp y pega tu enlace público. Elige Sin inicio de sesión si Claude pide autenticación.'],
+ 'Enable student-mcp in a chat':['Activer student-mcp dans une conversation','Activar student-mcp en un chat'], 'Use + > Connectors in a conversation and enable student-mcp.':['Utilise + > Connecteurs dans une conversation et active student-mcp.','Usa + > Conectores en una conversación y activa student-mcp.'],
+ 'Open ChatGPT Plugins':['Ouvrir les plugins ChatGPT','Abrir plugins de ChatGPT'], 'Select +, then Add custom MCP server.':['Choisis +, puis Ajouter un serveur MCP personnalisé.','Selecciona + y luego Añadir servidor MCP personalizado.'],
+ 'Enter student-mcp as the name and paste the complete HTTPS URL under Connection. Select no authentication when offered.':['Saisis student-mcp comme nom et colle l’URL HTTPS complète dans Connexion. Choisis aucune authentification si l’option est proposée.','Escribe student-mcp como nombre y pega la URL HTTPS completa en Conexión. Selecciona sin autenticación cuando se ofrezca.'],
+ 'Review and create':['Vérifier et créer','Revisar y crear'], 'Review the risk notice, create the plugin, then check the discovered tools. Availability depends on your plan and workspace permissions.':['Lis l’avertissement, crée le plugin, puis vérifie les outils détectés. La disponibilité dépend de ton forfait et des permissions de l’espace de travail.','Revisa el aviso, crea el plugin y comprueba las herramientas detectadas. La disponibilidad depende de tu plan y de los permisos del espacio de trabajo.'],
+ 'Use the plugin in a chat':['Utiliser le plugin dans une conversation','Usar el plugin en un chat'], 'Start a chat, type @ and select student-mcp.':['Commence une conversation, saisis @ et choisis student-mcp.','Empieza un chat, escribe @ y selecciona student-mcp.'],
+ 'Open Gemini Connected Apps':['Ouvrir les applications connectées Gemini','Abrir aplicaciones conectadas de Gemini'], 'Open Settings > Connected Apps, then Add a custom app.':['Ouvre Réglages > Applications connectées, puis Ajouter une application personnalisée.','Abre Ajustes > Aplicaciones conectadas y luego Añadir una aplicación personalizada.'],
+ 'Paste your public HTTPS MCP URL and select Next. If credentials are requested, review the official authentication instructions.':['Colle ton URL MCP HTTPS publique et choisis Suivant. Si des identifiants sont demandés, suis les instructions officielles d’authentification.','Pega tu URL MCP HTTPS pública y selecciona Siguiente. Si se piden credenciales, sigue las instrucciones oficiales de autenticación.'],
+ 'Confirm and test':['Confirmer et tester','Confirmar y probar'], 'Follow the security prompts, then use @student-mcp in Gemini. Custom apps currently require an eligible personal Google Account and may be limited by region and language.':['Suis les consignes de sécurité, puis utilise @student-mcp dans Gemini. Les applications personnalisées exigent un compte Google personnel admissible et peuvent être limitées selon la région et la langue.','Sigue los avisos de seguridad y usa @student-mcp en Gemini. Las aplicaciones personalizadas requieren una cuenta personal de Google compatible y pueden variar según la región y el idioma.'],
+ 'Verify the local connection':['Vérifier la connexion locale','Verificar la conexión local'], 'Restart Claude Desktop, then open + > Connectors to see student-mcp and its tools.':['Redémarre Claude Desktop, puis ouvre + > Connecteurs pour voir student-mcp et ses outils.','Reinicia Claude Desktop y abre + > Conectores para ver student-mcp y sus herramientas.'],
+ 'Official Claude connector steps':['Étapes officielles des connecteurs Claude','Pasos oficiales de los conectores de Claude'], 'Official ChatGPT plugin steps':['Étapes officielles des plugins ChatGPT','Pasos oficiales de los plugins de ChatGPT'], 'Official Gemini custom app steps':['Étapes officielles des applications Gemini','Pasos oficiales de las aplicaciones de Gemini'],
  'On this computer':['Sur cet ordinateur','En este ordenador'], 'From the web':['Depuis le web','Desde la web'],
  'Active':['Actif','Activo'], 'Off':['Désactivé','Desactivado'], 'Unavailable':['Indisponible','No disponible'],
  'Allow the assistant':['Autoriser l’assistant','Permitir al asistente'],
@@ -480,7 +549,7 @@ document.addEventListener('click',e=>{
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('language-menu').hidden){e.preventDefault();closeLanguages(true)}});
 document.addEventListener('focusin',e=>{if(!e.target.closest('.language-control'))closeLanguages()});
 updateLanguageControl();
-const state={screen:'home',service:'',accountId:'',editing:false,accounts:[],draft:{},visible:{},help:{},tunnel:'Idle',link:'',localLink:'',public:false,local:true,autostart:false,notice:null,busy:false,verification:null,otherSchool:false,copied:false,health:null,manualLogin:false,browserLogin:null,confirmDisconnect:false,schoolIndex:-1};
+const state={screen:'home',service:'',assistant:'',assistantStatus:null,assistantBusy:false,assistantConfirm:false,accountId:'',editing:false,accounts:[],draft:{},visible:{},help:{},tunnel:'Idle',link:'',localLink:'',public:false,local:true,autostart:false,notice:null,busy:false,verification:null,otherSchool:false,copied:false,health:null,manualLogin:false,browserLogin:null,confirmDisconnect:false,schoolIndex:-1};
 const toolCatalogs={};
 async function loadTools(service){
  if(toolCatalogs[service]?.loading||toolCatalogs[service]?.tools)return;
@@ -497,67 +566,181 @@ function toolsScreen(){
  }).join('')}</div>`:'<p class="subtitle">No tools available.</p>';
  return `<section><header class="tools-heading">${pageNav('service','Back to connection')}<h1>MCP tools</h1><p class="subtitle">${names[state.service]}${catalog?.tools?' · '+catalog.tools.length:''}</p></header>${content}</section>`;
 }
+const assistantInfo={
+ claude:{name:'Claude',settings:'https://claude.ai/customize/connectors',guide:'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp'},
+ chatgpt:{name:'ChatGPT',settings:'https://chatgpt.com/plugins',guide:'https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt'},
+ gemini:{name:'Gemini',settings:'https://gemini.google.com/apps',guide:'https://support.google.com/gemini/answer/17209137?hl=en&co=GENIE.Platform%3DDesktop'}
+};
+function guideStep(number,title,body,image='',caption=''){return `<article class="card guide-step"><span class="guide-number" aria-hidden="true">${number}</span><h2>${t(title)}</h2><p>${t(body)}</p>${image?`<a class="guide-shot-link" href="${image}" target="_blank" rel="noopener noreferrer"><img class="guide-shot" src="${image}" alt="${t(caption)}" loading="lazy" decoding="async"></a><p class="guide-caption">${t(caption)}</p>`:''}</article>`}
+function publicGuideLink(){const ready=state.public&&state.tunnel.startsWith('Ready(');return `<div class="card guide-link-card"><div><span class="link-title">${t('Your public link')}</span><div class="link-value">${ready?esc(state.link):t('Enable your public link')}</div></div>${ready?`<button class="copy-pill" data-copy="assistant">${icon('copy')}<span>${t('Copy link')}</span></button>`:`<button class="copy-pill" data-screen="links">${t('Open link settings')}</button>`}</div>${ready?'':`<p class="guide-footnote">${t('Your public link is not ready. Open link settings and turn on From the web.')}</p>`}`}
+function assistantLocal(id){
+ if(id==='chatgpt')return `<p class="guide-note">${t('ChatGPT connects to remote MCP servers. Your public HTTPS link is required.')}</p>`;
+ const status=state.assistantStatus,name=assistantInfo[id].name;
+ if(!status)return `<div class="card assistant-local"><p class="busy" role="status">${t('Checking local setup…')}</p></div>`;
+ if(!status.detected)return `<div class="card assistant-local"><div class="assistant-local-copy"><i class="status-dot offline"></i><div><strong>${t('No supported local app was found.')}</strong><p>${t(id==='claude'?'Open Claude Desktop once, then return here, or use the web guide.':'Install Gemini CLI or use the Gemini web guide.')}</p></div></div></div>`;
+ if(status.configured)return `<div class="card assistant-local"><div class="assistant-local-copy"><i class="status-dot"></i><div><strong>${t('Local setup is ready')}</strong><p>${t('Restart the assistant to finish setup.')}</p></div></div><button class="full-button secondary" disabled>${icon('check')} ${t('Configured')}</button></div>`;
+ return `<div class="card assistant-local"><div class="assistant-local-copy"><i class="status-dot"></i><div><strong>${t('Local app detected')}</strong><p>${name} · ${t('On this computer')}</p></div></div>${state.assistantConfirm?`<div class="assistant-confirm"><p>${t('This updates the assistant’s MCP settings. Your other servers stay unchanged and a backup is created.')}</p><div class="assistant-confirm-actions"><button class="full-button secondary" data-assistant-cancel>${t('Cancel')}</button><button class="full-button primary" data-assistant-confirm="${id}" ${state.assistantBusy?'disabled':''}>${state.assistantBusy?t('Connecting…'):t('Confirm setup')}</button></div></div>`:`<button class="full-button primary" data-assistant-setup="${id}">${t('Set up on this computer')}</button>`}</div>`;
+}
+function assistantGuide(id){
+ const steps={
+  claude:[['Open Claude connectors','Go to Customize > Connectors, select + Add, then Add custom connector.','/assets/guide-claude-connectors.webp','Official Claude connector steps'],['Add the MCP server','Name it student-mcp and paste your public link. Choose No sign in if Claude asks for authentication.'],['Enable student-mcp in a chat','Use + > Connectors in a conversation and enable student-mcp.']],
+  chatgpt:[['Open ChatGPT Plugins','Select +, then Add custom MCP server.'],['Add the MCP server','Enter student-mcp as the name and paste the complete HTTPS URL under Connection. Select no authentication when offered.','/assets/guide-chatgpt-plugins.webp','Official ChatGPT plugin steps'],['Review and create','Review the risk notice, create the plugin, then check the discovered tools. Availability depends on your plan and workspace permissions.'],['Use the plugin in a chat','Start a chat, type @ and select student-mcp.']],
+  gemini:[['Open Gemini Connected Apps','Open Settings > Connected Apps, then Add a custom app.'],['Add the MCP server','Paste your public HTTPS MCP URL and select Next. If credentials are requested, review the official authentication instructions.','/assets/guide-gemini-connected-apps.webp','Official Gemini custom app steps'],['Confirm and test','Follow the security prompts, then use @student-mcp in Gemini. Custom apps currently require an eligible personal Google Account and may be limited by region and language.']]
+ }[id];
+ return `<div class="guide-steps">${steps.map((step,index)=>guideStep(index+1,...step)).join('')}</div><a class="guide-source" href="${assistantInfo[id].guide}" target="_blank" rel="noopener noreferrer">${t('Official guide')} ↗</a>`;
+}
+function assistantScreen(){const id=state.assistant,info=assistantInfo[id]||assistantInfo.claude;return `<section><header class="service-head assistant-head">${pageNav('home','Back to services')}<div class="logo-frame"><img src="/assets/${id}.png" alt=""></div><h1>${t('Set up '+info.name)}</h1><p class="subtitle">${t('Connect your assistant')} · ${t('Choose a local app or the web.')}</p></header>${assistantLocal(id)}${id==='claude'?`<div class="guide-steps">${guideStep('✓','Verify the local connection','Restart Claude Desktop, then open + > Connectors to see student-mcp and its tools.')}</div>`:''}<h2 class="section-label">${t('From the web')}</h2>${publicGuideLink()}<a class="full-button secondary guide-link" href="${info.settings}" target="_blank" rel="noopener noreferrer">${t('Open official settings')} ↗</a>${assistantGuide(id)}${notice()}</section>`}
+async function openAssistant(id){if(!assistantInfo[id])return;state.assistant=id;state.assistantStatus=null;state.assistantConfirm=false;state.assistantBusy=false;state.notice=null;state.screen='assistant';render();try{const status=await api('/assistant/'+id);if(state.screen==='assistant'&&state.assistant===id){state.assistantStatus=status;render()}}catch(error){if(state.screen==='assistant'&&state.assistant===id){state.assistantStatus={detected:false};state.notice={text:error.message,error:true};render()}}}
+async function configureAssistant(id){state.assistantBusy=true;state.notice=null;render();try{state.assistantStatus=await api('/action',{action:'assistant_setup',assistant:id});state.assistantConfirm=false}catch(error){state.notice={text:error.message,error:true}}finally{state.assistantBusy=false;if(state.screen==='assistant'&&state.assistant===id)render()}}
 async function api(path,data){const response=await fetch(path,{method:data?'POST':'GET',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:data?JSON.stringify(data):undefined});const value=await response.json();if(!response.ok)throw Error(value.error||'Request failed');return value;}
 const names={moodle:'Moodle',omnivox:'Omnivox',brightspace:'Brightspace',canvas:'Canvas'};const subtitles={moodle:'StudiUM · Moodle Poly · Moodle',omnivox:'Léa / Mio · Read and write',brightspace:'myCourses · Read and write',canvas:'ZoneCours · Read only'};
-// Établissements vérifiés par HTTP (200 + titre du portail) le 2026-11-08. Ajouter une ligne suffit.
+// 140 établissements vérifiés par HTTP (200 + titre du portail) le 2026-11-08.
+// Un portail principal par établissement ; ajouter une ligne suffit.
 const schools=[
- {n:'Université de Montréal',s:'moodle',u:'https://studium.umontreal.ca',a:'udem montreal'},
- {n:'Polytechnique Montréal',s:'moodle',u:'https://moodle.polymtl.ca',a:'poly polymtl genie'},
- {n:'HEC Montréal',s:'canvas',u:'https://zonecours2.hec.ca',a:'hec zonecours gestion'},
- {n:'McGill University',s:'brightspace',u:'https://mycourses2.mcgill.ca',a:'mcgill mycourses'},
- {n:'Concordia University',s:'moodle',u:'https://moodle.concordia.ca',a:'concordia'},
+ {n:'Acadia University',s:'moodle',u:'https://moodle.acadiau.ca',a:'acadia university'},
+ {n:'Algonquin College',s:'brightspace',u:'https://brightspace.algonquincollege.com',a:'algonquin college ottawa'},
+ {n:'Athabasca University',s:'brightspace',u:'https://brightspace.athabascau.ca',a:'athabasca university'},
+ {n:"Bishop's University",s:'moodle',u:'https://moodle.ubishops.ca',a:'bishops bishop university'},
+ {n:'Bow Valley College',s:'brightspace',u:'https://d2l.bowvalleycollege.ca',a:'bow valley college calgary'},
+ {n:'Brandon University',s:'moodle',u:'https://moodle.brandonu.ca',a:'brandon university'},
+ {n:'Brock University',s:'brightspace',u:'https://lms.brocku.ca',a:'brock university'},
+ {n:'Cambrian College',s:'moodle',u:'https://moodle.cambriancollege.ca',a:'cambrian college sudbury'},
+ {n:'Capilano University',s:'moodle',u:'https://moodle.capilanou.ca',a:'capilano university'},
+ {n:'Carleton University',s:'brightspace',u:'https://brightspace.carleton.ca',a:'carleton university'},
+ {n:'Champlain College Lennoxville',s:'omnivox',u:'https://champlaincollege-lennoxville.omnivox.ca',a:'champlain lennoxville college champlaincollege-lennoxville'},
+ {n:'Champlain College Saint-Lambert',s:'omnivox',u:'https://champlaincollege-st-lambert.omnivox.ca',a:'champlain saint-lambert college saint lambert champlaincollege-st-lambert'},
+ {n:'Champlain College Saint-Lawrence',s:'omnivox',u:'https://slc.omnivox.ca',a:'champlain saint-lawrence college saint lawrence slc'},
+ {n:'College of New Caledonia',s:'brightspace',u:'https://brightspace.cnc.bc.ca',a:'college new caledonia nouvelle-caledonie prince george'},
+ {n:'College of the North Atlantic',s:'brightspace',u:'https://d2l.cna.nl.ca',a:'college north atlantic terre-neuve'},
+ {n:'Collège Ahuntsic',s:'omnivox',u:'https://collegeahuntsic.omnivox.ca',a:'ahuntsic college collegeahuntsic'},
+ {n:'Collège André-Grasset',s:'omnivox',u:'https://grasset.omnivox.ca',a:'grasset college andre'},
+ {n:'Collège Bart',s:'omnivox',u:'https://bart.omnivox.ca',a:'college bart'},
+ {n:'Collège Ellis',s:'omnivox',u:'https://ellis.omnivox.ca',a:'college ellis trois-rivieres'},
+ {n:'Collège Gérald-Godin',s:'omnivox',u:'https://cgodin.omnivox.ca',a:'cgodin college gerald godin gerald-godin'},
+ {n:'Collège Inter-Dec',s:'omnivox',u:'https://interdec.omnivox.ca',a:'college inter dec interdec inter-dec'},
+ {n:'Collège Jean-de-Brébeuf',s:'omnivox',u:'https://brebeuf.omnivox.ca',a:'brebeuf college jean'},
+ {n:'Collège LaSalle',s:'omnivox',u:'https://collegelasalle.omnivox.ca',a:'lasalle college collegelasalle'},
+ {n:'Collège Laflèche',s:'omnivox',u:'https://clafleche.omnivox.ca',a:'college lafleche clafleche trois-rivieres'},
+ {n:'Collège Lionel-Groulx',s:'moodle',u:'https://clg.moodle.decclic.qc.ca',a:'clg college lionel groulx'},
+ {n:'Collège Marianopolis',s:'omnivox',u:'https://marianopolis.omnivox.ca',a:'marianopolis college'},
+ {n:'Collège Mathieu',s:'omnivox',u:'https://collegemathieu.omnivox.ca',a:'college mathieu collegemathieu gravalbourg'},
+ {n:'Collège Montmorency',s:'moodle',u:'https://cmontmorency.moodle.decclic.qc.ca',a:'cmontmorency college montmorency'},
+ {n:'Collège Mérici',s:'omnivox',u:'https://college-merici.omnivox.ca',a:'college merici college-merici'},
+ {n:'Collège Regina Assumpta',s:'moodle',u:'https://moodle.reginaassumpta.qc.ca',a:'cra college regina assumpta'},
+ {n:'Collège Sainte-Anne',s:'omnivox',u:'https://sainteanne.omnivox.ca',a:'sainte-anne college sainte anne sainteanne'},
+ {n:'Collège Universel',s:'omnivox',u:'https://collegeuniversel.omnivox.ca',a:'college universel collegeuniversel gatineau'},
+ {n:"Collège d'Alma",s:'moodle',u:'https://moodle.collegealma.ca',a:'alma college'},
+ {n:'Collège de Maisonneuve',s:'omnivox',u:'https://cmaisonneuve.omnivox.ca',a:'cmaisonneuve college maisonneuve'},
+ {n:'Collège de Montréal',s:'moodle',u:'https://cours.college-montreal.qc.ca',a:'cdm college montreal cours de'},
+ {n:'Cégep André-Laurendeau',s:'omnivox',u:'https://claurendeau.omnivox.ca',a:'claurendeau cegep andre laurendeau'},
+ {n:'Cégep Beauce-Appalaches',s:'omnivox',u:'https://cegepba.omnivox.ca',a:'cegepba cegep beauce appalaches'},
+ {n:'Cégep Garneau',s:'omnivox',u:'https://cegepgarneau.omnivox.ca',a:'francois-xavier-garneau cegep garneau cegepgarneau'},
+ {n:'Cégep Heritage College',s:'omnivox',u:'https://cegep-heritage.omnivox.ca',a:'heritage cegep college cegep-heritage'},
+ {n:'Cégep Limoilou',s:'omnivox',u:'https://climoilou.omnivox.ca',a:'limoilou quebec cegep climoilou'},
+ {n:'Cégep Marie-Victorin',s:'omnivox',u:'https://collegemv.omnivox.ca',a:'collegemv cegep marie victorin marie-victorin'},
+ {n:'Cégep Saint-Jean-sur-Richelieu',s:'omnivox',u:'https://cstjean.omnivox.ca',a:'cegep saint jean sur richelieu cstjean saint-jean'},
+ {n:'Cégep de Baie-Comeau',s:'omnivox',u:'https://cegep-baie-comeau.omnivox.ca',a:'cegep-baie-comeau cegep baie comeau baie-comeau'},
+ {n:'Cégep de Bois-de-Boulogne',s:'omnivox',u:'https://bdeb.omnivox.ca',a:'bdeb bois-de-boulogne cegep bois boulogne'},
+ {n:'Cégep de Chicoutimi',s:'omnivox',u:'https://cchic.omnivox.ca',a:'cegep chicoutimi cchic'},
+ {n:'Cégep de Drummondville',s:'omnivox',u:'https://cegepdrummond.omnivox.ca',a:'cegepdrummond cegep drummondville'},
+ {n:'Cégep de Granby Haute-Yamaska',s:'omnivox',u:'https://cegepgranby.omnivox.ca',a:'cegepgranby cegep granby haute yamaska'},
+ {n:'Cégep de Jonquière',s:'moodle',u:'https://moodle.cegepjonquiere.ca',a:'cegepjonquiere cegep jonquiere'},
+ {n:'Cégep de Lévis',s:'omnivox',u:'https://cegeplevis.omnivox.ca',a:'cegeplevis cegep levis'},
+ {n:'Cégep de Matane',s:'omnivox',u:'https://cegep-matane.omnivox.ca',a:'cegep-matane cegep matane'},
+ {n:'Cégep de Rimouski',s:'omnivox',u:'https://cegep-rimouski.omnivox.ca',a:'cegep-rimouski cegep rimouski'},
+ {n:'Cégep de Rivière-du-Loup',s:'omnivox',u:'https://cegeprdl.omnivox.ca',a:'cegeprdl cegep riviere loup riviere-du-loup'},
+ {n:'Cégep de Rosemont',s:'omnivox',u:'https://crosemont.omnivox.ca',a:'cegep rosemont crosemont'},
+ {n:'Cégep de Saint-Félicien',s:'moodle',u:'https://moodle.cegepstfe.ca',a:'stfe cegep saint felicien saint-felicien'},
+ {n:'Cégep de Saint-Hyacinthe',s:'omnivox',u:'https://cegepsth.omnivox.ca',a:'cegepsth cegep saint hyacinthe saint-hyacinthe'},
+ {n:'Cégep de Saint-Jérôme',s:'omnivox',u:'https://cstj.omnivox.ca',a:'cstj cegep saint jerome saint-jerome'},
+ {n:'Cégep de Saint-Laurent',s:'omnivox',u:'https://cegep-st-laurent.omnivox.ca',a:'cegepsl cegep saint laurent cegep-st-laurent saint-laurent'},
+ {n:'Cégep de Sainte-Foy',s:'omnivox',u:'https://cegep-ste-foy.omnivox.ca',a:'csfoy cegep sainte foy cegep-ste-foy sainte-foy'},
+ {n:'Cégep de Sept-Îles',s:'omnivox',u:'https://cegep-sept-iles.omnivox.ca',a:'cegep-sept-iles cegep sept iles sept-iles'},
+ {n:'Cégep de Shawinigan',s:'omnivox',u:'https://cshawi.omnivox.ca',a:'cshawi cegep shawinigan'},
+ {n:'Cégep de Sherbrooke',s:'omnivox',u:'https://cegepsherbrooke.omnivox.ca',a:'cegepsherbrooke cegep sherbrooke'},
+ {n:'Cégep de Sorel-Tracy',s:'omnivox',u:'https://cegepst.omnivox.ca',a:'cegepst cegep sorel tracy sorel-tracy'},
+ {n:'Cégep de Thetford',s:'omnivox',u:'https://cegepth.omnivox.ca',a:'cegepth cegep thetford'},
+ {n:'Cégep de Trois-Rivières',s:'omnivox',u:'https://cegeptr.omnivox.ca',a:'cegeptr cegep trois rivieres trois-rivieres'},
+ {n:'Cégep de Valleyfield',s:'omnivox',u:'https://colval.omnivox.ca',a:'colval cegep valleyfield'},
+ {n:'Cégep de Victoriaville',s:'omnivox',u:'https://cgpvicto.omnivox.ca',a:'cgpvicto cegep victoriaville'},
+ {n:"Cégep de l'Abitibi-Témiscamingue",s:'omnivox',u:'https://cegepat.omnivox.ca',a:'cegepat cegep abitibi temiscamingue rouyn'},
+ {n:"Cégep de l'Outaouais",s:'omnivox',u:'https://cegepoutaouais.omnivox.ca',a:'cegepoutaouais cegep outaouais gatineau hull'},
+ {n:'Cégep de la Gaspésie et des Îles',s:'omnivox',u:'https://cegepgim.omnivox.ca',a:'cegepgim cegep gaspesie iles'},
+ {n:'Cégep du Vieux Montréal',s:'omnivox',u:'https://cvm.omnivox.ca',a:'vieux montreal cvm cegep'},
+ {n:'Cégep Édouard-Montpetit',s:'omnivox',u:'https://cegepmontpetit.omnivox.ca',a:'edouard-montpetit longueuil cegep edouard montpetit cegepmontpetit'},
+ {n:'Dawson College',s:'omnivox',u:'https://dawsoncollege.omnivox.ca',a:'dawson college dawsoncollege'},
+ {n:'First Nations University of Canada',s:'brightspace',u:'https://learn.fnuniv.ca',a:'first nations university canada learn premieres'},
+ {n:'Fleming College',s:'brightspace',u:'https://learn.flemingcollege.ca',a:'fleming college learn peterborough'},
+ {n:'George Brown College',s:'brightspace',u:'https://learn.georgebrown.ca',a:'george brown college learn toronto'},
+ {n:'HEC Montréal',s:'canvas',u:'https://zonecours.hec.ca',a:'hec zonecours gestion montreal'},
+ {n:'INRS',s:'moodle',u:'https://moodle.inrs.ca',a:'recherche scientifique inrs'},
+ {n:"Institut de tourisme et d'hôtellerie du Québec",s:'moodle',u:'https://moodle.ithq.qc.ca',a:'ithq hotellerie tourisme institut quebec'},
+ {n:'John Abbott College',s:'omnivox',u:'https://johnabbott.omnivox.ca',a:'john abbott college johnabbott'},
+ {n:'Lambton College',s:'brightspace',u:'https://d2l.lambtoncollege.ca',a:'lambton college sarnia'},
+ {n:'Laurentian University',s:'brightspace',u:'https://d2l.laurentian.ca',a:'laurentian university laurentienne sudbury'},
+ {n:'Lethbridge Polytechnic',s:'canvas',u:'https://lethbridge.instructure.com',a:'lethbridge polytechnic'},
+ {n:'Manitoba Institute of Trades and Technology',s:'brightspace',u:'https://mylearning.mitt.ca',a:'manitoba institute trades technology mylearning mitt winnipeg'},
+ {n:'McGill University',s:'brightspace',u:'https://mycourses2.mcgill.ca',a:'mcgill university mycourses2'},
+ {n:'McMaster University',s:'brightspace',u:'https://avenue.mcmaster.ca',a:'mcmaster university avenue'},
+ {n:'Memorial University of Newfoundland',s:'brightspace',u:'https://online.mun.ca',a:'memorial terre-neuve university newfoundland online'},
+ {n:'Mohawk College',s:'canvas',u:'https://mycanvas.mohawkcollege.ca',a:'mohawk college mycanvas hamilton'},
+ {n:'Mount Saint Vincent University',s:'moodle',u:'https://learn.msvu.ca',a:'mount saint vincent university learn'},
+ {n:'New Brunswick Community College',s:'brightspace',u:'https://elearning.nbcc.ca',a:'new brunswick community college elearning nbcc'},
+ {n:'Niagara College',s:'brightspace',u:'https://brightspace.niagaracollege.ca',a:'niagara college'},
+ {n:'North Island College',s:'brightspace',u:'https://mycourses.nic.bc.ca',a:'north island college mycourses'},
+ {n:'Northern Alberta Institute of Technology',s:'brightspace',u:'https://lms.nait.ca',a:'northern alberta institute technology nait edmonton'},
+ {n:'Northern Lights College',s:'brightspace',u:'https://d2l.nlc.bc.ca',a:'northern lights college'},
+ {n:'Nova Scotia Community College',s:'brightspace',u:'https://nscconline.brightspace.com',a:'nova scotia community college nscconline nscc'},
+ {n:'Polytechnique Montréal',s:'moodle',u:'https://moodle.polymtl.ca',a:'poly polymtl genie polytechnique montreal'},
+ {n:"Queen's University",s:'brightspace',u:'https://onq.queensu.ca',a:'queens kingston queen university onq'},
+ {n:'Red River College Polytechnic',s:'brightspace',u:'https://learn.rrc.ca',a:'red river college polytechnic learn winnipeg'},
+ {n:'Royal Roads University',s:'moodle',u:'https://moodle.royalroads.ca',a:'royal roads university'},
+ {n:"Saint Mary's University",s:'brightspace',u:'https://smu.brightspace.com',a:'saint mary university smu halifax'},
+ {n:'Selkirk College',s:'moodle',u:'https://learn.selkirk.ca',a:'selkirk college learn nelson'},
+ {n:'Sheridan College',s:'canvas',u:'https://lms.sheridancollege.ca',a:'sheridan college'},
+ {n:'Simon Fraser University',s:'canvas',u:'https://canvas.sfu.ca',a:'sfu simon fraser university'},
+ {n:'Southern Alberta Institute of Technology',s:'brightspace',u:'https://learn.sait.ca',a:'southern alberta institute technology learn sait calgary'},
+ {n:'St. Clair College',s:'moodle',u:'https://lms1.stclaircollege.ca',a:'st clair college lms1 saint windsor'},
+ {n:'St. Francis Xavier University',s:'moodle',u:'https://moodle.stfx.ca',a:'st francis xavier university stfx'},
+ {n:'St. Thomas University',s:'moodle',u:'https://moodle.stu.ca',a:'st thomas university saint-thomas'},
+ {n:'Séminaire de Sherbrooke',s:'omnivox',u:'https://seminaire-sherbrooke.omnivox.ca',a:'seminaire sherbrooke seminaire-sherbrooke'},
+ {n:'Thompson Rivers University',s:'moodle',u:'https://moodle.tru.ca',a:'thompson rivers university tru kamloops'},
+ {n:'Trent University',s:'brightspace',u:'https://learn.trentu.ca',a:'trent university learn'},
+ {n:'TÉLUQ',s:'moodle',u:'https://ena.teluq.ca',a:'tele-universite teluq ena'},
+ {n:'UQAC',s:'moodle',u:'https://moodle.uqac.ca',a:'chicoutimi saguenay uqac'},
  {n:'UQAM',s:'moodle',u:'https://moodle.uqam.ca',a:'uqam universite du quebec a montreal'},
- {n:'Université de Sherbrooke',s:'moodle',u:'https://moodle.usherbrooke.ca',a:'udes sherbrooke'},
- {n:'UQTR',s:'moodle',u:'https://moodle.uqtr.ca',a:'uqtr trois-rivieres'},
- {n:'UQAC',s:'moodle',u:'https://moodle.uqac.ca',a:'uqac'},
- {n:'UQO',s:'moodle',u:'https://moodle.uqo.ca',a:'uqo outaouais'},
- {n:'UQAT',s:'moodle',u:'https://moodle.uqat.ca',a:'uqat abitibi temiscamingue'},
- {n:'ÉTS',s:'moodle',u:'https://ena.etsmtl.ca',a:'ets ena technologie superieure'},
- {n:"Bishop's University",s:'moodle',u:'https://moodle.ubishops.ca',a:'bishops ubishops'},
- {n:"Collège d'Alma",s:'moodle',u:'https://moodle.collegealma.ca',a:'alma'},
- {n:'Cégep de Saint-Félicien',s:'moodle',u:'https://moodle.cegepstfe.ca',a:'saint-felicien stfe'},
- {n:'Collège Ahuntsic',s:'omnivox',u:'https://collegeahuntsic.omnivox.ca',a:'ahuntsic'},
- {n:'Collège de Maisonneuve',s:'omnivox',u:'https://cmaisonneuve.omnivox.ca',a:'maisonneuve'},
- {n:'Cégep de Rosemont',s:'omnivox',u:'https://crosemont.omnivox.ca',a:'rosemont'},
- {n:'Cégep du Vieux Montréal',s:'omnivox',u:'https://cvm.omnivox.ca',a:'vieux montreal cvm'},
- {n:'Collège de Bois-de-Boulogne',s:'omnivox',u:'https://bdeb.omnivox.ca',a:'bois-de-boulogne bdeb'},
- {n:'Cégep André-Laurendeau',s:'omnivox',u:'https://claurendeau.omnivox.ca',a:'andre laurendeau'},
- {n:'Cégep Marie-Victorin',s:'omnivox',u:'https://collegemv.omnivox.ca',a:'marie-victorin'},
- {n:'Cégep de Saint-Jérôme',s:'omnivox',u:'https://cstj.omnivox.ca',a:'saint-jerome st-jerome'},
- {n:'Cégep de Lanaudière à Terrebonne',s:'omnivox',u:'https://cegep-lanaudiere-terrebonne.omnivox.ca',a:'lanaudiere terrebonne'},
- {n:"Cégep de Lanaudière à L'Assomption",s:'omnivox',u:'https://cegep-lanaudiere-assomption.omnivox.ca',a:'lanaudiere assomption'},
- {n:'Cégep Limoilou',s:'omnivox',u:'https://climoilou.omnivox.ca',a:'limoilou'},
- {n:'Cégep Garneau',s:'omnivox',u:'https://cegepgarneau.omnivox.ca',a:'garneau'},
- {n:'Cégep de Sainte-Foy',s:'omnivox',u:'https://csfoy.omnivox.ca',a:'sainte-foy'},
- {n:'Cégep de Lévis',s:'omnivox',u:'https://cegeplevis.omnivox.ca',a:'levis'},
- {n:'Collège de Rimouski',s:'omnivox',u:'https://cegep-rimouski.omnivox.ca',a:'rimouski'},
- {n:'Cégep de la Gaspésie et des Îles',s:'omnivox',u:'https://cegepgim.omnivox.ca',a:'gaspesie iles'},
- {n:'Cégep de Chicoutimi',s:'omnivox',u:'https://cchic.omnivox.ca',a:'chicoutimi'},
- {n:"Cégep de l'Abitibi-Témiscamingue",s:'omnivox',u:'https://cegepat.omnivox.ca',a:'abitibi temiscamingue'},
- {n:'Cégep de Sept-Îles',s:'omnivox',u:'https://cegep-sept-iles.omnivox.ca',a:'sept-iles'},
- {n:'Cégep de Trois-Rivières',s:'omnivox',u:'https://cegeptr.omnivox.ca',a:'trois-rivieres'},
- {n:'Cégep de Shawinigan',s:'omnivox',u:'https://cshawi.omnivox.ca',a:'shawinigan'},
- {n:'Cégep de Victoriaville',s:'omnivox',u:'https://cegepvicto.omnivox.ca',a:'victoriaville'},
- {n:'Cégep de Thetford',s:'omnivox',u:'https://cegepth.omnivox.ca',a:'thetford'},
- {n:'Cégep Beauce-Appalaches',s:'omnivox',u:'https://cegepba.omnivox.ca',a:'beauce appalaches'},
- {n:'Cégep de Sorel-Tracy',s:'omnivox',u:'https://cegepst.omnivox.ca',a:'sorel-tracy'},
- {n:'Cégep de Valleyfield',s:'omnivox',u:'https://colval.omnivox.ca',a:'valleyfield'},
- {n:'Cégep de Granby',s:'omnivox',u:'https://cegepgranby.omnivox.ca',a:'granby'},
- {n:'Cégep de Sherbrooke',s:'omnivox',u:'https://cegepsherbrooke.omnivox.ca',a:'sherbrooke cegep'},
- {n:"Cégep de l'Outaouais",s:'omnivox',u:'https://cegepoutaouais.omnivox.ca',a:'outaouais'},
- {n:'Cégep Heritage College',s:'omnivox',u:'https://cegep-heritage.omnivox.ca',a:'heritage'},
- {n:'Vanier College',s:'omnivox',u:'https://vaniercollege.omnivox.ca',a:'vanier'},
- {n:'Dawson College',s:'omnivox',u:'https://dawsoncollege.omnivox.ca',a:'dawson'},
- {n:'John Abbott College',s:'omnivox',u:'https://johnabbott.omnivox.ca',a:'john abbott'},
- {n:'Champlain College St-Lambert',s:'omnivox',u:'https://champlaincollege-st-lambert.omnivox.ca',a:'champlain'},
- {n:'Cégep Édouard-Montpetit',s:'omnivox',u:'https://cegepmontpetit.omnivox.ca',a:'edouard-montpetit'},
- {n:'Cégep de Drummondville',s:'omnivox',u:'https://cegepdrummond.omnivox.ca',a:'drummondville'},
- {n:'Cégep de Saint-Hyacinthe',s:'omnivox',u:'https://cegepsth.omnivox.ca',a:'saint-hyacinthe st-hyacinthe'},
- {n:'Cégep de Matane',s:'omnivox',u:'https://cegep-matane.omnivox.ca',a:'matane'}
+ {n:'UQAT',s:'moodle',u:'https://moodle.uqat.ca',a:'abitibi temiscamingue rouyn uqat'},
+ {n:'UQO',s:'moodle',u:'https://moodle.uqo.ca',a:'outaouais gatineau uqo'},
+ {n:'UQTR',s:'moodle',u:'https://moodle.uqtr.ca',a:'trois-rivieres uqtr'},
+ {n:'University College of the North',s:'brightspace',u:'https://d2l.ucn.ca',a:'university college north nord the pas'},
+ {n:'University of British Columbia',s:'canvas',u:'https://canvas.ubc.ca',a:'ubc university british columbia vancouver'},
+ {n:'University of Calgary',s:'brightspace',u:'https://d2l.ucalgary.ca',a:'ucalgary university calgary'},
+ {n:'University of Guelph',s:'brightspace',u:'https://courselink.uoguelph.ca',a:'guelph university courselink'},
+ {n:'University of Lethbridge',s:'moodle',u:'https://moodle.uleth.ca',a:'university lethbridge'},
+ {n:'University of Northern British Columbia',s:'moodle',u:'https://moodle.unbc.ca',a:'university northern british columbia unbc'},
+ {n:'University of Ottawa',s:'brightspace',u:'https://uottawa.brightspace.com',a:'uottawa university ottawa'},
+ {n:'University of Prince Edward Island',s:'moodle',u:'https://moodle.upei.ca',a:'upei university prince edward island'},
+ {n:'University of Regina',s:'moodle',u:'https://moodle.uregina.ca',a:'university regina uregina'},
+ {n:'University of Toronto',s:'canvas',u:'https://q.utoronto.ca',a:'uoft toronto university q'},
+ {n:'University of Waterloo',s:'brightspace',u:'https://learn.uwaterloo.ca',a:'uwaterloo university waterloo learn'},
+ {n:'University of Windsor',s:'brightspace',u:'https://brightspace.uwindsor.ca',a:'university windsor'},
+ {n:'University of Winnipeg',s:'brightspace',u:'https://nexus.uwinnipeg.ca',a:'university winnipeg nexus'},
+ {n:'University of the Fraser Valley',s:'brightspace',u:'https://brightspace.ufv.ca',a:'university fraser valley ufv'},
+ {n:'Université Concordia',s:'brightspace',u:'https://brightspace.concordia.ca',a:'concordia universite'},
+ {n:'Université Sainte-Anne',s:'moodle',u:'https://moodle.usainteanne.ca',a:"universite sainte anne sainte-anne pointe-de-l'eglise"},
+ {n:'Université de Montréal',s:'moodle',u:'https://studium.umontreal.ca',a:'udem universite montreal studium'},
+ {n:'Université de Sherbrooke',s:'moodle',u:'https://moodle.usherbrooke.ca',a:'udes sherbrooke universite'},
+ {n:"Université de l'Ontario français",s:'moodle',u:'https://moodle.uontario.ca',a:'universite ontario francais uof'},
+ {n:'Vancouver Community College',s:'moodle',u:'https://moodle.vcc.ca',a:'vancouver community college'},
+ {n:'Vancouver Island University',s:'brightspace',u:'https://d2l.viu.ca',a:'vancouver island university viu nanaimo'},
+ {n:'Vanier College',s:'omnivox',u:'https://vaniercollege.omnivox.ca',a:'vanier college vaniercollege'},
+ {n:'Wilfrid Laurier University',s:'brightspace',u:'https://d2l.wlu.ca',a:'wlu laurier wilfrid university'},
+ {n:'École de technologie supérieure',s:'moodle',u:'https://ena.etsmtl.ca',a:'ets genie ecole technologie superieure ena'},
+ {n:'École nationale de cirque',s:'omnivox',u:'https://ecolenationaledecirque.omnivox.ca',a:'ecole nationale cirque ecolenationaledecirque'}
 ];
 function schoolKey(text){return String(text).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()}
 for(const school of schools)school.k=schoolKey(school.n+' '+school.a);
-function schoolMatches(value){const q=schoolKey(value).trim();return q.length<2?[]:schools.filter(school=>school.k.includes(q)).slice(0,6)}
+function schoolMatches(value){const q=schoolKey(value).trim();if(q.length<2)return[];const scored=[];for(const school of schools){const name=schoolKey(school.n);let score=name.startsWith(q)?0:name.split(' ').some(word=>word.startsWith(q))?1:school.k.split(' ').some(word=>word.startsWith(q))?2:school.k.includes(q)?3:9;if(score<9)scored.push([score,school])}scored.sort((a,b)=>a[0]-b[0]||a[1].n.localeCompare(b[1].n,'fr'));return scored.slice(0,6).map(hit=>hit[1])}
 function selectSchool(school){state.draft.school='';state.schoolIndex=-1;state.notice=null;openService(school.s);if(!state.accounts.some(a=>a.service===school.s)){state.editing=true;state.draft.url=school.u}render()}
 function selected(){return state.accounts.find(a=>a.service===state.service&&a.id===state.accountId)}
 function messageLang(text){return t(text)===text?'en':language}
@@ -569,7 +752,32 @@ function findRows(matches){return matches.length?matches.map((school,index)=>`<b
 function findField(){const query=state.draft.school||'';const matches=schoolMatches(query);const open=query.trim().length>=2;return `<div class="find">${icon('search')}<input id="school-find" name="school" type="search" role="combobox" aria-haspopup="listbox" aria-expanded="${open}" aria-controls="find-list" aria-autocomplete="list" aria-label="${t('Your cégep or university')}" placeholder="${t('Your cégep or university')}" autocomplete="off" spellcheck="false" value="${esc(query)}"${open&&state.schoolIndex>=0?` aria-activedescendant="find-opt-${state.schoolIndex}"`:''}>${open?`<div class="find-list" id="find-list" role="listbox" aria-label="${t('Your cégep or university')}">${findRows(matches)}</div>`:''}</div>`}
 // Mise à jour en place : re-rendre l'écran déplacerait le curseur au début du champ.
 function renderFindList(){const input=$('school-find');if(!input)return;const query=state.draft.school||'';const matches=schoolMatches(query);const find=input.closest('.find');let list=find.querySelector('.find-list');if(query.trim().length<2){list?.remove();input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');return}if(!list){list=document.createElement('div');list.className='find-list';list.id='find-list';list.setAttribute('role','listbox');list.setAttribute('aria-label',t('Your cégep or university'));find.appendChild(list)}list.innerHTML=findRows(matches);input.setAttribute('aria-expanded','true');if(state.schoolIndex>=0)input.setAttribute('aria-activedescendant','find-opt-'+state.schoolIndex);else input.removeAttribute('aria-activedescendant')}
-function home(){const tiles=['moodle','omnivox','brightspace','canvas'].map(s=>{const account=state.accounts.find(a=>a.service===s),connected=!!account,enabled=account?.enabled!==false;return `<button class="tile ${connected?'connected':''} ${connected&&!enabled?'service-off':''}" data-open="${s}" aria-label="${names[s]} ${connected?'manage connection':'connect'}"><img src="/assets/${s}.png" alt=""><span>${names[s]}</span>${connected?'<i class="dot"></i>':''}</button>`}).join('');const ready=state.tunnel.startsWith('Ready(');const value=ready?state.link:state.tunnel.startsWith('Starting')?t('Creating your public link…'):state.tunnel.startsWith('Reconnecting')?t('Reconnecting your public link…'):state.tunnel.startsWith('Failed')?t('Unavailable'):state.tunnel==='Stopped'?t('Off'):t('Connect a service to create your link');return `<section class="home"><h1 class="sr-only">${t('Student MCP')}</h1>${findField()}<div class="tiles">${tiles}</div><div class="step" aria-hidden="true">${icon('down')}</div><div class="link-card"><button class="link-open" data-screen="links"><span class="link-title">${t('Your link')}</span><span class="link-value">${esc(value)}</span></button><button class="icon-button copy-home" data-copy="home" aria-label="${t('Copy link')}" ${ready?'':'disabled'}>${icon('copy')}</button></div><div class="step" aria-hidden="true">${icon('down')}</div><div class="end-node" role="img" aria-label="${t('Your assistant')}">${icon('spark')}</div><label class="startup-row">${t('Launch at startup')}<input class="switch" type="checkbox" name="autostart" ${state.autostart?'checked':''} ${state.busy?'disabled':''}></label>${notice()}</section>`}
+function mapLines(){return `<svg class="map-lines" aria-hidden="true"><defs><linearGradient id="map-branch-gradient" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b7c9dc"/><stop offset="1" stop-color="#7899bd"/></linearGradient><marker id="map-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0 8 4 0 8Z" fill="#7899bd"/></marker></defs><g class="map-paths"></g><g class="map-ports"></g></svg>`}
+function home(){const tiles=['moodle','omnivox','brightspace','canvas'].map(s=>{const account=state.accounts.find(a=>a.service===s),connected=!!account,enabled=account?.enabled!==false;return `<button class="tile ${connected?'connected':''} ${connected&&!enabled?'service-off':''}" data-open="${s}" aria-label="${names[s]} ${connected?'manage connection':'connect'}"><img src="/assets/${s}.png" alt=""><span>${names[s]}</span>${connected?'<i class="dot"></i>':''}</button>`}).join('');const ready=state.tunnel.startsWith('Ready(');const value=ready?state.link:state.tunnel.startsWith('Starting')?t('Creating your public link…'):state.tunnel.startsWith('Reconnecting')?t('Reconnecting your public link…'):state.tunnel.startsWith('Failed')?t('Unavailable'):state.tunnel==='Stopped'?t('Off'):t('Connect a service to create your link');return `<section class="home"><h1 class="sr-only">${t('Student MCP')}</h1>${findField()}<div class="mind-map">${mapLines()}<div class="tiles">${tiles}</div><div class="link-card"><button class="link-open" data-screen="links"><span class="link-title">${t('Your link')}</span><span class="link-value">${esc(value)}</span></button><button class="icon-button copy-home" data-copy="home" aria-label="${t('Copy link')}" ${ready?'':'disabled'}>${icon('copy')}</button></div><div class="ais" role="group" aria-label="${t('Your assistant')}"><button class="ai ai-claude" data-assistant="claude" aria-label="${t('Set up Claude')}"><img src="/assets/claude.png" alt=""></button><button class="ai ai-chatgpt" data-assistant="chatgpt" aria-label="${t('Set up ChatGPT')}"><img src="/assets/chatgpt.png" alt=""></button><button class="ai ai-gemini" data-assistant="gemini" aria-label="${t('Set up Gemini')}"><img src="/assets/gemini.png" alt=""></button></div></div>${notice()}</section>`}
+let mindMapFrame=0;
+function scheduleMindMap(){cancelAnimationFrame(mindMapFrame);mindMapFrame=requestAnimationFrame(drawMindMap)}
+function drawMindMap(){
+ const root=document.querySelector('.mind-map');if(!root)return;
+ const box=root.getBoundingClientRect(),svg=root.querySelector('.map-lines');if(!box.width||!box.height)return;
+ svg.setAttribute('viewBox',`0 0 ${box.width} ${box.height}`);const gradient=svg.querySelector('#map-branch-gradient');gradient.setAttribute('x2',box.width);gradient.setAttribute('y2',box.height);
+ const point=(element,side)=>{const r=element.getBoundingClientRect();return {x:r.left-box.left+(side==='left'?0:side==='right'?r.width:r.width/2),y:r.top-box.top+(side==='top'?0:side==='bottom'?r.height:r.height/2)}};
+ const link=root.querySelector('.link-card'),linkBox=link.getBoundingClientRect(),compact=matchMedia('(max-width:44rem)').matches;
+ const connections=[],tiles=[...root.querySelectorAll('.tile')],assistants=[...root.querySelectorAll('.ai')];
+ tiles.forEach((tile,index)=>{
+  const side=compact?'bottom':index<2?'right':'left',source=point(tile,side);
+  const target=compact?{x:linkBox.left-box.left+linkBox.width*(index+1)/5,y:linkBox.top-box.top}:{x:linkBox.left-box.left+(index<2?0:linkBox.width),y:linkBox.top-box.top+linkBox.height/2+(index%2===0?-22:22)};
+  connections.push({source,target,axis:compact?'y':'x'});
+ });
+ assistants.forEach((assistant,index)=>connections.push({source:{x:linkBox.left-box.left+linkBox.width*(index+1)/4,y:linkBox.bottom-box.top},target:point(assistant,'top'),axis:'y'}));
+ const paths=[],ports=[];
+ for(const {source,target,axis} of connections){
+  let d;if(axis==='x'){const bend=(target.x-source.x)*.46;d=`M${source.x} ${source.y}C${source.x+bend} ${source.y} ${target.x-bend} ${target.y} ${target.x} ${target.y}`}else{const bend=(target.y-source.y)*.46;d=`M${source.x} ${source.y}C${source.x} ${source.y+bend} ${target.x} ${target.y-bend} ${target.x} ${target.y}`}
+  paths.push(`<path class="map-halo" d="${d}"/><path class="map-branch" d="${d}" marker-end="url(#map-arrow)"/>`);ports.push(`<circle class="map-port" cx="${source.x}" cy="${source.y}" r="2.5"/>`);
+ }
+ svg.querySelector('.map-paths').innerHTML=paths.join('');svg.querySelector('.map-ports').innerHTML=ports.join('');
+}
+const mindMapObserver='ResizeObserver' in window?new ResizeObserver(scheduleMindMap):null;
+window.addEventListener('resize',scheduleMindMap,{passive:true});
 function pageNav(backScreen,backLabel,tools=false){return `<div class="page-nav"><button class="back" data-screen="${backScreen}" aria-label="${backLabel}">${icon('back')}</button>${tools?`<button class="back tools-entry" data-tools aria-label="MCP tools" title="MCP tools"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4.1 4.1 0 0 0-5.8 5.8l-5.2 5.2a2 2 0 0 0 2.8 2.8l5.2-5.2a4.1 4.1 0 0 0 5.8-5.8l-2.5 2.5-2.8-2.8 2.5-2.5Z"/></svg></button>`:''}</div>`}
 function header(service){return `<header class="service-head">${pageNav('home','Back to services',true)}<div class="logo-frame"><img src="/assets/${service}.png" alt=""></div><h1>${names[service]}</h1><div class="subtitle">${service==='moodle'&&state.otherSchool?'Your Moodle account':subtitles[service]}</div></header>`}
 function accountHost(account){try{return new URL(account.url).host}catch{return account.url||names[state.service]}}
@@ -598,6 +806,7 @@ function linkScreen(){return `
   <div class="link-setting"><label class="section-label">${t('On this computer')}<input class="switch" type="checkbox" name="local" ${state.local?'checked':''}></label>${localCard()}</div>
   <div class="link-setting"><label class="section-label">${t('From the web')}<input class="switch" type="checkbox" name="public" ${state.public?'checked':''}></label>${publicCard()}</div>
  </section>
+ <label class="startup-row">${t('Launch at startup')}<input class="switch" type="checkbox" name="autostart" ${state.autostart?'checked':''} ${state.busy?'disabled':''}></label>
  ${notice()}`}
  function publicMessage(){if(!state.public||state.tunnel==='Stopped')return 'Off';if(state.tunnel.startsWith('Starting')||state.tunnel.startsWith('Reconnecting'))return 'Connecting…';if(state.tunnel.startsWith('Failed'))return 'Unavailable';return 'Off'}
 let updateState={},updateSubmitting=false,updateActionError='';
@@ -624,13 +833,14 @@ $('update-button').addEventListener('click',async()=>{
  let renderedScreen='',refreshing=false,linksPending=0,linksVersion=0,linksQueue=Promise.resolve(),confirmTimer=null;
 function render(){
  renderUpdate();
- document.querySelector('.app').classList.toggle('tools-view',state.screen==='tools');
- const screen=$('screen'),route=state.screen+':'+state.service;
+ const app=document.querySelector('.app');app.classList.toggle('tools-view',state.screen==='tools');app.classList.toggle('home-view',state.screen==='home');app.classList.toggle('assistant-view',state.screen==='assistant');
+ const screen=$('screen'),route=state.screen+':'+state.service+':'+state.assistant;
  const active=document.activeElement;
   const focus=active&&screen.contains(active)?{id:active.id,attr:['data-screen','data-copy','data-action','data-eye','data-help','data-open','data-account','data-add','name'].find(a=>active.hasAttribute(a)),value:null}:null;
  if(focus?.attr)focus.value=active.getAttribute(focus.attr);
-  screen.innerHTML=state.screen==='home'?home():state.screen==='links'?linkScreen():state.screen==='tools'?toolsScreen():serviceScreen();
+  screen.innerHTML=state.screen==='home'?home():state.screen==='links'?linkScreen():state.screen==='tools'?toolsScreen():state.screen==='assistant'?assistantScreen():serviceScreen();
   localize(screen);
+ mindMapObserver?.disconnect();const mindMap=screen.querySelector('.mind-map');if(mindMap){mindMapObserver?.observe(mindMap);scheduleMindMap()}
  if(route!==renderedScreen){const heading=screen.querySelector('h1');if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true})}window.scrollTo(0,0)}
  else if(focus){const target=focus.id?document.getElementById(focus.id):focus.attr?[...screen.querySelectorAll('['+focus.attr+']')].find(el=>el.getAttribute(focus.attr)===focus.value):null;target?.focus({preventScroll:true})}
  renderedScreen=route;
@@ -653,7 +863,7 @@ async function refresh(background=false){
   state.autostart=!!d.autostart;
    if((!background||state.screen!=='links')&&!linksPending&&linkRequestVersion===linksVersion){state.local=d.local;state.public=d.public}
   if(!background){state.verification=d.verification;render()}
-   else if(changed&&!linksPending&&(state.screen==='home'||state.screen==='links')&&document.activeElement?.id!=='school-find')render();
+   else if(changed&&!linksPending&&(state.screen==='home'||state.screen==='links'||state.screen==='assistant')&&document.activeElement?.id!=='school-find')render();
   }catch(e){if(!background){state.notice={text:e.message,error:true};render()}else $('live').textContent=t('Connection status unavailable. Retrying…')}
  finally{refreshing=false}
 }
@@ -665,6 +875,10 @@ async function checkSelected(){
 function openService(service){state.service=service;state.screen='service';state.confirmDisconnect=false;state.manualLogin=false;state.otherSchool=false;state.editing=false;state.draft={};state.visible={};state.help={};state.notice=null;state.health=null;const a=state.accounts.find(x=>x.service===service);state.accountId=a?.id||'';if(service==='moodle'&&a&&a.url!=='https://moodle.polymtl.ca')state.otherSchool=true;if(a&&state.browserLogin?.state!=='waiting')checkSelected();render()}
 async function send(data){if(state.busy)return;state.busy=true;render();try{const r=await api('/action',data);state.notice=r.message?{text:r.message}:null;if(r.browser_download_required){state.browserDownload={...data};return}if(r.browser_login){state.browserLogin=r.browser_login;state.screen='service'}if(r.verification){state.verification=r.verification;state.screen='service'}else if(['connect','verify','cancel','disconnect'].includes(data.action)){state.verification=null;if(data.action==='verify'){state.screen='home';state.editing=false}else if(data.action==='cancel'){state.browserLogin=null;state.screen='service'}else state.screen='home'}if(data.action==='connect')state.editing=false;if(r.stop)state.notice={text:'student-mcp stopped'};await refresh()}catch(e){if(data.action==='autostart')state.autostart=!data.enabled;state.notice={text:e.message,error:true}}finally{state.busy=false;render()}}
 document.addEventListener('click',async e=>{
+ const assistant=e.target.closest('[data-assistant]');if(assistant){openAssistant(assistant.dataset.assistant);return}
+ const assistantSetup=e.target.closest('[data-assistant-setup]');if(assistantSetup){state.assistantConfirm=true;state.notice=null;render();return}
+ const assistantConfirm=e.target.closest('[data-assistant-confirm]');if(assistantConfirm&&!state.assistantBusy){configureAssistant(assistantConfirm.dataset.assistantConfirm);return}
+ if(e.target.closest('[data-assistant-cancel]')){state.assistantConfirm=false;render();return}
  if(e.target.closest('[data-tools]')){state.screen='tools';render();loadTools(state.service);return}
  if(e.target.closest('[data-tools-retry]')){loadTools(state.service);return}
  const schoolRow=e.target.closest('[data-school]');if(schoolRow){selectSchool(schools[+schoolRow.dataset.school]);return}

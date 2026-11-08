@@ -92,12 +92,13 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         home = page.split(b'function home(){', 1)[1].split(b'function header(', 1)[0]
         manage = page.split(b'function manageScreenContent(){', 1)[1].split(b'function serviceScreen(){', 1)[0]
         links = page.split(b'function linkScreen(){', 1)[1].split(b'function publicMessage(', 1)[0]
-        assert b'Launch at startup' in home and b'name="autostart"' in home
-        assert b'class="step"' in home and b'end-node' in home and b'link-open' in home
+        assert b'name="autostart"' not in home
+        assert b'Launch at startup' in links and b'name="autostart"' in links
+        assert b'mapLines()' in home and b'class="mind-map"' in home and b'class="ais"' in home and b'link-open' in home
         assert b'findField()' in home and b'id="school-find"' in page and b'schoolMatches' in page and b'const schools=[' in page
         assert b'name="advanced"' not in home and b'Allow changes' not in manage
         assert b"Mail transfer" not in page and b"/assets/outlook.png" not in page
-        assert b'name="autostart"' not in links
+        assert b'class="startup-row"' in links
         assert manage.index(b'class="status-row"') < manage.index(b'data-add') < manage.index(b'class="manage-actions"')
         assert b'accountChoices()' in manage and b'account-list' not in manage
         assert b'.startup-row .switch:checked{background:var(--blue)' in page
@@ -110,6 +111,21 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         assert logo_status == 200 and logo.startswith(b"\x89PNG\r\n\x1a\n")
         canvas_status, canvas = request("/assets/canvas.png", auth=False)
         assert canvas_status == 200 and canvas.startswith(b"\x89PNG\r\n\x1a\n")
+        for assistant in ("claude", "chatgpt", "gemini"):
+            status, body = request(f"/assets/{assistant}.png", auth=False)
+            assert status == 200 and body.startswith(b"\x89PNG\r\n\x1a\n"), assistant
+        assert b'assistantScreen()' in page and b'data-assistant="claude"' in page
+        assert b'/assets/guide-claude-connectors.webp' in page
+        for guide in ("guide-claude-connectors", "guide-chatgpt-plugins",
+                      "guide-gemini-connected-apps"):
+            status, body = request(f"/assets/{guide}.webp", auth=False)
+            assert status == 200, guide
+            assert body[:4] == b"RIFF" and body[8:12] == b"WEBP", guide
+        assert request("/assistant/chatgpt", auth=False)[0] == 401
+        assistant_status, assistant_body = request("/assistant/chatgpt")
+        assert assistant_status == 200 and json.loads(assistant_body)["local"] is False
+        assert request("/assistant/unknown")[0] == 400
+        assert request("/action", {"action": "assistant_setup", "assistant": "chatgpt"})[0] == 400
         icon_status, icon = request("/assets/app-icon.png", auth=False)
         assert icon_status == 200 and icon.startswith(b"\x89PNG\r\n\x1a\n")
         assert b'<link rel="icon" type="image/png" href="/assets/app-icon.png">' in page

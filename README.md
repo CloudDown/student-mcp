@@ -26,7 +26,7 @@ The installer adds student-mcp to the application menu. Windows or macOS may war
 
 Launch it from the Start menu, Applications, or your app launcher. A local page opens. Closing the tab leaves a tray icon; quit from there when you are done.
 
-<p align="center"><img src="tools/screens/home.png" width="100%" alt="student-mcp home: school search, Moodle, Omnivox, Brightspace and Canvas tiles, arrows to the link and the assistant, plus launch at startup" /></p>
+<p align="center"><img src="tools/screens/home.png" width="100%" alt="student-mcp home: school search, Moodle, Omnivox, Brightspace and Canvas tiles branching to the AI link, then Claude, ChatGPT and Gemini" /></p>
 
 ## 2. Connect your school
 
@@ -50,6 +50,8 @@ Your link appears under your school. Press the copy button. Keep this computer a
 
 Paste the **complete** `https://…/mcp/…` link into the assistant’s MCP connector settings, not into a chat message.
 
+The three icons under **Your link** open the same steps in the app, with a copy button and official screenshots. When Claude Desktop or Gemini CLI is already installed, **Set up on this computer** can add the local stdio server for you after a confirmation: it keeps the other MCP servers, writes a backup first and never stores a school password or the MCP token. ChatGPT only accepts remote HTTPS connectors.
+
 ### Claude
 
 1. Open Claude → **Settings** → **Connectors** (wording can vary).
@@ -59,9 +61,15 @@ Paste the **complete** `https://…/mcp/…` link into the assistant’s MCP con
 
 ### ChatGPT
 
-1. Open ChatGPT → **Settings** → **Connectors** / **MCP** (available on plans that allow custom MCP).
-2. Add a connector and paste the same link.
+1. Open ChatGPT → **Plugins** → add a custom MCP server (available on plans and workspaces that allow custom MCP).
+2. Add a connector and paste the same link; choose no authentication if offered.
 3. Start a new chat and ask about a course or a file.
+
+### Gemini
+
+1. Open Gemini → **Settings** → **Connected Apps** → **Add a custom app**.
+2. Paste the public link and follow the security prompts.
+3. Custom apps currently need an eligible personal Google Account and may be limited by region and language.
 
 ### OpenCode
 
