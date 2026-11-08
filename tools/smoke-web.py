@@ -93,6 +93,8 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         manage = page.split(b'function manageScreenContent(){', 1)[1].split(b'function serviceScreen(){', 1)[0]
         links = page.split(b'function linkScreen(){', 1)[1].split(b'function publicMessage(', 1)[0]
         assert b'Launch at startup' in home and b'name="autostart"' in home
+        assert b'class="step"' in home and b'end-node' in home and b'link-open' in home
+        assert b'findField()' in home and b'id="school-find"' in page and b'schoolMatches' in page and b'const schools=[' in page
         assert b'name="advanced"' not in home and b'Allow changes' not in manage
         assert b"Mail transfer" not in page and b"/assets/outlook.png" not in page
         assert b'name="autostart"' not in links
@@ -185,7 +187,7 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         assert request("/action", {"action": "verify", "code": "123456"})[0] == 400
         assert b'id="browser-connect-form"' in page
         assert b'Connect with browser' in page
-        assert b'Other connection methods' in page
+        assert b'Manual sign-in' in page
         assert b'Advanced options' not in page
         assert b'function advancedFields' not in page
         assert b'gateway_url' not in page

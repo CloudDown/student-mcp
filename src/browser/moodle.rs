@@ -11,7 +11,7 @@ pub(super) struct Sso {
 
 const INVALID: &str =
     "Moodle returned an invalid or unrelated sign-in response. Start browser sign-in again.";
-pub(super) const UNAVAILABLE: &str = "Moodle browser sign-in did not finish. Check that your school allows the Moodle mobile app, or choose Other connection methods to try your password.";
+pub(super) const UNAVAILABLE: &str = "Moodle browser sign-in did not finish. Check that your school allows the Moodle mobile app, or choose Troubleshooting sign-in to try your password.";
 
 impl Sso {
     pub fn new(site: &str) -> Self {

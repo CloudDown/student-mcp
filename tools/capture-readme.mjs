@@ -25,7 +25,7 @@ await page.route('http://student.test/**',async route=>{
   const path=new URL(route.request().url()).pathname;
   if(path==='/')return route.fulfill({contentType:'text/html',body:html});
   if(path==='/state')return route.fulfill({json:state});
-  if(path==='/update')return route.fulfill({json:{available:false,current:'0.6.8',latest:'v0.6.8',checking:false,checked:true}});
+  if(path==='/update')return route.fulfill({json:{available:false,current:'0.6.9',latest:'v0.6.9',checking:false,checked:true}});
   if(path.startsWith('/assets/')){
     const name=path.split('/').pop();
     const file=new URL(`../src/resources/assets/${name==='app-icon.png'?'app-icon-64.png':name.replace('.png','-icon.png')}`,import.meta.url);
@@ -40,7 +40,7 @@ async function shot(name){
   await page.screenshot({path:new URL(name,out).pathname});
 }
 await page.goto('http://student.test/#readme-capture');
-await page.getByText('AI connection',{exact:true}).waitFor();
+await page.waitForSelector('#school-find');
 await page.getByRole('button',{name:'Canvas connect',exact:true}).waitFor();
 await shot('home.png');
 await page.getByRole('button',{name:'Moodle connect',exact:true}).click();
@@ -52,8 +52,8 @@ state.public=true;
 state.link='https://example.srv.us/mcp/your-link';
 await page.getByRole('button',{name:'Back to services',exact:true}).click();
 await page.evaluate(()=>refresh());
-await page.getByRole('button',{name:'AI connection'}).click();
-await page.getByText('Public link active',{exact:true}).waitFor();
+await page.locator('.link-open').click();
+await page.waitForSelector('[data-link-card="public"] .link-detail');
 await shot('link.png');
 await page.getByRole('button',{name:'Back to services',exact:true}).click();
 await page.getByRole('button',{name:'Omnivox connect',exact:true}).click();

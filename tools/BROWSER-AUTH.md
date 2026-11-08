@@ -100,8 +100,8 @@ or unconfirmed response returns an error; inspect the action state before
 deciding whether to retry. A returned `X-AuthHash` is persisted through the
 existing native bridge. Client confirmation policies remain in the MCP client.
 
-**Other connection methods** still provides manual login, the existing gateway,
-and Brightspace cookie/OAuth input. Moodle keeps its mobile token flow.
+**Manual sign-in** still provides manual login and Brightspace
+cookie/OAuth input. Moodle keeps its mobile token flow.
 
 ## Verification and limitations
 
@@ -153,7 +153,7 @@ saving it. The optional private token is discarded. No protocol handler is
 registered and the token is never passed to the OS or the AI.
 
 Existing Moodle tokens remain usable without reconnecting. If mobile browser
-login is disabled by the school, **Other connection methods** retains password
+login is disabled by the school, **Manual sign-in** retains password
 login. No password is saved. The temporary Moodle browser profile is removed
 after sign-in; Brightspace and Omnivox retain their per-account profiles.
 

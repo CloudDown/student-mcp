@@ -26,11 +26,11 @@ The installer adds student-mcp to the application menu. Windows or macOS may war
 
 Launch it from the Start menu, Applications, or your app launcher. A local page opens. Closing the tab leaves a tray icon; quit from there when you are done.
 
-<p align="center"><img src="tools/screens/home.png" width="100%" alt="student-mcp home: Moodle, Omnivox, Brightspace and Canvas tiles, AI connection card and launch at startup" /></p>
+<p align="center"><img src="tools/screens/home.png" width="100%" alt="student-mcp home: school search, Moodle, Omnivox, Brightspace and Canvas tiles, arrows to the link and the assistant, plus launch at startup" /></p>
 
 ## 2. Connect your school
 
-Click **Moodle**, **Omnivox**, **Brightspace** or **Canvas**. Enter your school address, then **Connect with browser**. Sign in on the school site, including MFA if asked. Only a token or a private browser profile is saved — not your password. Canvas uses that session cookie; it does not ask for a personal access token.
+Click **Moodle**, **Omnivox**, **Brightspace** or **Canvas** — or type your cégep or university in the search field, which opens the right service with the address already filled in. Then **Connect with browser**. Sign in on the school site, including MFA if asked. Only a token or a private browser profile is saved — not your password. Canvas uses that session cookie; it does not ask for a personal access token.
 
 If Chrome, Edge or Brave is already installed, that browser is used. A download is offered only if none is found, and only after you agree.
 
@@ -42,9 +42,9 @@ When the page says you are connected, go back to the home screen.
 
 ## 3. Copy your AI link
 
-Click **AI connection**, then the copy button next to the public link. Keep this computer awake and online. Do not put the link in a screenshot or a chat.
+Your link appears under your school. Press the copy button. Keep this computer awake and online. Do not put the link in a screenshot or a chat. Open the card to choose between the local and public link.
 
-<p align="center"><img src="tools/screens/link.png" width="100%" alt="Local and public AI connection links with copy buttons. Example URLs only, not a real token." /></p>
+<p align="center"><img src="tools/screens/link.png" width="100%" alt="Local and public link cards with copy buttons. Example URLs only, not a real token." /></p>
 
 ## 4. Add the link to your assistant
 

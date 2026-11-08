@@ -44,6 +44,10 @@ automatically when configured. Turn it off to remove the startup entry.
 
 ## 2. Connecting a service
 
+Type your cégep or university in the search field: the matching service opens
+with its address already filled in. The four tiles stay available when you
+already know which platform your school uses.
+
 **Canvas.** Same browser sign-in as Brightspace. Enter the school Canvas
 address (ZoneCours HEC: `https://zonecours2.hec.ca`) and **Connect with
 browser**. student-mcp stores a private browser profile, not a personal
@@ -75,8 +79,8 @@ default browser; no manual browser installation is needed on supported systems.
 Complete login and MFA in the separate sign-in window. A dedicated per-account
 profile retains the session across restarts. If interaction is needed later,
 choose **Change login → Connect with browser**. The account is saved only after
-course access is verified. **Other connection methods** opens the existing
-manual methods described below. See [browser setup, persistence and test status](BROWSER-AUTH.md).
+course access is verified. **Manual sign-in** opens the manual
+methods described below. See [browser setup, persistence and test status](BROWSER-AUTH.md).
 
 **Moodle.** Enter your school username and password. The app calls
 `/login/token.php` with the `moodle_mobile_app` service; only the **token**
@@ -114,10 +118,9 @@ official hand-in flow opens a separate CVIR web page, not a documented mobile
 upload endpoint. Do not confuse recording consultation with handing in work.
 
 **Brightspace / myCourses.** Enter your institution's Brightspace site address
-and the two session cookie **values** from your browser after SSO:
-`d2lSessionVal` and `d2lSecureSessionVal` (separate fields; values only). The
-**⋯** help control explains how to copy them from DevTools. The app verifies your profile and course
-enrollments. Read tools cover courses, content, grades, assignments (dropbox +
+and either an OAuth access token or a session cookie header copied after SSO
+(`d2lSessionVal=…; d2lSecureSessionVal=…`). The app verifies your profile and
+course enrollments. Read tools cover courses, content, grades, assignments (dropbox +
 due dates), quizzes, calendar, aggregated deadlines and course news.
 `brightspace_file` reads documents using `courseid` and a file topic's `Id`
 from `brightspace_course_content` as `topicid`. PDFs are returned as original
@@ -304,9 +307,8 @@ student-mcp version
   empty HTML body. All Moodle HTTP clients must send `session::BROWSER_UA`.
   Do not treat that 202 as a missing mobile token.
 - **Brightspace asks for SSO cookies**: the school sends you through Microsoft
-  or another identity provider. Sign in in your browser, copy the **values** of
-  `d2lSessionVal` and `d2lSecureSessionVal`, and paste each in its field (see
-  the **⋯** help).
+  or another identity provider. Sign in in your browser and paste
+  `d2lSessionVal=…; d2lSecureSessionVal=…`, or use an OAuth access token.
 - **Omnivox asks for identity verification**: enter the emailed 6-digit code in
   the app. Use **Send a new code** if needed. If the session expires, sign in
   again to start a new verification.
