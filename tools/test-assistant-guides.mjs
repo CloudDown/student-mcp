@@ -141,7 +141,8 @@ try{
    assert.equal(await page.locator('.assistant-workspace').count(),0,'The local view must not show web instructions');
    assert.equal(await page.locator('.local-app-row').count(),0,'Local apps use the compact gallery, not list rows');
    assert.equal(await page.locator('.local-app-card').count(),3);
-   assert.equal(await page.locator('.local-app-card .local-app-mark').count(),3,'Every card carries a monogram mark');
+   assert.equal(await page.locator('.local-app-card .local-app-logo').count(),3,'Known apps use their bundled logos');
+   assert.equal(await page.locator('.local-app-card .local-app-mark').count(),0,'Bundled logos replace monogram marks');
    await page.locator('[data-local-assistant="claude"]').click();
  assert.equal(actions.length,0,'The first setup click must not write configuration');
  await page.getByRole('button',{name:'Annuler',exact:true}).click();

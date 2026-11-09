@@ -100,6 +100,26 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
 
         status, page = request("/", auth=False)
         assert status == 200
+        rename = {"action": "rename_account", "service": "moodle", "id": "moodle", "name": "Léa"}
+        assert request('/action', rename, auth=False)[0] == 401
+        assert request('/action', {**rename, "id": "missing"})[0] == 400
+        assert request('/action', {**rename, "name": 123})[0] == 400
+        assert request('/action', {**rename, "name": "x" * 81})[0] == 400
+        assert request('/action', rename)[0] == 200
+        renamed = json.loads(request('/state')[1])
+        assert renamed["accounts"][0]["name"] == "Léa"
+        connector_path = "/mcp/" + renamed["local_link"].rsplit("/", 1)[-1]
+        code, reply = request(connector_path, {"jsonrpc":"2.0", "id":90, "method":"tools/call",
+            "params":{"name":"student_status", "arguments":{}, "_meta":{
+                "io.modelcontextprotocol/protocolVersion":"2026-07-28"}}},
+            auth=False, address=f"http://127.0.0.1:{port}")
+        assert code == 200
+        profile = json.loads(reply)["result"]["structuredContent"]["accounts"][0]
+        assert profile["name"] == "Léa" and profile["account_id"] == "moodle"
+        assert "fixture" not in json.dumps(profile)
+        assert json.loads(config.read_text())["moodle"]["token"] == "fixture"
+        assert request('/action', {**rename, "name": ""})[0] == 200
+        assert json.loads(request('/state')[1])["accounts"][0]["name"] is None
         assert b"Allow assistant changes" not in page
         assert b'data-action="permissions"' not in page
         assert b'L\xc3\xa9a / Mio \xc2\xb7 Read only' not in page
@@ -131,6 +151,11 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         for assistant in ("grok", "claude", "chatgpt", "gemini"):
             status, body = request(f"/assets/{assistant}.png", auth=False)
             assert status == 200 and body.startswith(b"\x89PNG\r\n\x1a\n"), assistant
+        for app in ("opencode", "cursor", "vscode", "windsurf", "qwen", "pi",
+                    "omp", "kiro", "amp", "crush", "devin"):
+            status, body = request(f"/assets/local-{app}.png", auth=False)
+            assert status == 200 and body.startswith(b"\x89PNG\r\n\x1a\n"), app
+        assert b"localLogos" in page and b"/assets/local-opencode.png" in page
         assert b'assistantScreen()' in page and b'data-assistant-choose' in page
         assert b"openAssistant('grok')" in page and b'class="assistant-switcher"' in page
         for guide in ("guide-claude-menu", "guide-claude-form", "guide-claude-chat",
@@ -277,6 +302,8 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
                 start = time.monotonic()
                 assert request("/state")[0] == 200
                 assert time.monotonic() - start < 2, "slow school blocked status"
+                assert request('/action', rename)[0] == 200
+                assert json.loads(request('/state')[1])["accounts"][0]["name"] == "Léa"
                 assert request("/action", {"action": "disconnect", "service": "moodle", "id": "moodle"})[0] == 400
                 assert request("/action", {"action": "links", "local": True, "public": False})[0] == 200
             finally:

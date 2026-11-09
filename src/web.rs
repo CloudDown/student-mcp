@@ -309,6 +309,49 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                     include_bytes!("resources/assets/guide-gemini-chat.webp"),
                     "image/webp",
                 )),
+                "/assets/local-opencode.png" => Some((
+                    include_bytes!("resources/assets/local-opencode.png"),
+                    "image/png",
+                )),
+                "/assets/local-cursor.png" => Some((
+                    include_bytes!("resources/assets/local-cursor.png"),
+                    "image/png",
+                )),
+                "/assets/local-vscode.png" => Some((
+                    include_bytes!("resources/assets/local-vscode.png"),
+                    "image/png",
+                )),
+                "/assets/local-windsurf.png" => Some((
+                    include_bytes!("resources/assets/local-windsurf.png"),
+                    "image/png",
+                )),
+                "/assets/local-qwen.png" => Some((
+                    include_bytes!("resources/assets/local-qwen.png"),
+                    "image/png",
+                )),
+                "/assets/local-pi.png" => {
+                    Some((include_bytes!("resources/assets/local-pi.png"), "image/png"))
+                }
+                "/assets/local-omp.png" => Some((
+                    include_bytes!("resources/assets/local-omp.png"),
+                    "image/png",
+                )),
+                "/assets/local-kiro.png" => Some((
+                    include_bytes!("resources/assets/local-kiro.png"),
+                    "image/png",
+                )),
+                "/assets/local-amp.png" => Some((
+                    include_bytes!("resources/assets/local-amp.png"),
+                    "image/png",
+                )),
+                "/assets/local-crush.png" => Some((
+                    include_bytes!("resources/assets/local-crush.png"),
+                    "image/png",
+                )),
+                "/assets/local-devin.png" => Some((
+                    include_bytes!("resources/assets/local-devin.png"),
+                    "image/png",
+                )),
                 _ => None,
             };
             if let Some((image, mime)) = image {
@@ -337,7 +380,7 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
             let mut accounts = Vec::new();
             for service in ["moodle", "omnivox", "brightspace", "canvas"] {
                 for (id, url) in current.account_list(service) {
-                    accounts.push(json!({"service":service,"id":id,"url":url,"enabled":current.service_enabled(service)}));
+                    accounts.push(json!({"service":service,"id":id,"name":current.account_name(service, &id),"url":url,"enabled":current.service_enabled(service)}));
                 }
             }
             (200, "application/json", json!({"accounts":accounts,"verification":pending.as_ref().map(|(_,p)| &p.prompt),"browser_login":browser_login.as_ref().map(crate::browser::Login::status),"link":mcp_endpoint(tunnel.origin().unwrap_or(&format!("http://127.0.0.1:{port}")), &gateway.token),"local_link":mcp_endpoint(&format!("http://127.0.0.1:{port}"), &gateway.token),"tunnel":format!("{:?}",tunnel.state),"public":current.gateway.public_enabled(),"local":enabled.load(Ordering::SeqCst),"autostart":crate::autostart::enabled().unwrap_or(false)}).to_string().into_bytes(),false)
@@ -499,7 +542,8 @@ fn background_action(action: &str) -> bool {
 }
 
 fn action_allowed_during_job(action: &str, checking: bool) -> bool {
-    matches!(action, "stop" | "links" | "autostart") || (checking && action == "service_enabled")
+    matches!(action, "stop" | "links" | "autostart")
+        || (checking && matches!(action, "service_enabled" | "rename_account"))
 }
 
 fn respond_action(request: tiny_http::Request, result: Result<Value, String>) {
@@ -576,6 +620,14 @@ fn action(
         }
         let updated = Settings::set_service_enabled(service, args["enabled"] == true)?;
         return Ok(json!({"enabled":updated.service_enabled(service)}));
+    }
+    if get("action") == "rename_account" {
+        let name = args
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or("Provide a profile name.")?;
+        let updated = Settings::rename_account(service, get("id"), name)?;
+        return Ok(json!({"name":updated.account_name(service, get("id"))}));
     }
     let id = if get("id").is_empty() {
         random_hex(8)
@@ -718,6 +770,8 @@ mod tests {
     fn service_can_be_toggled_during_connection_check_only() {
         assert!(action_allowed_during_job("service_enabled", true));
         assert!(!action_allowed_during_job("service_enabled", false));
+        assert!(action_allowed_during_job("rename_account", true));
+        assert!(!action_allowed_during_job("rename_account", false));
         assert!(!action_allowed_during_job("disconnect", true));
         assert!(!action_allowed_during_job("check", true));
         assert!(!action_allowed_during_job("advanced_tools", false));

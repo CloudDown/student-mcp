@@ -13,15 +13,22 @@ try {
   const state={accounts:[],browser_login:null,verification:null,tunnel:'Idle',local:true,public:false,autostart:false,link:'',local_link:''};
   const actions=[];
   let needsBrowser=false;
+  let rejectRename=false;
   await page.route('http://student.test/**',async route=>{
     const path=new URL(route.request().url()).pathname;
     if(path==='/')return route.fulfill({contentType:'text/html',body:html});
     if(path==='/state')return route.fulfill({json:state});
     if(path==='/update')return route.fulfill({json:{available:false}});
-    if(path==='/assistants')return route.fulfill({json:{assistants:[{assistant:'claude',name:'Claude Desktop',detected:true,configured:false,reload:'restart'},{assistant:'gemini',name:'Gemini CLI',detected:false,configured:false,reload:'restart'}]}});
+    if(path==='/assistants')return route.fulfill({json:{assistants:[{assistant:'claude',name:'Claude Desktop',detected:true,configured:false,reload:'restart'},{assistant:'opencode',name:'OpenCode',detected:true,configured:false,reload:'automatic'},{assistant:'gemini',name:'Gemini CLI',detected:false,configured:false,reload:'restart'}]}});
     if(path.startsWith('/assistant/')){const id=path.slice('/assistant/'.length);return route.fulfill({json:{assistant:id,local:id!=='chatgpt',detected:id==='claude',configured:false}})}
     if(path==='/action'){
       const action=route.request().postDataJSON();actions.push(action);
+      if(action.action==='rename_account'){
+        if(rejectRename)return route.fulfill({status:400,json:{error:'Rename failed'}});
+        const account=state.accounts.find(a=>a.id===action.id&&a.service===action.service);
+        account.name=action.name.trim()||null;
+        return route.fulfill({json:{name:account.name}});
+      }
       if(action.action==='assistant_setup')return route.fulfill({json:{assistant:action.assistant,local:true,detected:true,configured:true}});
       if(action.action==='browser_connect'){
         if(needsBrowser&&!action.allow_browser_download)return route.fulfill({json:{browser_download_required:true}});
@@ -68,6 +75,45 @@ try {
   state.browser_login={...state.browser_login,state:'connected'};
   await page.evaluate(()=>refresh());
   await page.getByRole('button',{name:'Change login',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Rename profile',exact:true}).click();
+  const profileName=page.getByLabel('Profile name',{exact:true});
+  assert.equal(await profileName.getAttribute('maxlength'),'80');
+  await profileName.fill('Léa');
+  rejectRename=true;
+  await page.getByRole('button',{name:'Save',exact:true}).click();
+  await page.getByRole('alert').filter({hasText:'Rename failed'}).waitFor();
+  assert.equal(await profileName.inputValue(),'Léa');
+  rejectRename=false;
+  await page.getByRole('button',{name:'Save',exact:true}).click();
+  await page.locator('.manage-status-text').filter({hasText:'Léa'}).waitFor();
+  const cardBounds=await page.locator('.manage-card').boundingBox();
+  for(const action of ['rename','check']){
+    const bounds=await page.locator(`[data-action="${action}"]`).boundingBox();
+    assert.ok(bounds.x>=cardBounds.x&&bounds.x+bounds.width<=cardBounds.x+cardBounds.width,`${action} is clipped`);
+  }
+  assert.deepEqual(actions.at(-1),{action:'rename_account',service:'brightspace',id:'fixture',name:'Léa'});
+  assert.equal(await profileName.count(),0);
+  await page.getByRole('button',{name:'Rename profile',exact:true}).click();
+  await profileName.fill('Not saved');
+  await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  assert.equal(state.accounts[0].name,'Léa');
+  await page.getByRole('button',{name:'Rename profile',exact:true}).click();
+  await profileName.fill('Connected <img src=x onerror=alert(1)>');
+  await page.getByRole('button',{name:'Save',exact:true}).click();
+  await page.locator('.manage-status-text').filter({hasText:'Connected <img src=x onerror=alert(1)>'}).waitFor();
+  assert.equal(await page.locator('.manage-status-text img').count(),0);
+  // A second profile on the same platform is chosen by its label, not just its host.
+  state.accounts.push({id:'second',service:'brightspace',url:'https://school.brightspace.com',name:'Alex'});
+  await page.evaluate(()=>refresh());
+  await page.getByRole('button',{name:'Alex',exact:true}).click();
+  await page.getByRole('button',{name:'Rename profile',exact:true}).click();
+  assert.equal(await profileName.inputValue(),'Alex');
+  await profileName.fill('');
+  await page.getByRole('button',{name:'Save',exact:true}).click();
+  await page.waitForFunction(()=>!document.getElementById('profile-name-form'));
+  assert.equal(state.accounts[1].name,null);
+  state.accounts.splice(1);
+  await page.evaluate(async()=>{state.accountId='fixture';await refresh()});
   await page.getByRole('button',{name:'Change login',exact:true}).click();
   await page.getByRole('button',{name:'Manual sign-in',exact:true}).click();
   await page.getByLabel('Session cookie or access token',{exact:true}).waitFor();
@@ -140,6 +186,10 @@ try {
   await page.locator('[data-assistant-mode="local"]').click();
   await page.locator('.local-apps').waitFor();
   assert.equal(await page.locator('[data-local-assistant="gemini"]').isDisabled(),true);
+  assert.equal(await page.locator('[data-local-assistant="claude"] img.local-app-logo[src="/assets/claude.png"]').count(),1);
+  assert.equal(await page.locator('[data-local-assistant="opencode"] img.local-app-logo[src="/assets/local-opencode.png"]').count(),1);
+  assert.equal(await page.locator('[data-local-assistant="gemini"] img.local-app-logo[src="/assets/gemini.png"]').count(),1);
+  assert.equal(await page.locator('.local-app-list .local-app-mark').count(),0);
   await page.getByRole('button',{name:'Back to services',exact:true}).click();
   assert.deepEqual(errors,[]);
   console.log('Browser UI passed: preparation, download progress, installation, sign-in, completion, manual fallback, cancellation and assistant setup.');

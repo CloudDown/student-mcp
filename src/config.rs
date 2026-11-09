@@ -166,6 +166,9 @@ pub struct Settings {
     /// Connected services can be temporarily hidden from MCP without deleting credentials.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub disabled_services: Vec<String>,
+    /// User-chosen profile labels, keyed by service/account ID (including legacy accounts).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub account_names: std::collections::BTreeMap<String, String>,
     #[serde(skip)]
     pub account_scope: Option<(String, String)>,
     /// Set when the file on disk could not be read or parsed. Saves refuse to
@@ -294,6 +297,45 @@ impl Settings {
         }
         scoped.account_scope = Some((service.into(), id.into()));
         scoped
+    }
+
+    pub fn account_name(&self, service: &str, id: &str) -> Option<&str> {
+        self.account_names
+            .get(&format!("{service}/{id}"))
+            .map(String::as_str)
+    }
+
+    /// Rename only metadata in the latest config; never replace credentials from a stale view.
+    pub fn rename_account(service: &str, id: &str, name: &str) -> Result<Self, String> {
+        let name = name.trim();
+        if name.chars().count() > 80 || name.chars().any(char::is_control) {
+            return Err(
+                "Use a profile name of at most 80 characters, without control characters.".into(),
+            );
+        }
+        let _guard = SAVE_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let _file_guard = lock_config().map_err(|error| error.to_string())?;
+        let mut settings = Self::load();
+        if let Some(error) = &settings.config_error {
+            return Err(error.clone());
+        }
+        if !settings
+            .account_list(service)
+            .iter()
+            .any(|(known, _)| known == id)
+        {
+            return Err("Unknown account. Connect it before renaming its profile.".into());
+        }
+        let key = format!("{service}/{id}");
+        if name.is_empty() {
+            settings.account_names.remove(&key);
+        } else {
+            settings.account_names.insert(key, name.to_string());
+        }
+        settings
+            .save_unlocked()
+            .map_err(|error| error.to_string())?;
+        Ok(settings)
     }
 
     fn migrate_permissions(&mut self) {
@@ -444,6 +486,13 @@ impl Settings {
                 }
             }
             let key = format!("{service}/{id}");
+            if !root
+                .account_list(service)
+                .iter()
+                .any(|(known, _)| known == id)
+            {
+                root.account_names.remove(&key);
+            }
             if let Some(value) = self.tools.allow_changes.get(&key) {
                 root.tools.allow_changes.insert(key, *value);
             }
@@ -848,6 +897,80 @@ pub(crate) mod tests {
             Ok(value) => value,
             Err(panic) => std::panic::resume_unwind(panic),
         }
+    }
+
+    #[test]
+    fn profile_names_persist_without_changing_accounts_or_credentials() {
+        with_temp_config(|| {
+            let original = serde_json::json!({
+                "gateway": {"public_enabled": false},
+                "moodle": {"url": "https://school.example", "token": "legacy-secret"},
+                "accounts": [{"id":"second", "service":"brightspace", "moodle":null,
+                    "omnivox":null, "brightspace":{"url":"https://school.example", "token":"other-secret"}}]
+            });
+            std::fs::write(config_path(), original.to_string()).unwrap();
+            assert_eq!(Settings::load().account_name("moodle", "moodle"), None);
+            let stale = Settings::load().for_account("brightspace", "second");
+            Settings::rename_account("moodle", "moodle", "  Léa  ").unwrap();
+            Settings::rename_account("brightspace", "second", "Alex").unwrap();
+            // A login that began before the rename must preserve the latest metadata.
+            stale.save_service("brightspace").unwrap();
+            let saved = Settings::load();
+            assert_eq!(saved.account_name("moodle", "moodle"), Some("Léa"));
+            assert_eq!(saved.account_name("brightspace", "second"), Some("Alex"));
+            assert_eq!(saved.moodle().unwrap().token, "legacy-secret");
+            assert_eq!(
+                saved
+                    .for_account("brightspace", "second")
+                    .brightspace()
+                    .unwrap()
+                    .token,
+                "other-secret"
+            );
+            assert!(!saved.gateway.public_enabled());
+            assert_eq!(saved.account_list("brightspace")[0].0, "second");
+
+            let before = std::fs::read(config_path()).unwrap();
+            for (service, id, name) in [
+                ("moodle", "missing", "Alex"),
+                ("canvas", "second", "Alex"),
+                ("moodle", "moodle", "a\nb"),
+                ("moodle", "moodle", &"é".repeat(81)),
+            ] {
+                assert!(Settings::rename_account(service, id, name).is_err());
+                assert_eq!(std::fs::read(config_path()).unwrap(), before);
+            }
+            Settings::rename_account("moodle", "moodle", " ").unwrap();
+            assert_eq!(Settings::load().account_name("moodle", "moodle"), None);
+            Settings::rename_account("moodle", "moodle", "Léa").unwrap();
+            let mut legacy = Settings::load().for_account("moodle", "moodle");
+            legacy.disable("moodle");
+            legacy.save_service("moodle").unwrap();
+            assert_eq!(Settings::load().account_name("moodle", "moodle"), None);
+            assert_eq!(
+                Settings::load().account_name("brightspace", "second"),
+                Some("Alex")
+            );
+            let mut disconnected = Settings::load().for_account("brightspace", "second");
+            disconnected.disable("brightspace");
+            disconnected.save_service("brightspace").unwrap();
+            let saved = Settings::load();
+            assert!(saved.account_names.is_empty());
+            assert!(saved.account_list("brightspace").is_empty());
+            assert!(serde_json::to_value(saved)
+                .unwrap()
+                .get("account_names")
+                .is_none());
+        });
+    }
+
+    #[test]
+    fn profile_rename_refuses_a_broken_config() {
+        with_temp_config(|| {
+            std::fs::write(config_path(), "not json").unwrap();
+            assert!(Settings::rename_account("moodle", "moodle", "Alex").is_err());
+            assert_eq!(std::fs::read_to_string(config_path()).unwrap(), "not json");
+        });
     }
 
     #[test]

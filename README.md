@@ -38,6 +38,8 @@ If Chrome, Edge or Brave is already installed, that browser is used. A download 
 
 When the page says you are connected, go back to the home screen.
 
+Use the pencil on a connected account to name its profile, such as **Léa** or **Alex**. Your assistant can then find the right platform and account when you ask “What are Léa's deadlines?” If names are ambiguous, it should ask you to clarify.
+
 <p align="center"><img src="tools/screens/omnivox.png" width="100%" alt="Omnivox sign-in with Connect with browser" /></p>
 
 ## 3. Copy your AI link

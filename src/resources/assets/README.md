@@ -57,6 +57,29 @@ Gemini with a blue-to-purple gradient (`#4E8CFF` → `#9B72CB` → `#D96570`).
 The brands belong to Anthropic, OpenAI and Google; their use identifies the
 assistants the link can be pasted into, without implying endorsement.
 
+`grok-icon.png` is the xAI Grok mark used by the assistant switcher. The Grok
+brand belongs to xAI.
+
+`local-*.png` are the logos shown for locally detected assistants, downloaded
+from each vendor on 2026-11-09 and normalized to 128 × 128 (artwork fitted to
+112 px, transparent margin, metadata stripped). Claude Desktop, Codex and Gemini
+CLI reuse `claude-icon.png`, `chatgpt-icon.png` and `gemini-icon.png`:
+
+- opencode: https://opencode.ai/favicon.svg
+- cursor: https://cursor.com/marketing-static/icon-192x192-light.png
+- vscode: https://code.visualstudio.com/assets/apple-touch-icon.png
+- windsurf: https://windsurf.com/favicon.svg
+- qwen: https://qwen.ai (Alibaba CDN favicon, 80 × 80 source)
+- pi: https://pi.dev/favicon.svg
+- omp: https://omp.sh/favicon.png
+- kiro: https://kiro.dev/icon.svg
+- amp: https://ampcode.com/app-icon.svg (press kit)
+- crush: crop of https://stuff.charm.sh/crush/charm-crush.png
+- devin: https://devin.ai/icon.png
+
+These marks belong to their respective owners and only identify the app that
+student-mcp can configure.
+
 # Assistant setup guides
 
 ## Rendered captures (2026-11-09)
