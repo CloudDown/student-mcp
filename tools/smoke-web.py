@@ -114,7 +114,8 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         assert b'findField()' in home and b'id="school-find"' in page and b'schoolMatches' in page and b'const schools=[' in page
         assert b'name="advanced"' not in home and b'Allow changes' not in manage
         assert b"Mail transfer" not in page and b"/assets/outlook.png" not in page
-        assert b'id="home-startup"' in page and b'name="autostart"' in page
+        assert b'id="app-startup"' in page and b'name="autostart"' in page
+        assert b'sizeLanguageMenu' in page and b"window.addEventListener('resize',sizeLanguageMenu)" in page
         assert manage.index(b'class="status-row"') < manage.index(b'data-add') < manage.index(b'class="manage-actions"')
         assert b'accountChoices()' in manage and b'account-list' not in manage
         assert b'.startup-row .switch:checked{background:var(--blue)' in page

@@ -139,7 +139,7 @@ try {
   await page.getByRole('button',{name:'Set up Gemini',exact:true}).click();
   await page.locator('[data-assistant-mode="local"]').click();
   await page.locator('.local-apps').waitFor();
-  assert.equal(await page.locator('[data-local-assistant="gemini"]').count(),0);
+  assert.equal(await page.locator('[data-local-assistant="gemini"]').isDisabled(),true);
   await page.getByRole('button',{name:'Back to services',exact:true}).click();
   assert.deepEqual(errors,[]);
   console.log('Browser UI passed: preparation, download progress, installation, sign-in, completion, manual fallback, cancellation and assistant setup.');

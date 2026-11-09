@@ -40,7 +40,7 @@ area / status bar) stays visible while the app is up: click it or use
 **Open student-mcp** to reopen the page, and **Quit student-mcp** to stop the
 server and tunnel. You can also stop from the page with **Arrêter student-mcp**.
 Launch student-mcp again if the tray is gone and you need the page.
-On the link settings screen, turn on **Launch at startup** to start automatically when you
+At the top right of the window, turn on **Launch at startup** to start automatically when you
 sign in after boot, without opening a browser tab. The public link reconnects
 automatically when configured. Turn it off to remove the startup entry.
 
