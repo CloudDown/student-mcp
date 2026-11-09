@@ -50,7 +50,7 @@ Your link appears under your school. Press the copy button. Keep this computer a
 
 Paste the **complete** `https://…/mcp/…` link into the assistant’s MCP connector settings, not into a chat message.
 
-Click **Connect an assistant** under **Your link** to open the **Grok** guide. Buttons switch between **Grok**, **Claude**, **ChatGPT** and **Gemini**. The guide covers the web only: three short steps, illustrative interface renders (not live screenshots) and exact field values. The public link and its Copy button appear on the step where you paste it, so there is nothing to copy first. The examples use fictional data; clicking a render opens it full-screen in the page, with a close button and Escape. A separate **Set up local app** button automatically configures Claude Desktop or Gemini CLI after confirmation, without changing the guide or its current step. Other MCP servers are preserved and a backup is created.
+Click **Connect an assistant** under **Your link**, then choose **Web** or **On this computer**. **Web** has three-step guides for **Grok**, **Claude**, **ChatGPT** and **Gemini**, with illustrative interface renders and a copy button where you need the public link. **On this computer** detects supported local apps: choose an app, then **Confirm setup**. No terminal or public link is needed. Automatic setup supports Claude Desktop, Claude Code, Codex / ChatGPT Desktop, Gemini CLI, OpenCode, Cursor, Grok Build, Oh My Pi, GitHub Copilot / VS Code, Windsurf, Pi, Qwen Code, Kiro, Amp, Crush and Devin CLI. Other settings and MCP servers are preserved and an existing configuration is backed up first. Detection checks known locations, not every app on the disk; **Scan again** refreshes the list.
 
 ### Grok
 

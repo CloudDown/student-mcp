@@ -341,6 +341,21 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                 }
             }
             (200, "application/json", json!({"accounts":accounts,"verification":pending.as_ref().map(|(_,p)| &p.prompt),"browser_login":browser_login.as_ref().map(crate::browser::Login::status),"link":mcp_endpoint(tunnel.origin().unwrap_or(&format!("http://127.0.0.1:{port}")), &gateway.token),"local_link":mcp_endpoint(&format!("http://127.0.0.1:{port}"), &gateway.token),"tunnel":format!("{:?}",tunnel.state),"public":current.gateway.public_enabled(),"local":enabled.load(Ordering::SeqCst),"autostart":crate::autostart::enabled().unwrap_or(false)}).to_string().into_bytes(),false)
+        } else if request.method() == &Method::Get && path == "/assistants" {
+            match crate::assistants::scan() {
+                Ok(status) => (
+                    200,
+                    "application/json",
+                    status.to_string().into_bytes(),
+                    false,
+                ),
+                Err(error) => (
+                    400,
+                    "application/json",
+                    json!({"error":error}).to_string().into_bytes(),
+                    false,
+                ),
+            }
         } else if request.method() == &Method::Get && path.starts_with("/assistant/") {
             match crate::assistants::status(&path["/assistant/".len()..]) {
                 Ok(status) => (

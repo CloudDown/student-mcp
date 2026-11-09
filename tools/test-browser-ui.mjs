@@ -18,6 +18,7 @@ try {
     if(path==='/')return route.fulfill({contentType:'text/html',body:html});
     if(path==='/state')return route.fulfill({json:state});
     if(path==='/update')return route.fulfill({json:{available:false}});
+    if(path==='/assistants')return route.fulfill({json:{assistants:[{assistant:'claude',name:'Claude Desktop',detected:true,configured:false,reload:'restart'},{assistant:'gemini',name:'Gemini CLI',detected:false,configured:false,reload:'restart'}]}});
     if(path.startsWith('/assistant/')){const id=path.slice('/assistant/'.length);return route.fulfill({json:{assistant:id,local:id!=='chatgpt',detected:id==='claude',configured:false}})}
     if(path==='/action'){
       const action=route.request().postDataJSON();actions.push(action);
@@ -120,10 +121,11 @@ try {
   needsBrowser=false;
   await page.locator('[data-assistant-choose]').click();
   await page.getByRole('button',{name:'Set up Claude',exact:true}).click();
-  await page.getByRole('button',{name:'Set up local app',exact:true}).click();
+  await page.locator('[data-assistant-mode="local"]').click();
+  await page.locator('[data-local-assistant="claude"]').click();
   await page.getByText(/This updates the assistant’s MCP settings/).waitFor();
   await page.getByRole('button',{name:'Confirm setup',exact:true}).click();
-  await page.getByText('Local setup is ready',{exact:true}).waitFor();
+  await page.getByText('Claude Desktop · Settings saved',{exact:true}).waitFor();
   assert.equal(actions.at(-1).action,'assistant_setup');
   assert.equal(actions.at(-1).assistant,'claude');
   await page.getByRole('button',{name:'Back to services',exact:true}).click();
@@ -135,8 +137,9 @@ try {
   await page.getByRole('button',{name:'Back to services',exact:true}).click();
   await page.locator('[data-assistant-choose]').click();
   await page.getByRole('button',{name:'Set up Gemini',exact:true}).click();
-  await page.getByRole('button',{name:'Set up local app',exact:true}).click();
-  await page.getByText('No supported local app was found.',{exact:true}).waitFor();
+  await page.locator('[data-assistant-mode="local"]').click();
+  await page.locator('.local-apps').waitFor();
+  assert.equal(await page.locator('[data-local-assistant="gemini"]').count(),0);
   await page.getByRole('button',{name:'Back to services',exact:true}).click();
   assert.deepEqual(errors,[]);
   console.log('Browser UI passed: preparation, download progress, installation, sign-in, completion, manual fallback, cancellation and assistant setup.');

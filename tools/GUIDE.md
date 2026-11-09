@@ -234,18 +234,44 @@ References: [D2L API authentication](https://docs.valence.desire2learn.com/basic
   - Windows: `%LOCALAPPDATA%\student-mcp\student-mcp.exe`
 - Use the main binary, not `student-mcp-desktop`: the desktop launcher always
    opens the browser page, while the main binary starts MCP stdio without arguments.
-- **Connect an assistant** opens short web guides for Grok, Claude, ChatGPT
-  and Gemini, with annotated screenshots. There is no web/local route picker.
-  A separate **Set up on this computer** button offers automatic configuration
-  for Claude Desktop and Gemini CLI when installed: the page merges `student-mcp` into
-  `claude_desktop_config.json` or `~/.gemini/settings.json`, keeps the other
-  MCP servers, saves a timestamped backup first and never writes a school
-  credential or the MCP bearer token. Restart the assistant afterwards.
+- **Connect an assistant** separates **Web** from **On this computer**. The web
+  view retains short guides for Grok, Claude, ChatGPT and Gemini. The local view
+  scans known configuration locations, application directories and executable paths
+  without running an assistant or modifying files. Choose a detected app, then
+  **Confirm setup**: no command or JSON needs to be copied.
+- Automatic local setup supports Claude Desktop, Claude Code, Codex / ChatGPT
+  Desktop, Gemini CLI, OpenCode (V2), Cursor, Grok Build, Oh My Pi, GitHub Copilot /
+  VS Code, Windsurf, Pi, Qwen Code, Kiro, Amp, Crush and Devin CLI.
+  It merges only `student-mcp` into the native JSON, JSONC or TOML
+  configuration, keeps other settings and MCP servers, and backs up existing files.
+  OpenCode uses `mcp.servers` and retains JSONC comments; Codex and Grok Build use
+  `mcp_servers` in TOML, with comments preserved. VS Code targets the current
+  Copilot global configuration (`~/.copilot/mcp-config.json`); AI features must be enabled.
+  Oh My Pi targets its default profile unless a profile/directory override is inherited.
+  `CODEX_HOME`, `COPILOT_HOME`, and the documented OMP directory overrides are respected.
+  A saved setting is not a live connection check: the result tells you whether to
+  restart the assistant or reload MCP; OpenCode applies settings automatically.
+  No school credential or MCP bearer token is written.
+- The additional local agents are drawn from [Omarchy's current agent catalogue](https://github.com/basecamp/omarchy/blob/quattro/bin/omarchy-default-agent),
+  but configured using each client's own MCP format: [Pi](https://pi.dev/docs/latest/mcp),
+  [Qwen Code](https://qwenlm.github.io/qwen-code-docs/en/users/features/mcp/),
+  [Kiro](https://kiro.dev/docs/mcp/configuration/), [Amp](https://ampcode.com/docs/customize/mcp),
+  [Crush](https://github.com/charmbracelet/crush/blob/main/docs/config/README.md),
+  and [Devin CLI](https://docs.devin.ai/cli/extensibility/mcp/configuration).
+  Amp uses the literal `amp.mcpServers` key (JSONC comments preserved), Crush uses
+  `mcp` in its still-supported config-directory `crush.json`, never its machine-owned
+  state file, and the other new clients use `mcpServers`. Crush's `crushrc` is not
+  executed or edited and retains precedence over JSON. Existing approval policies
+  stay unchanged; no Omarchy permission-bypass flags are copied.
+  Detection also checks bounded mise installation directories without invoking mise
+  or executing Omarchy's lazy installers. A lazy launcher alone is not an installed app.
   Grok, ChatGPT, Claude on the web and Gemini on the web use the public HTTPS link
   instead; the same pages show the official steps and a copy button.
-- Automatic setup refuses a config that is not a JSON object, is a symlink or
-  cannot be read. It is opt-in: nothing is written until **Set up on this
-  computer**, then **Confirm setup**.
+- Automatic setup refuses invalid native configuration, invalid MCP containers,
+  symlinks and unreadable files. Writes are serialized, backed up and atomic;
+  private file permissions are retained. Nothing is written until an app is selected
+  and **Confirm setup** is pressed. The scan is bounded and may miss portable apps
+  or custom profiles not visible to the student-mcp process.
 - The tool list follows the window: add or remove a service and the tools appear
   or disappear on the next call (the config is re-read every time).
 - Tool naming, parameters, annotations and result shape follow

@@ -4,66 +4,13 @@
 //! written to an assistant's configuration. Existing servers are preserved.
 
 use serde_json::{json, Map, Value};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
-fn home() -> Result<PathBuf, String> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .ok_or("Cannot find your home directory.".into())
-}
+mod discovery;
+use discovery::{find, Assistant, Computer, Format, ASSISTANTS};
 
-fn config_path(assistant: &str) -> Result<PathBuf, String> {
-    match assistant {
-        "claude" => {
-            #[cfg(target_os = "macos")]
-            let base = home()?.join("Library/Application Support");
-            #[cfg(target_os = "windows")]
-            let base = std::env::var_os("APPDATA")
-                .map(PathBuf::from)
-                .ok_or("Cannot find the Claude configuration directory.")?;
-            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-            let base = std::env::var_os("XDG_CONFIG_HOME")
-                .filter(|value| Path::new(value).is_absolute())
-                .map(PathBuf::from)
-                .unwrap_or(home()?.join(".config"));
-            Ok(base.join("Claude/claude_desktop_config.json"))
-        }
-        "gemini" => Ok(home()?.join(".gemini/settings.json")),
-        _ => Err("This assistant does not support automatic local setup.".into()),
-    }
-}
-
-fn executable_on_path(name: &str) -> bool {
-    let Some(paths) = std::env::var_os("PATH") else {
-        return false;
-    };
-    std::env::split_paths(&paths).any(|directory| {
-        let candidate = directory.join(name);
-        candidate.is_file()
-            || (cfg!(windows)
-                && ["exe", "cmd", "bat"]
-                    .iter()
-                    .any(|extension| candidate.with_extension(extension).is_file()))
-    })
-}
-
-fn detected(assistant: &str, path: &Path) -> bool {
-    match assistant {
-        "claude" => {
-            if path.parent().is_some_and(Path::is_dir) {
-                return true;
-            }
-            #[cfg(target_os = "macos")]
-            return Path::new("/Applications/Claude.app").exists()
-                || home().is_ok_and(|home| home.join("Applications/Claude.app").exists());
-            #[cfg(not(target_os = "macos"))]
-            false
-        }
-        "gemini" => path.exists() || executable_on_path("gemini"),
-        _ => false,
-    }
-}
+const MAX_CONFIG_BYTES: u64 = 8 * 1024 * 1024;
 
 fn executable() -> Result<PathBuf, String> {
     std::env::current_exe()
@@ -71,30 +18,119 @@ fn executable() -> Result<PathBuf, String> {
         .map_err(|error| error.to_string())
 }
 
-fn configured(path: &Path, executable: &Path) -> bool {
-    let Ok(text) = std::fs::read_to_string(path) else {
+fn read_config(path: &Path) -> Result<String, String> {
+    let metadata = std::fs::symlink_metadata(path).map_err(|error| error.to_string())?;
+    if !metadata.file_type().is_file() || metadata.len() > MAX_CONFIG_BYTES {
+        return Err(
+            "The assistant configuration is not a regular, bounded file; it was left unchanged."
+                .into(),
+        );
+    }
+    let file = std::fs::File::open(path).map_err(|error| error.to_string())?;
+    let mut text = String::new();
+    file.take(MAX_CONFIG_BYTES + 1)
+        .read_to_string(&mut text)
+        .map_err(|error| error.to_string())?;
+    if text.len() as u64 > MAX_CONFIG_BYTES {
+        return Err("The assistant configuration is too large; it was left unchanged.".into());
+    }
+    Ok(text)
+}
+
+fn parse_json(text: &str, format: Format) -> Result<Value, String> {
+    let value: Value = if matches!(format, Format::OpenCode | Format::Jsonc) {
+        jsonc_parser::parse_to_serde_value(text, &Default::default())
+            .map_err(|_| "Invalid JSONC")?
+    } else {
+        serde_json::from_str(text).map_err(|_| "Invalid JSON")?
+    };
+    if !value.is_object() {
+        return Err(
+            "The assistant configuration must contain a JSON object; it was left unchanged.".into(),
+        );
+    }
+    Ok(value)
+}
+
+fn configured(path: &Path, executable: &Path, assistant: &Assistant) -> bool {
+    let Ok(text) = read_config(path) else {
         return false;
     };
-    let Ok(value) = serde_json::from_str::<Value>(&text) else {
+    if assistant.format == Format::Toml {
+        let Ok(value) = text.parse::<toml_edit::DocumentMut>() else {
+            return false;
+        };
+        let Some(server) = value.get("mcp_servers").and_then(|v| v.get("student-mcp")) else {
+            return false;
+        };
+        return server.get("command").and_then(toml_edit::Item::as_str) == executable.to_str()
+            && server
+                .get("args")
+                .is_none_or(|args| args.as_array().is_some_and(|v| v.is_empty()))
+            && server.get("enabled").and_then(toml_edit::Item::as_bool) != Some(false);
+    }
+    let Ok(value) = parse_json(&text, assistant.format) else {
         return false;
     };
-    value["mcpServers"]["student-mcp"]["command"].as_str() == executable.to_str()
+    let server = if assistant.format == Format::OpenCode {
+        &value["mcp"]["servers"]["student-mcp"]
+    } else {
+        &value[assistant.servers_key()]["student-mcp"]
+    };
+    let expected = if assistant.format == Format::OpenCode {
+        json!({"type":"local","command":[executable]})
+    } else {
+        json!({"type":"stdio","command":executable,"args":[]})
+    };
+    let command_matches = server["command"] == expected["command"];
+    command_matches
+        && server["disabled"] != true
+        && server["enabled"] != false
+        && (if assistant.format == Format::OpenCode {
+            server["type"] == "local"
+        } else {
+            server.get("type").is_none_or(|kind| kind == "stdio")
+                && server
+                    .get("args")
+                    .is_none_or(|args| args.as_array().is_some_and(Vec::is_empty))
+        })
+        && !value["disabledServers"]
+            .as_array()
+            .is_some_and(|items| items.contains(&json!("student-mcp")))
+}
+
+fn local_status(computer: &Computer, executable: &Path, assistant: &Assistant) -> Value {
+    let path = computer.path(assistant);
+    let detected = computer.detected(assistant, &path);
+    json!({
+        "assistant":assistant.id,
+        "name":assistant.name,
+        "local":true,
+        "detected":detected,
+        "configured":configured(&path, executable, assistant),
+        "reload":match assistant.id { "opencode" => "automatic", "omp" => "mcp", _ => "restart" },
+    })
 }
 
 pub fn status(assistant: &str) -> Result<Value, String> {
-    if assistant == "chatgpt" {
+    if matches!(assistant, "chatgpt" | "grok") {
         return Ok(
             json!({"assistant":assistant,"local":false,"detected":false,"configured":false}),
         );
     }
-    let path = config_path(assistant)?;
+    Ok(local_status(
+        &Computer::current()?,
+        &executable()?,
+        find(assistant)?,
+    ))
+}
+
+pub fn scan() -> Result<Value, String> {
+    let computer = Computer::current()?;
     let executable = executable()?;
-    Ok(json!({
-        "assistant":assistant,
-        "local":true,
-        "detected":detected(assistant, &path),
-        "configured":configured(&path, &executable),
-    }))
+    Ok(
+        json!({"assistants":ASSISTANTS.iter().map(|assistant| local_status(&computer, &executable, assistant)).collect::<Vec<_>>() }),
+    )
 }
 
 fn backup_path(path: &Path) -> Result<PathBuf, String> {
@@ -112,7 +148,112 @@ fn backup_path(path: &Path) -> Result<PathBuf, String> {
     )))
 }
 
-fn merge_config(path: &Path, executable: &Path) -> Result<(), String> {
+fn merge_json(text: &str, executable: &Path, assistant: &Assistant) -> Result<String, String> {
+    let mut root = parse_json(text, assistant.format)
+        .map_err(|error| format!("{error}; the configuration was left unchanged."))?;
+    let command = executable
+        .to_str()
+        .ok_or("The student-mcp path is not valid UTF-8.")?;
+    if matches!(assistant.format, Format::OpenCode | Format::Jsonc) {
+        // Keep comments, trailing commas and unrelated formatting in JSONC.
+        use jsonc_parser::cst::{CstInputValue as Input, CstRootNode};
+        let tree = CstRootNode::parse(text, &Default::default())
+            .map_err(|_| "Invalid JSONC; the configuration was left unchanged.")?;
+        let object = tree
+            .object_value()
+            .ok_or("Invalid JSONC object; the configuration was left unchanged.")?;
+        let servers = if assistant.format == Format::OpenCode {
+            object
+                .object_value_or_create("mcp")
+                .and_then(|mcp| mcp.object_value_or_create("servers"))
+        } else {
+            object.object_value_or_create(assistant.servers_key())
+        }
+        .ok_or("Invalid MCP settings; the configuration was left unchanged.")?;
+        let value = if assistant.format == Format::OpenCode {
+            Input::Object(vec![
+                ("type".into(), "local".into()),
+                ("command".into(), Input::Array(vec![command.into()])),
+            ])
+        } else {
+            Input::Object(vec![
+                ("command".into(), command.into()),
+                ("args".into(), Input::Array(vec![])),
+            ])
+        };
+        if let Some(property) = servers.get("student-mcp") {
+            property.set_value(value);
+        } else {
+            servers.append("student-mcp", value);
+        }
+        if assistant.format == Format::OpenCode && object.get("$schema").is_none() {
+            object.append("$schema", "https://opencode.ai/config.json".into());
+        }
+        return Ok(tree.to_string());
+    }
+    let servers = object_entry(&mut root, assistant.servers_key())?;
+    servers["student-mcp"] = json!({"command":command,"args":[]});
+    if matches!(assistant.id, "cursor" | "omp" | "claude-code" | "crush") {
+        servers["student-mcp"]["type"] = json!("stdio");
+    }
+    // OMP's explicit denylist wins over the server's enabled field.
+    if assistant.id == "omp" {
+        if let Some(items) = root
+            .get_mut("disabledServers")
+            .and_then(Value::as_array_mut)
+        {
+            items.retain(|item| item != "student-mcp");
+        }
+    }
+    serde_json::to_string_pretty(&root)
+        .map(|text| text + "\n")
+        .map_err(|error| error.to_string())
+}
+
+fn object_entry<'a>(root: &'a mut Value, key: &str) -> Result<&'a mut Value, String> {
+    let object = root
+        .as_object_mut()
+        .ok_or("Invalid MCP settings; the configuration was left unchanged.")?;
+    let value = object
+        .entry(key)
+        .or_insert_with(|| Value::Object(Map::new()));
+    if !value.is_object() {
+        return Err(format!(
+            "Invalid {key} settings; the configuration was left unchanged."
+        ));
+    }
+    Ok(value)
+}
+
+fn merge_toml(text: &str, executable: &Path) -> Result<String, String> {
+    let mut root = text
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|_| "Invalid TOML; the configuration was left unchanged.")?;
+    if root
+        .get("mcp_servers")
+        .is_some_and(|item| !item.is_table_like())
+    {
+        return Err("Invalid mcp_servers settings; the configuration was left unchanged.".into());
+    }
+    if !root.contains_key("mcp_servers") {
+        root["mcp_servers"] = toml_edit::Item::Table(toml_edit::Table::new());
+    }
+    if let Some(table) = root["mcp_servers"].as_inline_table() {
+        let table = table.clone().into_table();
+        root["mcp_servers"] = toml_edit::Item::Table(table);
+    }
+    let mut server = toml_edit::Table::new();
+    server["command"] = toml_edit::value(
+        executable
+            .to_str()
+            .ok_or("The student-mcp path is not valid UTF-8.")?,
+    );
+    server["args"] = toml_edit::value(toml_edit::Array::new());
+    root["mcp_servers"]["student-mcp"] = toml_edit::Item::Table(server);
+    Ok(root.to_string())
+}
+
+fn merge_config(path: &Path, executable: &Path, assistant: &Assistant) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or("The assistant configuration path is invalid.")?;
@@ -127,7 +268,7 @@ fn merge_config(path: &Path, executable: &Path) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
     fs2::FileExt::lock_exclusive(&lock).map_err(|error| error.to_string())?;
 
-    let (mut root, permissions, existed) = match std::fs::symlink_metadata(path) {
+    let (text, permissions, existed) = match std::fs::symlink_metadata(path) {
         Ok(metadata) => {
             if !metadata.file_type().is_file() {
                 return Err(format!(
@@ -135,46 +276,25 @@ fn merge_config(path: &Path, executable: &Path) -> Result<(), String> {
                     path.display()
                 ));
             }
-            let text = std::fs::read_to_string(path).map_err(|error| error.to_string())?;
-            let value = serde_json::from_str::<Value>(&text).map_err(|_| {
-                format!(
-                    "{} is not valid JSON; it was left unchanged.",
-                    path.display()
-                )
-            })?;
-            if !value.is_object() {
-                return Err(format!(
-                    "{} does not contain a JSON object; it was left unchanged.",
-                    path.display()
-                ));
-            }
-            (value, Some(metadata.permissions()), true)
+            (read_config(path)?, Some(metadata.permissions()), true)
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            (Value::Object(Map::new()), None, false)
-        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (
+            (if assistant.format == Format::Toml {
+                ""
+            } else {
+                "{}"
+            })
+            .into(),
+            None,
+            false,
+        ),
         Err(error) => return Err(error.to_string()),
     };
-    let root_object = root.as_object_mut().ok_or(
-        "The assistant configuration does not contain a JSON object; it was left unchanged.",
-    )?;
-    if root_object
-        .get("mcpServers")
-        .is_some_and(|value| !value.is_object())
-    {
-        return Err(format!(
-            "{} has an invalid mcpServers value; it was left unchanged.",
-            path.display()
-        ));
-    }
-    root_object
-        .entry("mcpServers")
-        .or_insert_with(|| Value::Object(Map::new()));
-    let command = executable
-        .to_str()
-        .ok_or("The student-mcp path is not valid UTF-8.")?;
-    root_object["mcpServers"]["student-mcp"] = json!({"command":command,"args":[]});
-    let text = serde_json::to_string_pretty(&root).map_err(|error| error.to_string())? + "\n";
+    let text = if assistant.format == Format::Toml {
+        merge_toml(&text, executable)?
+    } else {
+        merge_json(&text, executable, assistant)?
+    };
 
     if existed {
         let backup = backup_path(path)?;
@@ -185,16 +305,15 @@ fn merge_config(path: &Path, executable: &Path) -> Result<(), String> {
 }
 
 pub fn configure(assistant: &str) -> Result<Value, String> {
-    if !matches!(assistant, "claude" | "gemini") {
-        return Err("This assistant does not support automatic local setup.".into());
-    }
-    let path = config_path(assistant)?;
-    if !detected(assistant, &path) {
+    let assistant = find(assistant)?;
+    let computer = Computer::current()?;
+    let path = computer.path(assistant);
+    if !computer.detected(assistant, &path) {
         return Err("Open the local assistant once before setting it up.".into());
     }
     let executable = executable()?;
-    merge_config(&path, &executable)?;
-    status(assistant)
+    merge_config(&path, &executable, assistant)?;
+    Ok(local_status(&computer, &executable, assistant))
 }
 
 #[cfg(test)]
@@ -228,8 +347,8 @@ mod tests {
         )
         .unwrap();
         let executable = Path::new("/opt/student-mcp/student-mcp");
-        merge_config(&path, executable).unwrap();
-        merge_config(&path, executable).unwrap();
+        merge_config(&path, executable, find("claude").unwrap()).unwrap();
+        merge_config(&path, executable, find("claude").unwrap()).unwrap();
         let value: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(value["theme"], "dark");
         assert_eq!(value["mcpServers"]["other"]["command"], "other-server");
@@ -238,7 +357,7 @@ mod tests {
             executable.to_str().unwrap()
         );
         assert_eq!(value["mcpServers"]["student-mcp"]["args"], json!([]));
-        assert!(configured(&path, executable));
+        assert!(configured(&path, executable, find("claude").unwrap()));
         assert!(std::fs::read_dir(&root).unwrap().count() >= 3);
         let _ = std::fs::remove_dir_all(root);
     }
@@ -248,11 +367,187 @@ mod tests {
         let root = workspace("invalid");
         let path = root.join("settings.json");
         std::fs::write(&path, "not json").unwrap();
-        let error = merge_config(&path, Path::new("/bin/student-mcp")).unwrap_err();
+        let error = merge_config(
+            &path,
+            Path::new("/bin/student-mcp"),
+            find("claude").unwrap(),
+        )
+        .unwrap_err();
         assert!(error.contains("left unchanged"));
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "not json");
         assert_eq!(std::fs::read_dir(&root).unwrap().count(), 2);
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn all_direct_assistants_save_native_stdio_settings_without_tokens() {
+        let root = workspace("formats");
+        let executable = Path::new("/Applications/Student MCP/student-mcp");
+        for assistant in ASSISTANTS {
+            let path = root.join(format!("{}.config", assistant.id));
+            merge_config(&path, executable, assistant).unwrap();
+            assert!(configured(&path, executable, assistant), "{}", assistant.id);
+            let text = std::fs::read_to_string(&path).unwrap();
+            assert!(!text.contains("http") || assistant.id == "opencode");
+            assert!(!text.contains("/mcp/"));
+            merge_config(&path, executable, assistant).unwrap();
+            assert_eq!(
+                std::fs::read_to_string(&path).unwrap(),
+                text,
+                "{}",
+                assistant.id
+            );
+        }
+        assert!(configure("t3code").is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn opencode_v2_keeps_comments_and_unrelated_servers() {
+        let root = workspace("jsonc");
+        let path = root.join("opencode.jsonc");
+        let original = "{\n  // Keep this comment\n  \"model\": \"example/model\",\n  \"mcp\": {\"timeout\": {\"startup\": 40000}, \"servers\": {\"other\": {\"type\": \"local\", \"command\": [\"other\"]},},},\n}\n";
+        std::fs::write(&path, original).unwrap();
+        let assistant = find("opencode").unwrap();
+        merge_config(&path, Path::new("/bin/student-mcp"), assistant).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("// Keep this comment"));
+        let value = parse_json(&text, Format::OpenCode).unwrap();
+        assert_eq!(value["model"], "example/model");
+        assert_eq!(value["mcp"]["timeout"]["startup"], 40000);
+        assert_eq!(
+            value["mcp"]["servers"]["other"]["command"],
+            json!(["other"])
+        );
+        assert_eq!(
+            value["mcp"]["servers"]["student-mcp"]["command"],
+            json!(["/bin/student-mcp"])
+        );
+        assert!(
+            value["mcp"]["student-mcp"].is_null(),
+            "Never write the deprecated V1 map"
+        );
+        let backup = std::fs::read_dir(&root)
+            .unwrap()
+            .flatten()
+            .find(|entry| entry.file_name().to_string_lossy().contains("backup"))
+            .unwrap();
+        assert_eq!(std::fs::read_to_string(backup.path()).unwrap(), original);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn native_toml_preserves_comments_and_supports_inline_tables() {
+        for original in ["# My settings\nmodel = 'example'\n[mcp_servers.other]\ncommand = 'other'\n", "# Inline settings\nmcp_servers = { other = { command = 'other' } }\nmodel = 'example'\n"] {
+            let updated = merge_toml(original, Path::new("C:\\Program Files\\Student MCP\\student-mcp.exe")).unwrap();
+            assert!(updated.contains(original.lines().next().unwrap()));
+            let value = updated.parse::<toml_edit::DocumentMut>().unwrap();
+            assert_eq!(value["model"].as_str(), Some("example"));
+            assert_eq!(value["mcp_servers"]["other"]["command"].as_str(), Some("other"));
+            assert_eq!(value["mcp_servers"]["student-mcp"]["command"].as_str(), Some("C:\\Program Files\\Student MCP\\student-mcp.exe"));
+        }
+    }
+
+    #[test]
+    fn malformed_native_settings_are_never_replaced() {
+        let root = workspace("malformed");
+        for (id, original) in [
+            ("claude", "[]"),
+            ("gemini", r#"{"mcpServers":null}"#),
+            ("opencode", r#"{"mcp":false}"#),
+            ("opencode", r#"{"mcp":{"servers":[]}}"#),
+            ("codex", "mcp_servers = false"),
+            ("grok-build", "invalid = ["),
+        ] {
+            let path = root.join(id);
+            std::fs::write(&path, original).unwrap();
+            assert!(merge_config(&path, Path::new("/bin/student-mcp"), find(id).unwrap()).is_err());
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn omp_connection_removes_only_its_own_disable_override() {
+        let original = r#"{"disabledServers":["other","student-mcp"],"mcpServers":{"other":{"command":"other"}}}"#;
+        let updated = merge_json(
+            original,
+            Path::new("/bin/student-mcp"),
+            find("omp").unwrap(),
+        )
+        .unwrap();
+        let value: Value = serde_json::from_str(&updated).unwrap();
+        assert_eq!(value["disabledServers"], json!(["other"]));
+        assert_eq!(value["mcpServers"]["other"]["command"], "other");
+    }
+
+    #[test]
+    fn omarchy_agents_keep_their_native_keys_and_approval_policies() {
+        let executable = Path::new("/opt/student-mcp/student-mcp");
+        for id in ["pi", "qwen", "kiro", "amp", "crush", "devin"] {
+            let assistant = find(id).unwrap();
+            let mut original = json!({"permissions":{"ask":true},"theme":"custom"});
+            original[assistant.servers_key()] =
+                json!({"other":{"command":"other","env":{"KEY":"unchanged"}}});
+            let original = serde_json::to_string(&original).unwrap();
+            let text = if assistant.format == Format::Jsonc {
+                format!("// Keep this comment\n{original}")
+            } else {
+                original
+            };
+            let updated = merge_json(&text, executable, assistant).unwrap();
+            let value = parse_json(&updated, assistant.format).unwrap();
+            assert_eq!(value["theme"], "custom", "{id}");
+            assert_eq!(value["permissions"]["ask"], true, "{id}");
+            assert_eq!(
+                value[assistant.servers_key()]["other"]["env"]["KEY"],
+                "unchanged",
+                "{id}"
+            );
+            let server = &value[assistant.servers_key()]["student-mcp"];
+            assert_eq!(server["command"], executable.to_str().unwrap(), "{id}");
+            assert_eq!(server["args"], json!([]), "{id}");
+            assert!(
+                server.get("autoApprove").is_none() && server.get("trust").is_none(),
+                "{id}"
+            );
+            if assistant.format == Format::Jsonc {
+                assert!(updated.contains("// Keep this comment"));
+            }
+            if matches!(id, "amp" | "crush") {
+                assert!(
+                    value.get("mcpServers").is_none(),
+                    "Never write another client's wrapper key"
+                );
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn configuration_and_backup_keep_private_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = workspace("permissions");
+        let path = root.join("settings.json");
+        for _ in 0..2 {
+            merge_config(
+                &path,
+                Path::new("/bin/student-mcp"),
+                find("cursor").unwrap(),
+            )
+            .unwrap();
+        }
+        for entry in std::fs::read_dir(&root)
+            .unwrap()
+            .flatten()
+            .filter(|entry| entry.file_name() != ".student-mcp-assistant.lock")
+        {
+            assert_eq!(
+                entry.metadata().unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[cfg(unix)]
@@ -264,7 +559,12 @@ mod tests {
         let path = root.join("settings.json");
         std::fs::write(&target, "{}").unwrap();
         symlink(&target, &path).unwrap();
-        assert!(merge_config(&path, Path::new("/bin/student-mcp")).is_err());
+        assert!(merge_config(
+            &path,
+            Path::new("/bin/student-mcp"),
+            find("claude").unwrap()
+        )
+        .is_err());
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "{}");
         let _ = std::fs::remove_dir_all(root);
     }

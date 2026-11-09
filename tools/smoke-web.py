@@ -49,10 +49,26 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
     school_url = f"http://127.0.0.1:{school.server_port}"
     config.write_text(json.dumps({"gateway": {"public_enabled": False, "local_enabled": True},
                                   "moodle": {"url": school_url, "token": "fixture", "allow_write": False}}))
+    assistant_files = {
+        "cursor": (root / '.cursor/mcp.json', '{"theme":"fixture","mcpServers":{"other":{"command":"other"}}}'),
+        "opencode": (root / '.config/opencode/opencode.jsonc', '// Keep this comment\n{"mcp":{"servers":{"other":{"type":"local","command":["other"]}}}}'),
+        "grok-build": (root / '.grok/config.toml', '# Keep this comment\n[mcp_servers.other]\ncommand = "other"\n'),
+        "pi": (root / '.pi/agent/mcp.json', '// Keep this comment\n{"mcpServers":{"other":{"command":"other"}}}'),
+        "amp": (root / '.config/amp/settings.jsonc', '// Keep this comment\n{"amp.mcpServers":{"other":{"command":"other"}},"amp.showCosts":true}'),
+        "crush": (root / '.config/crush/crush.json', '{"mcp":{"other":{"command":"other","type":"stdio"}},"permissions":{"allowed_tools":[]}}'),
+    }
+    for path, text in assistant_files.values():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
     env = dict(os.environ, STUDENT_MCP_CONFIG_FILE=str(config),
+               HOME=str(root), USERPROFILE=str(root),
+               CODEX_HOME=str(root / '.codex'), COPILOT_HOME=str(root / '.copilot'),
+               PI_CONFIG_DIR=str(root / '.omp'),
+               OMP_PROFILE='default', PI_PROFILE='default',
                STUDENT_MCP_BROWSER_MARKER=str(opened), XDG_CONFIG_HOME=str(root / '.config'),
                STUDENT_MCP_BROWSER=str(root / 'missing-chrome'),
                PATH=f"{root}:{os.environ['PATH']}")
+    env.pop('PI_CODING_AGENT_DIR', None)
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
@@ -128,6 +144,30 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         assert assistant_status == 200 and json.loads(assistant_body)["local"] is False
         assert request("/assistant/unknown")[0] == 400
         assert request("/action", {"action": "assistant_setup", "assistant": "chatgpt"})[0] == 400
+        assert request('/assistants', auth=False)[0] == 401
+        assert request('/assistants', origin='https://untrusted.invalid')[0] == 401
+        scan_status, scan_body = request('/assistants')
+        assert scan_status == 200
+        local_apps = {app['assistant']: app for app in json.loads(scan_body)['assistants']}
+        assert set(assistant_files) <= local_apps.keys() and 'omp' in local_apps
+        assert {'pi', 'qwen', 'kiro', 'amp', 'crush', 'devin'} <= local_apps.keys()
+        assert 't3code' not in local_apps
+        for assistant, (path, original) in assistant_files.items():
+            assert local_apps[assistant]['detected'] and not local_apps[assistant]['configured']
+            assert path.read_text() == original, 'Scan must be read-only'
+            action = {'action': 'assistant_setup', 'assistant': assistant}
+            assert request('/action', action, auth=False)[0] == 401
+            assert path.read_text() == original
+            setup_status, setup_body = request('/action', action)
+            assert setup_status == 200 and json.loads(setup_body)['configured'], assistant
+            assert json.loads(request('/assistant/' + assistant)[1])['configured']
+            backups = list(path.parent.glob(path.name + '.student-mcp-backup-*'))
+            assert len(backups) == 1 and backups[0].read_text() == original
+            updated = path.read_text()
+            assert 'other' in updated and str(binary) in updated
+            if 'Keep this comment' in original:
+                assert 'Keep this comment' in updated
+            assert '/mcp/' not in updated and 'Bearer ' not in updated
         icon_status, icon = request("/assets/app-icon.png", auth=False)
         assert icon_status == 200 and icon.startswith(b"\x89PNG\r\n\x1a\n")
         assert b'<link rel="icon" type="image/png" href="/assets/app-icon.png">' in page

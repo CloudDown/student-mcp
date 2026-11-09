@@ -32,10 +32,11 @@ try{
     if(/^guide-[a-z-]+\.webp$/.test(file))return route.fulfill({contentType:'image/webp',body:readFileSync(new URL('../src/resources/assets/'+file,import.meta.url))});
   }
    if(['/assistant/others','/assistant/grok','/assistant/chatgpt'].includes(path))throw Error('Web-only guides must not call a local setup endpoint');
-  if(path.startsWith('/assistant/'))return route.fulfill({json:{detected:true,configured:false}});
+   if(path==='/assistants')return route.fulfill({json:{assistants:[{assistant:'claude',name:'Claude Desktop',detected:true,configured:false,reload:'restart'},{assistant:'opencode',name:'OpenCode',detected:true,configured:false,reload:'automatic'},{assistant:'omp',name:'Oh My Pi',detected:false,configured:false}]}});
+   if(path.startsWith('/assistant/'))throw Error('Web guides must not scan individual local assistants');
   if(path==='/action'){
    const action=route.request().postDataJSON();actions.push(action);
-   if(action.action==='assistant_setup')return route.fulfill({json:{detected:true,configured:true}});
+   if(action.action==='assistant_setup')return route.fulfill({json:{assistant:action.assistant,detected:true,configured:true,reload:action.assistant==='opencode'?'automatic':'restart'}});
    return route.fulfill({json:{}});
   }
   return route.fulfill({status:404,body:''});
@@ -84,7 +85,8 @@ try{
    assert.equal(actions.length,0,'Opening a guide must not write configuration');
    assert.equal(await page.locator('[data-assistant-route],.assistant-routes,.connection-flow,.setup-intro').count(),0,'Only the web guide remains; remove the route picker, intro and decorative school flow');
    assert.equal(await page.locator('.assistant-local').count(),0,'Automatic local setup is closed by default');
-   assert.equal(await page.locator('[data-assistant-setup]').count(),['claude','gemini'].includes(id)?1:0);
+   assert.equal(await page.locator('[data-assistant-setup]').count(),0,'Local setup belongs in its own view');
+   assert.equal(await page.locator('[data-assistant-mode]').count(),2);
    await page.locator('[data-guide-step="1"]').click();
    await page.getByRole('button',{name:'Copier le lien',exact:true}).click();
    assert.equal(await page.evaluate(()=>window.fixtureCopied),fixture.link);
@@ -134,19 +136,24 @@ try{
   await openGeneral();
  await page.getByRole('button',{name:'Configurer Claude',exact:true}).click();
   await page.locator('[data-guide-step="2"]').click();
-  await page.getByRole('button',{name:'Configurer l’appli locale',exact:true}).click();
-  assert.equal(await page.locator('[aria-current="step"]').getAttribute('data-guide-step'),'2','Automatic setup must not replace the web guide or reset its step');
+   await page.locator('[data-assistant-mode="local"]').click();
+   await page.locator('[data-local-assistant="claude"]').waitFor();
+   assert.equal(await page.locator('.assistant-workspace').count(),0,'The local view must not show web instructions');
+   await page.locator('[data-local-assistant="claude"]').click();
  assert.equal(actions.length,0,'The first setup click must not write configuration');
  await page.getByRole('button',{name:'Annuler',exact:true}).click();
  assert.equal(actions.length,0);
- await page.getByRole('button',{name:'Configurer l’appli locale',exact:true}).click();
+  await page.locator('[data-local-assistant="claude"]').click();
  await page.getByRole('button',{name:'Confirmer la configuration',exact:true}).click();
- await page.getByText('Configuration locale terminée',{exact:true}).waitFor();
+  await page.getByText('Claude Desktop · Réglages enregistrés',{exact:true}).waitFor();
  assert.ok((await page.locator('.assistant-local .local-close').boundingBox()).height<64,'Configured status must remain a compact button');
   assert.equal(await page.locator('.assistant-local svg').count(),0,'No oversized status illustration');
  assert.deepEqual(actions,[{action:'assistant_setup',assistant:'claude'}]);
  await snapshot('claude-local-configured');
-  await page.getByRole('button',{name:'Fermer',exact:true}).click();
+   await page.getByRole('button',{name:'Fermer',exact:true}).click();
+  for(const width of [1440,768,390,320]){await page.setViewportSize({width,height:1000});await noOverflow();await snapshot('local-apps-'+width)}
+  await page.locator('[data-assistant-mode="web"]').click();
+  assert.equal(await page.locator('[aria-current="step"]').getAttribute('data-guide-step'),'2','Switching views preserves the web step');
  await page.locator('[data-guide-step="2"]').click();
  await page.evaluate(()=>refresh());
  assert.equal(await page.locator('[aria-current="step"]').getAttribute('data-guide-step'),'2','Polling must preserve the active step');
@@ -168,5 +175,5 @@ try{
  await page.getByRole('heading',{name:'Ask your first question',exact:true}).waitFor();
  await snapshot('reduced-motion');
  assert.deepEqual(errors,[]);
-   console.log('Assistant guides passed: Grok replaces general MCP, minimal web-only steps, refined screenshot markers, in-page lightbox, 320/390/768/1440px, FR/ES/EN, clipboard, polling, keyboard and separate opt-in automatic local setup.');
+    console.log('Assistant guides passed: separate web/local views, minimal web guides, lightbox, 320/390/768/1440px, FR/ES/EN, clipboard, polling, keyboard and opt-in automatic local setup.');
 }finally{await browser.close()}
