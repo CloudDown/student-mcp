@@ -75,6 +75,9 @@ try{
    await openGeneral();
    await page.getByRole('button',{name:title,exact:true}).click();
    assert.equal(await page.locator('.assistant-switcher [aria-pressed="true"]').getAttribute('data-assistant'),id);
+   const accents={grok:'rgb(29, 29, 31)',claude:'rgb(201, 100, 66)',chatgpt:'rgb(15, 157, 120)',gemini:'rgb(59, 130, 246)'};
+   assert.equal(await page.locator('.setup-footer .setup-next').evaluate(el=>getComputedStyle(el).backgroundColor),accents[id],'Primary actions follow the assistant colour');
+   assert.equal(await page.locator('.journey-node[aria-current="step"] .journey-number').evaluate(el=>getComputedStyle(el).backgroundColor),accents[id],'The active step follows the assistant colour');
    assert.equal(await page.locator('.journey-node[aria-current="step"]').getAttribute('data-guide-step'),'0','Switching a tutorial must start its web guide');
   assert.equal(await page.locator('.journey-node').count(),4);
   assert.equal(await page.locator('.journey-node[aria-current="step"]').count(),1);
@@ -94,17 +97,23 @@ try{
      assert.ok(await page.locator('.assistant-switcher').evaluate(track=>[...track.querySelectorAll('button')].every(button=>{const a=track.getBoundingClientRect(),b=button.getBoundingClientRect();return b.left>=a.left&&b.right<=a.right})),'Assistant buttons must fit inside their control');
      assert.equal(await page.locator('.assistant-workspace').count(),1,'The guide uses one coherent workspace');
      assert.equal(await page.locator('.assistant-journey .card').count(),0,'Web setup must not use nested tiles');
-    assert.equal(await page.locator('.setup-details').evaluate(el=>el.open),false,'Extra help must be collapsed by default');
+    assert.equal(await page.locator('.setup-details,.guide-caption,.guide-legend').count(),0,'No disclosure blocks or small grey captions on the guide');
       assert.ok((await page.locator('.setup-stage').innerText()).split(/\s+/).length<100,'Each step must be labels and visuals, not paragraphs');
     if(width!==320)await snapshot(`${id}-${step+1}-${width}`);
-      if(step===1||(step===2&&['gemini','chatgpt','grok'].includes(id))){
+      assert.equal(await page.locator('.guide-shot').count(),step===0?0:1,'One screenshot per step, none for the link step');
+      if(width===1440&&step>0){
      await page.waitForFunction(()=>[...document.querySelectorAll('.guide-shot')].every(img=>img.complete&&img.naturalWidth>0));
-      for(const image of await page.locator('.guide-shot').all()){
+      const image=page.locator('.guide-shot').first();
        assert.ok((await image.boundingBox()).width>150);
-       assert.ok(await image.evaluate(img=>img.naturalWidth/img.naturalHeight>1.6&&img.naturalWidth/img.naturalHeight<1.9),'Keep the landscape browser context, not tight crops');
-      }
-      for(const caption of await page.locator('.guide-caption').all())assert.ok((await caption.innerText()).includes('Capture Helium'),'Captures must identify live UI');
-      assert.ok(await page.locator('.guide-legend li').count()>0,'Numbered arrows need accessible legends');
+       assert.ok(await image.evaluate(img=>img.naturalWidth/img.naturalHeight>1.7&&img.naturalWidth/img.naturalHeight<1.85),'Keep the page context, without browser chrome');
+      const firstShot=page.locator('.guide-shot-link').first();
+      await firstShot.click();
+      assert.equal(await page.locator('#lightbox').evaluate(dialog=>dialog.open),true,'The screenshot opens in the page, not a new tab');
+      await page.locator('[data-lightbox-close]').click();
+      assert.equal(await page.locator('#lightbox').evaluate(dialog=>dialog.open),false,'The close button leaves the viewer');
+      await firstShot.click();
+      await page.keyboard.press('Escape');
+      assert.equal(await page.locator('#lightbox').evaluate(dialog=>dialog.open),false,'Escape closes the viewer');
     }
    }
   }
@@ -127,7 +136,7 @@ try{
  await page.getByRole('button',{name:'Configurer sur cet ordinateur',exact:true}).click();
  await page.getByRole('button',{name:'Confirmer la configuration',exact:true}).click();
  await page.getByText('Configuration locale terminée',{exact:true}).waitFor();
- assert.ok((await page.locator('.assistant-local .full-button').boundingBox()).height<64,'Configured status must remain a compact button');
+ assert.ok((await page.locator('.assistant-local .local-close').boundingBox()).height<64,'Configured status must remain a compact button');
   assert.equal(await page.locator('.assistant-local svg').count(),0,'No oversized status illustration');
  assert.deepEqual(actions,[{action:'assistant_setup',assistant:'claude'}]);
  await snapshot('claude-local-configured');
@@ -152,5 +161,5 @@ try{
  await page.getByRole('heading',{name:'Ask your first question',exact:true}).waitFor();
  await snapshot('reduced-motion');
  assert.deepEqual(errors,[]);
-   console.log('Assistant guides passed: minimal web-only steps, no school flow or route picker, full-context captures, arrow legends, 320/390/768/1440px, FR/ES/EN, clipboard, polling, keyboard and separate opt-in automatic local setup.');
+   console.log('Assistant guides passed: Grok replaces general MCP, minimal web-only steps, refined screenshot markers, in-page lightbox, 320/390/768/1440px, FR/ES/EN, clipboard, polling, keyboard and separate opt-in automatic local setup.');
 }finally{await browser.close()}

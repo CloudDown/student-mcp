@@ -257,12 +257,12 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                     include_bytes!("resources/assets/guide-grok-settings.webp"),
                     "image/webp",
                 )),
-                "/assets/guide-grok-menu.webp" => Some((
-                    include_bytes!("resources/assets/guide-grok-menu.webp"),
-                    "image/webp",
-                )),
                 "/assets/guide-grok-form.webp" => Some((
                     include_bytes!("resources/assets/guide-grok-form.webp"),
+                    "image/webp",
+                )),
+                "/assets/guide-grok-chat.webp" => Some((
+                    include_bytes!("resources/assets/guide-grok-chat.webp"),
                     "image/webp",
                 )),
                 "/assets/chatgpt.png" => Some((
@@ -273,20 +273,16 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                     include_bytes!("resources/assets/gemini-icon.png"),
                     "image/png",
                 )),
-                "/assets/guide-claude-connectors.webp" => Some((
-                    include_bytes!("resources/assets/guide-claude-connectors.webp"),
-                    "image/webp",
-                )),
-                "/assets/guide-chatgpt-plugins.webp" => Some((
-                    include_bytes!("resources/assets/guide-chatgpt-plugins.webp"),
-                    "image/webp",
-                )),
-                "/assets/guide-gemini-connected-apps.webp" => Some((
-                    include_bytes!("resources/assets/guide-gemini-connected-apps.webp"),
-                    "image/webp",
-                )),
                 "/assets/guide-claude-menu.webp" => Some((
                     include_bytes!("resources/assets/guide-claude-menu.webp"),
+                    "image/webp",
+                )),
+                "/assets/guide-claude-form.webp" => Some((
+                    include_bytes!("resources/assets/guide-claude-form.webp"),
+                    "image/webp",
+                )),
+                "/assets/guide-claude-chat.webp" => Some((
+                    include_bytes!("resources/assets/guide-claude-chat.webp"),
                     "image/webp",
                 )),
                 "/assets/guide-chatgpt-menu.webp" => Some((
@@ -297,12 +293,20 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                     include_bytes!("resources/assets/guide-chatgpt-form.webp"),
                     "image/webp",
                 )),
+                "/assets/guide-chatgpt-chat.webp" => Some((
+                    include_bytes!("resources/assets/guide-chatgpt-chat.webp"),
+                    "image/webp",
+                )),
                 "/assets/guide-gemini-settings.webp" => Some((
                     include_bytes!("resources/assets/guide-gemini-settings.webp"),
                     "image/webp",
                 )),
                 "/assets/guide-gemini-form.webp" => Some((
                     include_bytes!("resources/assets/guide-gemini-form.webp"),
+                    "image/webp",
+                )),
+                "/assets/guide-gemini-chat.webp" => Some((
+                    include_bytes!("resources/assets/guide-gemini-chat.webp"),
                     "image/webp",
                 )),
                 _ => None,

@@ -116,10 +116,10 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
             assert status == 200 and body.startswith(b"\x89PNG\r\n\x1a\n"), assistant
         assert b'assistantScreen()' in page and b'data-assistant-choose' in page
         assert b"openAssistant('grok')" in page and b'class="assistant-switcher"' in page
-        for guide in ("guide-claude-connectors", "guide-chatgpt-plugins",
-                      "guide-gemini-connected-apps", "guide-claude-menu",
-                      "guide-gemini-settings", "guide-gemini-form", "guide-chatgpt-menu",
-                      "guide-chatgpt-form", "guide-grok-settings", "guide-grok-menu", "guide-grok-form"):
+        for guide in ("guide-claude-menu", "guide-claude-form", "guide-claude-chat",
+                      "guide-gemini-settings", "guide-gemini-form", "guide-gemini-chat",
+                      "guide-chatgpt-menu", "guide-chatgpt-form", "guide-chatgpt-chat",
+                      "guide-grok-settings", "guide-grok-form", "guide-grok-chat"):
             status, body = request(f"/assets/{guide}.webp", auth=False)
             assert status == 200, guide
             assert body[:4] == b"RIFF" and body[8:12] == b"WEBP", guide
