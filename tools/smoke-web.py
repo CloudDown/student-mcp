@@ -93,12 +93,12 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         manage = page.split(b'function manageScreenContent(){', 1)[1].split(b'function serviceScreen(){', 1)[0]
         links = page.split(b'function linkScreen(){', 1)[1].split(b'function publicMessage(', 1)[0]
         assert b'name="autostart"' not in home
-        assert b'Launch at startup' in links and b'name="autostart"' in links
+        assert b'name="autostart"' not in links
         assert b'mapLines()' in home and b'class="mind-map"' in home and b'class="ais"' in home and b'link-open' in home
         assert b'findField()' in home and b'id="school-find"' in page and b'schoolMatches' in page and b'const schools=[' in page
         assert b'name="advanced"' not in home and b'Allow changes' not in manage
         assert b"Mail transfer" not in page and b"/assets/outlook.png" not in page
-        assert b'class="startup-row"' in links
+        assert b'id="home-startup"' in page and b'name="autostart"' in page
         assert manage.index(b'class="status-row"') < manage.index(b'data-add') < manage.index(b'class="manage-actions"')
         assert b'accountChoices()' in manage and b'account-list' not in manage
         assert b'.startup-row .switch:checked{background:var(--blue)' in page
@@ -106,18 +106,20 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         translated_tool_names = set(re.findall(
             rb"^ (\w+):\['[^']{20,}','[^']{20,}'\]", translations, re.M
         ))
-        assert b"canvas" in home and b"ZoneCours" in page
+        assert b"canvas" in home and b"zonecours2.hec.ca" in page
         logo_status, logo = request("/assets/moodle.png", auth=False)
         assert logo_status == 200 and logo.startswith(b"\x89PNG\r\n\x1a\n")
         canvas_status, canvas = request("/assets/canvas.png", auth=False)
         assert canvas_status == 200 and canvas.startswith(b"\x89PNG\r\n\x1a\n")
-        for assistant in ("claude", "chatgpt", "gemini"):
+        for assistant in ("grok", "claude", "chatgpt", "gemini"):
             status, body = request(f"/assets/{assistant}.png", auth=False)
             assert status == 200 and body.startswith(b"\x89PNG\r\n\x1a\n"), assistant
-        assert b'assistantScreen()' in page and b'data-assistant="claude"' in page
-        assert b'/assets/guide-claude-connectors.webp' in page
+        assert b'assistantScreen()' in page and b'data-assistant-choose' in page
+        assert b"openAssistant('grok')" in page and b'class="assistant-switcher"' in page
         for guide in ("guide-claude-connectors", "guide-chatgpt-plugins",
-                      "guide-gemini-connected-apps"):
+                      "guide-gemini-connected-apps", "guide-claude-menu",
+                      "guide-gemini-settings", "guide-gemini-form", "guide-chatgpt-menu",
+                      "guide-chatgpt-form", "guide-grok-settings", "guide-grok-menu", "guide-grok-form"):
             status, body = request(f"/assets/{guide}.webp", auth=False)
             assert status == 200, guide
             assert body[:4] == b"RIFF" and body[8:12] == b"WEBP", guide

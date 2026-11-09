@@ -249,6 +249,22 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                     include_bytes!("resources/assets/claude-icon.png"),
                     "image/png",
                 )),
+                "/assets/grok.png" => Some((
+                    include_bytes!("resources/assets/grok-icon.png"),
+                    "image/png",
+                )),
+                "/assets/guide-grok-settings.webp" => Some((
+                    include_bytes!("resources/assets/guide-grok-settings.webp"),
+                    "image/webp",
+                )),
+                "/assets/guide-grok-menu.webp" => Some((
+                    include_bytes!("resources/assets/guide-grok-menu.webp"),
+                    "image/webp",
+                )),
+                "/assets/guide-grok-form.webp" => Some((
+                    include_bytes!("resources/assets/guide-grok-form.webp"),
+                    "image/webp",
+                )),
                 "/assets/chatgpt.png" => Some((
                     include_bytes!("resources/assets/chatgpt-icon.png"),
                     "image/png",
@@ -267,6 +283,26 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                 )),
                 "/assets/guide-gemini-connected-apps.webp" => Some((
                     include_bytes!("resources/assets/guide-gemini-connected-apps.webp"),
+                    "image/webp",
+                )),
+                "/assets/guide-claude-menu.webp" => Some((
+                    include_bytes!("resources/assets/guide-claude-menu.webp"),
+                    "image/webp",
+                )),
+                "/assets/guide-chatgpt-menu.webp" => Some((
+                    include_bytes!("resources/assets/guide-chatgpt-menu.webp"),
+                    "image/webp",
+                )),
+                "/assets/guide-chatgpt-form.webp" => Some((
+                    include_bytes!("resources/assets/guide-chatgpt-form.webp"),
+                    "image/webp",
+                )),
+                "/assets/guide-gemini-settings.webp" => Some((
+                    include_bytes!("resources/assets/guide-gemini-settings.webp"),
+                    "image/webp",
+                )),
+                "/assets/guide-gemini-form.webp" => Some((
+                    include_bytes!("resources/assets/guide-gemini-form.webp"),
                     "image/webp",
                 )),
                 _ => None,

@@ -30,7 +30,7 @@ No ZIPs are published.
 Your browser opens a local page with accounts, login, verification, and MCP link
 settings. Its separate loopback listener is never forwarded through the tunnel.
 For Claude web, wait for a public HTTPS link; a localhost link only works locally.
-The three assistant icons under **Your link** open setup guides; see
+**Connect an assistant** under **Your link** opens the assistant guides; see
 [Local AI assistant](#3-local-ai-assistant).
 
 ### Close the tab, keep the app running
@@ -234,13 +234,14 @@ References: [D2L API authentication](https://docs.valence.desire2learn.com/basic
   - Windows: `%LOCALAPPDATA%\student-mcp\student-mcp.exe`
 - Use the main binary, not `student-mcp-desktop`: the desktop launcher always
    opens the browser page, while the main binary starts MCP stdio without arguments.
-- The three icons under **Your link** open a guided setup page for Claude,
-  ChatGPT or Gemini. Claude Desktop and Gemini CLI can be configured in one
-  click when the app is already installed: the page merges `student-mcp` into
+- **Connect an assistant** opens short web guides for Grok, Claude, ChatGPT
+  and Gemini, with annotated screenshots. There is no web/local route picker.
+  A separate **Set up on this computer** button offers automatic configuration
+  for Claude Desktop and Gemini CLI when installed: the page merges `student-mcp` into
   `claude_desktop_config.json` or `~/.gemini/settings.json`, keeps the other
   MCP servers, saves a timestamped backup first and never writes a school
   credential or the MCP bearer token. Restart the assistant afterwards.
-  ChatGPT, Claude on the web and Gemini on the web use the public HTTPS link
+  Grok, ChatGPT, Claude on the web and Gemini on the web use the public HTTPS link
   instead; the same pages show the official steps and a copy button.
 - Automatic setup refuses a config that is not a JSON object, is a symlink or
   cannot be read. It is opt-in: nothing is written until **Set up on this

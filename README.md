@@ -50,7 +50,14 @@ Your link appears under your school. Press the copy button. Keep this computer a
 
 Paste the **complete** `https://…/mcp/…` link into the assistant’s MCP connector settings, not into a chat message.
 
-The three icons under **Your link** open the same steps in the app, with a copy button and official screenshots. When Claude Desktop or Gemini CLI is already installed, **Set up on this computer** can add the local stdio server for you after a confirmation: it keeps the other MCP servers, writes a backup first and never stores a school password or the MCP token. ChatGPT only accepts remote HTTPS connectors.
+Click **Connect an assistant** under **Your link** to open the **Grok** guide. Buttons switch between **Grok**, **Claude**, **ChatGPT** and **Gemini**. The guide covers the web only: four short steps, annotated Helium screenshots and exact field values, with extra explanations under **Details and help**. Personal information is masked; **Enlarge screenshot** opens the full image. A separate **Set up on this computer** button automatically configures Claude Desktop or Gemini CLI after confirmation, without changing the guide or its current step. Other MCP servers are preserved and a backup is created.
+
+### Grok
+
+1. Open [Grok Plugins / Connectors](https://grok.com/connectors).
+2. Select **New Connector** → **Custom**.
+3. Set **Name** to `student-mcp` and **Server URL** to your complete public HTTPS link, keeping the `/mcp/…` path unchanged (not the `/sse` placeholder).
+4. Select **Add Connector**, then ask Grok to use student-mcp in a conversation.
 
 ### Claude
 
@@ -67,7 +74,7 @@ The three icons under **Your link** open the same steps in the app, with a copy 
 
 ### Gemini
 
-1. Open Gemini → **Settings** → **Connected Apps** → **Add a custom app**.
+1. Open Gemini → **Settings** → **Connected Apps** → **+ Custom**.
 2. Paste the public link and follow the security prompts.
 3. Custom apps currently need an eligible personal Google Account and may be limited by region and language.
 
