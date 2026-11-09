@@ -129,6 +129,7 @@ try {
   await page.locator('[data-assistant-choose]').click();
   await page.getByRole('button',{name:'Set up ChatGPT',exact:true}).click();
   assert.equal(await page.locator('[data-assistant-route]').count(),0);
+  await page.locator('[data-guide-step="1"]').click();
   assert.equal(await page.getByRole('button',{name:'Open link settings',exact:true}).count(),1);
   await page.getByRole('button',{name:'Back to services',exact:true}).click();
   await page.locator('[data-assistant-choose]').click();

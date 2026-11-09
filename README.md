@@ -50,7 +50,7 @@ Your link appears under your school. Press the copy button. Keep this computer a
 
 Paste the **complete** `https://…/mcp/…` link into the assistant’s MCP connector settings, not into a chat message.
 
-Click **Connect an assistant** under **Your link** to open the **Grok** guide. Buttons switch between **Grok**, **Claude**, **ChatGPT** and **Gemini**. The guide covers the web only: four short steps, annotated Helium screenshots and exact field values. Personal information is masked; clicking a capture opens it full-screen in the page, with a close button and Escape. A separate **Set up on this computer** button automatically configures Claude Desktop or Gemini CLI after confirmation, without changing the guide or its current step. Other MCP servers are preserved and a backup is created.
+Click **Connect an assistant** under **Your link** to open the **Grok** guide. Buttons switch between **Grok**, **Claude**, **ChatGPT** and **Gemini**. The guide covers the web only: three short steps, annotated Helium screenshots and exact field values. The public link and its Copy button appear on the step where you paste it, so there is nothing to copy first. Personal information is masked; clicking a capture opens it full-screen in the page, with a close button and Escape. A separate **Set up on this computer** button automatically configures Claude Desktop or Gemini CLI after confirmation, without changing the guide or its current step. Other MCP servers are preserved and a backup is created.
 
 ### Grok
 

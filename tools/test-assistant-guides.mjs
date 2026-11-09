@@ -66,7 +66,7 @@ try{
   assert.equal(await page.locator('.assistant-switcher button').count(),4);
    assert.equal(await page.locator('.assistant-switcher [aria-pressed="true"]').getAttribute('data-assistant'),'grok');
    assert.equal(await page.locator('[data-assistant="others"]').count(),0,'The general MCP guide must be removed');
-   assert.equal(await page.locator('.journey-node').count(),4,'The Grok tutorial must open immediately');
+   assert.equal(await page.locator('.journey-node').count(),3,'The Grok tutorial must open immediately');
    assert.equal(requests.filter(path=>path.startsWith('/assistant/')).length,0,'Grok must not detect or configure a local assistant');
   for(const width of [1440,768,390,320]){await page.setViewportSize({width,height:1000});await noOverflow();for(const button of await page.locator('.assistant-switcher button').all()){const box=await button.boundingBox();assert.ok(box.width>=44&&box.height>=44)}await snapshot('general-default-'+width)}
  await page.getByRole('button',{name:'Retour aux services',exact:true}).click();
@@ -79,17 +79,18 @@ try{
    assert.equal(await page.locator('.setup-footer .setup-next').evaluate(el=>getComputedStyle(el).backgroundColor),accents[id],'Primary actions follow the assistant colour');
    assert.equal(await page.locator('.journey-node[aria-current="step"] .journey-number').evaluate(el=>getComputedStyle(el).backgroundColor),accents[id],'The active step follows the assistant colour');
    assert.equal(await page.locator('.journey-node[aria-current="step"]').getAttribute('data-guide-step'),'0','Switching a tutorial must start its web guide');
-  assert.equal(await page.locator('.journey-node').count(),4);
+  assert.equal(await page.locator('.journey-node').count(),3);
   assert.equal(await page.locator('.journey-node[aria-current="step"]').count(),1);
    assert.equal(actions.length,0,'Opening a guide must not write configuration');
    assert.equal(await page.locator('[data-assistant-route],.assistant-routes,.connection-flow,.setup-intro').count(),0,'Only the web guide remains; remove the route picker, intro and decorative school flow');
    assert.equal(await page.locator('.assistant-local').count(),0,'Automatic local setup is closed by default');
    assert.equal(await page.locator('[data-assistant-setup]').count(),['claude','gemini'].includes(id)?1:0);
-  await page.getByRole('button',{name:'Copier le lien',exact:true}).click();
-  assert.equal(await page.evaluate(()=>window.fixtureCopied),fixture.link);
+   await page.locator('[data-guide-step="1"]').click();
+   await page.getByRole('button',{name:'Copier le lien',exact:true}).click();
+   assert.equal(await page.evaluate(()=>window.fixtureCopied),fixture.link);
   for(const width of [1440,768,390,320]){
    await page.setViewportSize({width,height:1000});
-   for(let step=0;step<4;step++){
+   for(let step=0;step<3;step++){
     await page.locator(`[data-guide-step="${step}"]`).click();
     assert.equal(await page.locator('.journey-node[aria-current="step"]').getAttribute('data-guide-step'),String(step));
     await noOverflow();
@@ -100,8 +101,8 @@ try{
     assert.equal(await page.locator('.setup-details,.guide-caption,.guide-legend').count(),0,'No disclosure blocks or small grey captions on the guide');
       assert.ok((await page.locator('.setup-stage').innerText()).split(/\s+/).length<100,'Each step must be labels and visuals, not paragraphs');
     if(width!==320)await snapshot(`${id}-${step+1}-${width}`);
-      assert.equal(await page.locator('.guide-shot').count(),step===0?0:1,'One screenshot per step, none for the link step');
-      if(width===1440&&step>0){
+      assert.equal(await page.locator('.guide-shot').count(),1,'One screenshot per step');
+      if(width===1440){
      await page.waitForFunction(()=>[...document.querySelectorAll('.guide-shot')].every(img=>img.complete&&img.naturalWidth>0));
       const image=page.locator('.guide-shot').first();
        assert.ok((await image.boundingBox()).width>150);
@@ -118,9 +119,9 @@ try{
    }
   }
   await page.locator('[data-guide-previous]').click();
-  assert.equal(await page.locator('[aria-current="step"]').getAttribute('data-guide-step'),'2');
+  assert.equal(await page.locator('[aria-current="step"]').getAttribute('data-guide-step'),'1');
   await page.locator('[data-guide-next]').click();
-  assert.equal(await page.locator('[aria-current="step"]').getAttribute('data-guide-step'),'3');
+  assert.equal(await page.locator('[aria-current="step"]').getAttribute('data-guide-step'),'2');
    assert.equal(await page.locator('[data-assistant-route]').count(),0,'No web/local route choice');
   await home();
  }
@@ -145,6 +146,7 @@ try{
  await page.evaluate(()=>refresh());
  assert.equal(await page.locator('[aria-current="step"]').getAttribute('data-guide-step'),'2','Polling must preserve the active step');
  // Unavailable links must not be exposed as ready; language changes preserve the route.
+ await page.locator('[data-guide-step="1"]').click();
  fixture.public=false;fixture.tunnel='Stopped';fixture.link='';
  await page.evaluate(()=>refresh());
  assert.equal(await page.locator('[data-copy="assistant"]').count(),0);
@@ -157,7 +159,7 @@ try{
   await page.getByRole('heading',{name:'Add student-mcp',exact:true}).waitFor();
  // Keyboard navigation and reduced-motion behavior retain the same guide content.
  await page.emulateMedia({reducedMotion:'reduce'});
- await page.locator('[data-guide-step="3"]').focus();await page.keyboard.press('Enter');
+ await page.locator('[data-guide-step="2"]').focus();await page.keyboard.press('Enter');
  await page.getByRole('heading',{name:'Ask your first question',exact:true}).waitFor();
  await snapshot('reduced-motion');
  assert.deepEqual(errors,[]);

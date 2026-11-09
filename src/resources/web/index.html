@@ -243,7 +243,7 @@ button{transition:background 140ms ease-out,transform 140ms ease-out}button:acti
 .setup-link{padding:1.125rem;border-radius:1rem;background:var(--canvas);display:flex;align-items:center;gap:1rem}.setup-link>div{flex:1;min-width:0}.setup-link-label{font-size:.875rem;font-weight:600;color:var(--ink);display:block;margin-bottom:.5rem}.setup-link code{display:block;font-size:.875rem;line-height:1.65;overflow-wrap:anywhere;color:var(--ink)}.setup-link .copy-pill{min-height:44px;border-radius:.625rem;height:auto}
 .guide-path{display:flex;align-items:center;flex-wrap:wrap;gap:.5rem .75rem;list-style:none;margin:1.25rem 0 0;padding:0;font-size:.9375rem;line-height:1.5;color:var(--ink)}.guide-path li{display:flex;align-items:center;gap:.75rem;min-width:0}.guide-path li+li::before{content:"→";color:var(--muted)}.guide-path span{overflow-wrap:anywhere}.guide-path li:last-child{font-weight:600}
 .guide-capture{margin:1.25rem 0 0}.guide-shot-link{display:block;width:100%;padding:0;border:0;border-radius:1rem;background:none;cursor:zoom-in}.guide-shot{display:block;width:100%;height:auto;border-radius:1rem}
-.journey-fields{display:grid;margin:0;border-top:1px solid var(--border);font-size:.9375rem;line-height:1.6}.journey-field{display:grid;grid-template-columns:9rem minmax(0,1fr);gap:1rem;padding:1rem 0;border-bottom:1px solid var(--border)}.journey-field dt{color:var(--ink);font-weight:500}.journey-field dd{margin:0;overflow-wrap:anywhere;font-weight:600}.journey-field code{font-size:.875rem}.journey-fields+.setup-link{margin-top:1rem}
+.journey-fields{display:grid;margin:0;border-top:1px solid var(--border);font-size:.9375rem;line-height:1.6}.journey-field{display:grid;grid-template-columns:9rem minmax(0,1fr);gap:1rem;padding:1rem 0;border-bottom:1px solid var(--border)}.journey-field dt{color:var(--ink);font-weight:500}.journey-field dd{margin:0;overflow-wrap:anywhere;font-weight:600}.journey-field code{font-size:.875rem}.setup-link+.journey-fields{margin-top:1.25rem}
 .setup-prompt{margin:1.5rem 0;padding:1.25rem 1.5rem;border-radius:1rem;background:var(--canvas);font-size:1.125rem;line-height:1.6;letter-spacing:-.015em}.setup-prompt p{margin:0}
 .setup-footer{display:flex;align-items:center;justify-content:flex-end;gap:.75rem;margin-top:2rem}.setup-footer-actions{display:flex;align-items:center;gap:.5rem}.setup-footer button{min-height:44px;padding:.625rem 1rem;border:0;border-radius:.75rem;font-size:.9375rem;font-weight:550}.setup-footer .setup-previous{background:none;color:var(--ink)}.setup-footer .setup-next{background:var(--accent);color:var(--white)}
 .full-button.guide-link{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;width:auto;text-decoration:none;margin:0;min-height:44px;font-size:.875rem}
@@ -430,12 +430,10 @@ Object.assign(translations,{
  'Start a new conversation and ask Grok to use student-mcp.':['Ouvre une conversation et demande à Grok d’utiliser student-mcp.','Abre una conversación y pide a Grok que use student-mcp.'],
  'Connection method':['Mode de connexion','Método de conexión'],
  'Setup steps':['Étapes de connexion','Pasos de conexión'],
- 'Copy the link':['Copier le lien','Copiar el enlace'],
- 'Copy your link':['Copie ton lien','Copia tu enlace'],
  'Open settings':['Ouvrir les réglages','Abrir ajustes'],
  'Add the server':['Ajouter le serveur','Añadir el servidor'],
  'Ask a question':['Poser une question','Hacer una pregunta'],
- 'Link':['Lien','Enlace'], 'Settings':['Réglages','Ajustes'], 'Connect':['Connexion','Conectar'], 'Try it':['Essai','Probar'],
+ 'Settings':['Réglages','Ajustes'], 'Connect':['Connexion','Conectar'], 'Try it':['Essai','Probar'],
  'Check the app':['Vérifier l’application','Comprobar la aplicación'], 'Set up':['Configurer','Configurar'], 'Restart':['Redémarrer','Reiniciar'],
  'App':['Appli','App'], 'Setup':['Réglages','Ajustes'],
  'This link lets your assistant access the school accounts you have enabled.':['Ce lien donne accès aux comptes scolaires que tu as activés.','Este enlace permite acceder a las cuentas escolares que has activado.'],
@@ -723,8 +721,7 @@ function assistantLocal(id){
 }
 function assistantGuide(id){
  const step=assistantJourney.step;
- if(step===0)return {title:'Copy your link',content:publicGuideLink()};
- if(step===1){
+ if(step===0){
   const observed={
    grok:guideCapture('guide-grok-settings','Grok · Plugins → New Connector'),
    claude:guideCapture('guide-claude-menu','Claude · Add → Add custom connector'),
@@ -733,11 +730,11 @@ function assistantGuide(id){
   };
   return {title:'Open the connector settings',content:guideOpen(id)+observed[id]};
  }
- if(step===2){
+ if(step===1){
   const forms={
-   grok:guideFields([['Name','student-mcp']])+publicGuideLink('Server URL')+guideCapture('guide-grok-form','Grok · Custom Connector'),
-   claude:guideFields([['Name','student-mcp'],['Authentication','No sign in']])+publicGuideLink('Remote MCP server URL')+guidePath(['Continue','No sign in','Add'])+guideCapture('guide-claude-form','Claude · Add custom connector'),
-   chatgpt:guideFields([['Name','student-mcp'],['Authentication','No authentication']])+publicGuideLink('Connection → Server URL')+guideCapture('guide-chatgpt-form','ChatGPT · Add custom MCP server'),
+   grok:publicGuideLink('Server URL')+guideFields([['Name','student-mcp']])+guideCapture('guide-grok-form','Grok · Custom Connector'),
+   claude:publicGuideLink('Remote MCP server URL')+guideFields([['Name','student-mcp'],['Authentication','No sign in']])+guidePath(['Continue','No sign in','Add'])+guideCapture('guide-claude-form','Claude · Add custom connector'),
+   chatgpt:publicGuideLink('Connection → Server URL')+guideFields([['Name','student-mcp'],['Authentication','No authentication']])+guideCapture('guide-chatgpt-form','ChatGPT · Add custom MCP server'),
    gemini:publicGuideLink('MCP Server URL')+guideCapture('guide-gemini-form','Gemini · MCP Server URL → Next')
   };
   return {title:'Add student-mcp',content:forms[id]};
@@ -748,9 +745,9 @@ function assistantGuide(id){
 }
 function assistantScreen(){
  const id=state.assistant,info=assistantInfo[id],step=assistantJourney.step;
- const labels=['Copy the link','Open settings','Add the server','Ask a question'],short=['Link','Settings','Connect','Try it'];
+ const labels=['Open settings','Add the server','Ask a question'],short=['Settings','Connect','Try it'];
  const guide=assistantGuide(id);
- return `<section style="--accent:${info.accent}"><header class="assistant-heading"><div class="page-nav"><button class="back" data-screen="home" aria-label="${t('Back to services')}">${icon('back')}</button></div><h1>${t('Connect an assistant')}</h1></header><div class="assistant-toolbar">${assistantSwitcher()}${info.local?`<button class="assistant-local-toggle" data-assistant-setup="${id}" aria-expanded="${state.assistantConfirm}" aria-controls="assistant-local" ${state.assistantBusy?'disabled':''}>${t('Set up on this computer')}</button>`:''}</div>${info.local&&state.assistantConfirm?assistantLocal(id):''}<div class="assistant-workspace assistant-journey"><aside class="journey-sidebar"><ol class="journey-steps" aria-label="${t('Setup steps')}">${labels.map((label,index)=>`<li><button class="journey-node" data-guide-step="${index}"${index===step?' aria-current="step"':''} aria-controls="setup-stage" aria-label="${index+1}. ${t(label)}"><span class="journey-number" aria-hidden="true">${index+1}</span><span class="journey-long">${t(label)}</span><span class="journey-short" aria-hidden="true">${t(short[index])}</span></button></li>`).join('')}</ol></aside><article class="setup-stage" id="setup-stage" aria-labelledby="setup-title"><h2 id="setup-title" tabindex="-1">${t(guide.title)}</h2><div class="setup-content">${guide.content}</div><footer class="setup-footer"><div class="setup-footer-actions">${step?`<button class="setup-previous" data-guide-previous>${t('Previous')}</button>`:''}<button class="setup-next" ${step===3?'data-screen="home"':'data-guide-next'}>${t(step===3?'Finish guide':'Continue')} <span aria-hidden="true">→</span></button></div></footer></article></div>${notice()}</section>`;
+ return `<section style="--accent:${info.accent}"><header class="assistant-heading"><div class="page-nav"><button class="back" data-screen="home" aria-label="${t('Back to services')}">${icon('back')}</button></div><h1>${t('Connect an assistant')}</h1></header><div class="assistant-toolbar">${assistantSwitcher()}${info.local?`<button class="assistant-local-toggle" data-assistant-setup="${id}" aria-expanded="${state.assistantConfirm}" aria-controls="assistant-local" ${state.assistantBusy?'disabled':''}>${t('Set up on this computer')}</button>`:''}</div>${info.local&&state.assistantConfirm?assistantLocal(id):''}<div class="assistant-workspace assistant-journey"><aside class="journey-sidebar"><ol class="journey-steps" aria-label="${t('Setup steps')}">${labels.map((label,index)=>`<li><button class="journey-node" data-guide-step="${index}"${index===step?' aria-current="step"':''} aria-controls="setup-stage" aria-label="${index+1}. ${t(label)}"><span class="journey-number" aria-hidden="true">${index+1}</span><span class="journey-long">${t(label)}</span><span class="journey-short" aria-hidden="true">${t(short[index])}</span></button></li>`).join('')}</ol></aside><article class="setup-stage" id="setup-stage" aria-labelledby="setup-title"><h2 id="setup-title" tabindex="-1">${t(guide.title)}</h2><div class="setup-content">${guide.content}</div><footer class="setup-footer"><div class="setup-footer-actions">${step?`<button class="setup-previous" data-guide-previous>${t('Previous')}</button>`:''}<button class="setup-next" ${step===2?'data-screen="home"':'data-guide-next'}>${t(step===2?'Finish guide':'Continue')} <span aria-hidden="true">→</span></button></div></footer></article></div>${notice()}</section>`;
 }
 async function openAssistant(id){if(!assistantInfo[id]||state.assistantBusy)return;state.assistant=id;assistantJourney.step=0;state.assistantStatus=null;state.assistantConfirm=false;state.notice=null;state.screen='assistant';render();if(!assistantInfo[id].local)return;try{const status=await api('/assistant/'+id);if(state.screen==='assistant'&&state.assistant===id){state.assistantStatus=status;render()}}catch(error){if(state.screen==='assistant'&&state.assistant===id){state.assistantStatus={detected:false};state.notice={text:error.message,error:true};render()}}}
 async function configureAssistant(id){state.assistantBusy=true;state.notice=null;render();try{state.assistantStatus=await api('/action',{action:'assistant_setup',assistant:id})}catch(error){state.notice={text:error.message,error:true}}finally{state.assistantBusy=false;if(state.screen==='assistant'&&state.assistant===id)render()}}
@@ -1046,7 +1043,7 @@ document.addEventListener('click',async e=>{
   if(e.target.closest('[data-lightbox-close]')||e.target.id==='lightbox'){$('lightbox').close();return}
   if(e.target.closest('[data-assistant-choose]')){openAssistant('grok');return}
   const guideStep=e.target.closest('[data-guide-step]');if(guideStep&&!state.assistantBusy){assistantJourney.step=Number(guideStep.dataset.guideStep);state.assistantConfirm=false;render();return}
-  if(e.target.closest('[data-guide-next],[data-guide-previous]')&&!state.assistantBusy){assistantJourney.step=Math.max(0,Math.min(3,assistantJourney.step+(e.target.closest('[data-guide-next]')?1:-1)));state.assistantConfirm=false;render();$('setup-title')?.focus({preventScroll:true});return}
+  if(e.target.closest('[data-guide-next],[data-guide-previous]')&&!state.assistantBusy){assistantJourney.step=Math.max(0,Math.min(2,assistantJourney.step+(e.target.closest('[data-guide-next]')?1:-1)));state.assistantConfirm=false;render();$('setup-title')?.focus({preventScroll:true});return}
  const assistant=e.target.closest('[data-assistant]');if(assistant){openAssistant(assistant.dataset.assistant);return}
   const assistantSetup=e.target.closest('[data-assistant-setup]');if(assistantSetup&&!state.assistantBusy){state.assistantConfirm=!state.assistantConfirm;state.notice=null;render();return}
  const assistantConfirm=e.target.closest('[data-assistant-confirm]');if(assistantConfirm&&!state.assistantBusy){configureAssistant(assistantConfirm.dataset.assistantConfirm);return}
