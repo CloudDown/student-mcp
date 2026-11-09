@@ -106,15 +106,20 @@ try{
      await page.waitForFunction(()=>[...document.querySelectorAll('.guide-shot')].every(img=>img.complete&&img.naturalWidth>0));
       const image=page.locator('.guide-shot').first();
        assert.ok((await image.boundingBox()).width>150);
-       assert.ok(await image.evaluate(img=>img.naturalWidth/img.naturalHeight>1.7&&img.naturalWidth/img.naturalHeight<1.85),'Keep the page context, without browser chrome');
+       assert.ok(await image.evaluate(img=>img.naturalWidth===1440&&img.naturalHeight===1080),'Guide captures are a focused 480×360 panel rendered at 3×');
       const firstShot=page.locator('.guide-shot-link').first();
       await firstShot.click();
       assert.equal(await page.locator('#lightbox').evaluate(dialog=>dialog.open),true,'The screenshot opens in the page, not a new tab');
       await page.locator('[data-lightbox-close]').click();
       assert.equal(await page.locator('#lightbox').evaluate(dialog=>dialog.open),false,'The close button leaves the viewer');
       await firstShot.click();
-      await page.keyboard.press('Escape');
-      assert.equal(await page.locator('#lightbox').evaluate(dialog=>dialog.open),false,'Escape closes the viewer');
+       await page.keyboard.press('Escape');
+       assert.equal(await page.locator('#lightbox').evaluate(dialog=>dialog.open),false,'Escape closes the viewer');
+    }
+    if(width===390){
+     await page.setViewportSize({width,height:844});
+     assert.ok(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight+1),`The ${id} guide step ${step+1} must fit vertically at 390×844 without scrolling`);
+     await page.setViewportSize({width,height:1000});
     }
    }
   }
@@ -129,12 +134,12 @@ try{
   await openGeneral();
  await page.getByRole('button',{name:'Configurer Claude',exact:true}).click();
   await page.locator('[data-guide-step="2"]').click();
-  await page.getByRole('button',{name:'Configurer sur cet ordinateur',exact:true}).click();
+  await page.getByRole('button',{name:'Configurer l’appli locale',exact:true}).click();
   assert.equal(await page.locator('[aria-current="step"]').getAttribute('data-guide-step'),'2','Automatic setup must not replace the web guide or reset its step');
  assert.equal(actions.length,0,'The first setup click must not write configuration');
  await page.getByRole('button',{name:'Annuler',exact:true}).click();
  assert.equal(actions.length,0);
- await page.getByRole('button',{name:'Configurer sur cet ordinateur',exact:true}).click();
+ await page.getByRole('button',{name:'Configurer l’appli locale',exact:true}).click();
  await page.getByRole('button',{name:'Confirmer la configuration',exact:true}).click();
  await page.getByText('Configuration locale terminée',{exact:true}).waitFor();
  assert.ok((await page.locator('.assistant-local .local-close').boundingBox()).height<64,'Configured status must remain a compact button');

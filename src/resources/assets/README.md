@@ -59,44 +59,49 @@ assistants the link can be pasted into, without implying endorsement.
 
 # Assistant setup guides
 
-## Real Helium captures (2026-11-08)
+## Rendered captures (2026-11-09)
 
-The active guides use one wide screenshot per step, after the link step. They
-keep the page and navigation but drop the browser tab strip and address bar.
-Curved, assistant-coloured arrows point at the controls; no legend or caption is
-shown, and clicking a capture opens an in-page viewer with a close button and
-Escape support. All active captures are 1600 × 894 WebP.
+The four assistant guides use one render per step, after the link step. They are
+**not** screenshots of a live session: each one is rendered from
+`tools/assistant-guides.html` by `tools/render-assistant-guides.mjs`, so the
+labels, the empty states and the arrow stay identical across releases. The page
+frame and the app chrome are kept; the browser tab strip and address bar are not.
 
-- `guide-claude-menu.webp`: Customize → Connectors → Add; the Free connector limit
-  prevented opening the form. No existing connector was changed.
-- `guide-claude-form.webp`: Add menu with Add custom connector, from the same
-  capture; form steps remain documentation-led.
-- `guide-claude-chat.webp`: conversation composer.
-- `guide-gemini-settings.webp`: Connected Apps → + Custom.
-- `guide-gemini-form.webp`: empty MCP Server URL dialog, before Next.
-- `guide-gemini-chat.webp`: conversation composer.
-- `guide-chatgpt-menu.webp`: Plugins → Add → Add custom MCP server.
-- `guide-chatgpt-form.webp`: empty form with Server URL, No authentication,
-  unchecked risk confirmation and disabled Create as a plugin button.
-- `guide-chatgpt-chat.webp`: conversation composer.
-- `guide-grok-settings.webp`: Plugins / Connectors → New Connector.
-- `guide-grok-form.webp`: empty Name / Server URL / Add Connector form.
-- `guide-grok-chat.webp`: conversation composer.
+- One scene per assistant and step, **480 × 360 CSS px at 3×** → 1440 × 1080
+  WebP. The captures are displayed at 480 px wide in the app, so their text is
+  read at its natural size. Do not widen the canvas without widening that
+  column: anything smaller becomes unreadable at 1:1.
+- One thin arrow per capture, in the assistant's accent colour, pointing a few
+  pixels away from the control to click. No numbered badges, no legend, no
+  caption, no browser chrome. Clicking a capture opens the in-page viewer.
+- Fictional data only: `student-mcp`, `https://example.com/mcp`, no account, no
+  real MCP link, no school credential. Vendor labels are in English, as the
+  assistants ship them; the surrounding UI is translated.
+- Each form capture shows the state just before the final click: fields filled
+  and the action button enabled.
 
-No connector was submitted. Opaque masks cover personal sidebar content, account
-identities, email addresses and existing connection details (including private
-hostnames), even when the site's own background is blurred. The exported images
-contain no school credentials or real MCP link. Raw captures stay outside git.
-Claude form instructions and screens after Gemini Next remain documentation-led.
+Files: `guide-claude-menu|form|chat`, `guide-chatgpt-menu|form|chat`,
+`guide-gemini-settings|form|chat`, `guide-grok-settings|form|chat`.
+
+Regenerate after editing the scenes:
+
+```bash
+export PLAYWRIGHT_MODULE=/path/to/node_modules/playwright/index.mjs
+export STUDENT_MCP_BROWSER=$(ls -d ~/.cache/ms-playwright/chromium-*/chrome-linux*/chrome | head -1)
+node tools/render-assistant-guides.mjs
+```
+
+The script fails if a scene is not exactly 480 × 360, if an output is not
+1440 × 1080, or if a WebP exceeds 120 KB. The arrow is part of the annotation,
+not of the product: keep it out of any capture that claims to be a screenshot.
 
 `grok-icon.png` is the official Grok app icon from
 https://grok.com/images/android-chrome-192x192.png, resized to 128 × 128.
 It identifies the assistant only; the brand remains its owner's property.
-Grok instructions were checked against https://docs.x.ai/grok/connectors and
-the signed-in Helium interface on 2026-11-08. Screenshots of vendor interfaces
-are used only to explain setup; the products and brands remain their owners'
-property. Refresh a capture whenever the vendor documentation changes.
-Do not replace a capture with a fabricated interface or include a real MCP link.
+Grok instructions were checked against https://docs.x.ai/grok/connectors
+and the signed-in Helium interface on 2026-11-08. Brand names and control
+labels in the renders follow those interfaces; the products and brands remain
+their owners' property. Refresh a capture whenever a vendor renames a control.
 
 `tools/test-assistant-guides.mjs` checks the four assistant guides at phone,
 tablet and desktop widths, using fixture accounts and example URLs only.

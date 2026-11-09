@@ -1,0 +1,333 @@
+<!doctype html>
+<!-- Static render source for the "Connect an assistant" guide captures.
+     12 scenes, each captured at exactly 480×360 (CSS px) by tools/render-assistant-guides.mjs.
+     Fictional data only: no account, no real link, no school credential. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Assistant guide scenes</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#fafafa;padding:24px;display:flex;flex-direction:column;align-items:flex-start;gap:28px}
+.scene{position:relative;width:480px;height:360px;background:#f4f4f6;overflow:hidden;font:13px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#1d1d1f}
+.panel{position:absolute;inset:14px;background:#fff;border:1px solid #e5e5e9;border-radius:12px;overflow:hidden;box-shadow:0 1px 2px #1d1d1f0a,0 8px 24px -12px #1d1d1f1f}
+.arrow{position:absolute;inset:0;width:480px;height:360px;pointer-events:none;z-index:7}
+.arrow .stem{fill:none;stroke:var(--accent);stroke-width:2;stroke-linecap:round}
+.rail{position:absolute;top:0;bottom:0;left:0;width:118px;background:#f7f7f9;border-right:1px solid #e6e6ea}
+.irail{position:absolute;top:0;bottom:0;left:0;width:44px;background:#f7f7f9;border-right:1px solid #e6e6ea}
+.wordmark{position:absolute;font-size:14px;font-weight:600;letter-spacing:-.01em}
+.rail .wordmark{left:16px;top:14px}
+.logo{position:absolute;left:13px;top:14px;width:18px;height:18px;color:var(--accent)}
+.avatar{position:absolute;left:11px;bottom:16px;width:22px;height:22px;border-radius:50%;background:#e3e3e8;border:1px solid #dcdce0}
+.navi{position:absolute;left:10px;width:98px;height:26px;line-height:26px;padding:0 10px;border-radius:7px;font-size:12.5px;color:#5b5b61;white-space:nowrap}
+.navi.on{background:#e9e9ed;color:#1d1d1f;font-weight:500}
+.iico{position:absolute;left:14px;width:16px;height:16px;color:#6b6b70}
+.ttl{position:absolute;font-size:15px;font-weight:600;white-space:nowrap;letter-spacing:-.01em}
+.tabs{position:absolute;display:flex;gap:16px;font-size:12.5px;color:#6b6b70;align-items:flex-end;height:22px}
+.tab{line-height:18px;padding-bottom:2px;border-bottom:2px solid transparent;white-space:nowrap}
+.tab.on{color:#1d1d1f;font-weight:600;border-bottom-color:var(--accent)}
+.rowcard{position:absolute;display:flex;align-items:center;gap:9px;height:34px;background:#fff;border:1px solid #e6e6ea;border-radius:9px;padding:0 10px}
+.rowcard.quiet{opacity:.6}
+.cico{width:22px;height:22px;border-radius:6px;background:#ececf0;flex:none}
+.clabel{font-size:12.5px;color:#5b5b61;white-space:nowrap;overflow:hidden;text-overflow:clip}
+.badge{font-size:10.5px;line-height:1;color:#3d3d42;background:#ececf0;border-radius:99px;padding:4px 8px;margin-left:auto;flex:none;white-space:nowrap}
+.btn{position:absolute;height:26px;display:flex;align-items:center;justify-content:center;border-radius:7px;font-size:12.5px;font-weight:600;white-space:nowrap}
+.menu{position:absolute;width:176px;background:#fff;border:1px solid #e6e6ea;border-radius:10px;box-shadow:0 8px 20px -10px rgba(29,29,31,.3);z-index:5}
+.mitem{padding:8px 12px;font-size:12.5px;line-height:18px;color:#3d3d42;white-space:nowrap}
+.mdiv{border-top:1px solid #ececf0;margin:4px 0}
+.mact{margin:5px 8px 8px;padding:7px 10px;border-radius:8px;font-size:12.5px;font-weight:600;line-height:20px;white-space:nowrap}
+.sc{position:absolute;inset:0;background:rgba(29,29,31,.13);z-index:1}
+.modal{position:absolute;background:#fff;border:1px solid #e6e6ea;border-radius:12px;box-shadow:0 12px 32px -16px rgba(29,29,31,.35);z-index:3}
+.mh{position:absolute;left:18px;top:14px;font-size:15px;font-weight:600;white-space:nowrap;letter-spacing:-.01em}
+.fl{position:absolute;left:18px;font-size:12.5px;color:#6b6b70;white-space:nowrap}
+.fi{position:absolute;left:18px;right:18px;height:30px;border:1px solid #dcdce0;border-radius:8px;display:flex;align-items:center;padding:0 10px;font-size:13px;color:#1d1d1f;white-space:nowrap}
+.row{position:absolute;left:18px;right:18px;display:flex;justify-content:space-between;font-size:12.5px}
+.row .k{color:#6b6b70}
+.row .v{color:#1d1d1f;font-weight:500}
+.risk{position:absolute;left:18px;font-size:11.5px;color:#8a8a90;white-space:nowrap}
+.fbtn{position:absolute;bottom:14px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:12.5px;font-weight:600;white-space:nowrap}
+.ghost{border:1px solid #dcdce0;background:#fff;color:#1d1d1f}
+.emptyh{position:absolute;text-align:center;font-size:15px;color:#6b6b70;white-space:nowrap}
+.pill{position:absolute;border:1px solid #dcdce0;border-radius:22px;background:#fff}
+.ctext{position:absolute;font-size:13px;line-height:19px;color:#1d1d1f;white-space:nowrap}
+.send{position:absolute;width:36px;height:36px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center}
+.plus{position:absolute;width:24px;height:24px;display:flex;align-items:center;justify-content:center;color:#6b6b70}
+.mname{position:absolute;display:flex;align-items:center;gap:5px;font-size:12.5px;color:#6b6b70;white-space:nowrap}
+</style>
+</head>
+<body>
+
+<!-- 1. Claude: Customize › Connectors, "+ Add" menu open, arrow on "Add custom connector" -->
+<section class="scene" id="claude-menu" data-file="guide-claude-menu" style="--accent:#c96442">
+ <div class="panel">
+  <div class="rail">
+   <div class="wordmark">Claude</div>
+   <div class="navi" style="top:60px">New chat</div>
+   <div class="navi" style="top:92px">Projects</div>
+   <div class="navi on" style="top:124px">Customize</div>
+  </div>
+  <div class="ttl" style="left:142px;top:16px">Customize</div>
+  <div class="tabs" style="left:142px;top:50px"><span class="tab">Skills</span><span class="tab on">Connectors</span><span class="tab">Plugins</span></div>
+  <div class="btn" style="top:50px;right:16px;width:58px;background:#1d1d1f;color:#fff">+ Add</div>
+  <div class="menu" style="top:82px;right:16px">
+   <div class="mitem">Create skill</div>
+   <div class="mitem">Upload skill</div>
+   <div class="mdiv"></div>
+   <div class="mact" style="background:#f7efe9;color:#c96442">Add custom connector</div>
+  </div>
+  <div class="rowcard quiet" style="left:142px;top:118px;width:136px"><div class="cico"></div><div class="clabel">Google Drive</div></div>
+  <div class="rowcard quiet" style="left:142px;top:156px;width:136px"><div class="cico"></div><div class="clabel">Calendar</div></div>
+ </div>
+ <svg class="arrow" viewBox="0 0 480 360" aria-hidden="true">
+  <defs><marker id="tip-claude-menu" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" refX="8.2" refY="4.5" orient="auto"><path d="M0 .8 8.2 4.5 0 8.2Z" fill="var(--accent)"/></marker></defs>
+  <path class="stem" d="M306 300C332 268 338 240 338 202" marker-end="url(#tip-claude-menu)"/>
+ </svg>
+</section>
+
+<!-- 2. ChatGPT: Plugins list, "+ Add" menu open, arrow on "Add custom MCP server" -->
+<section class="scene" id="chatgpt-menu" data-file="guide-chatgpt-menu" style="--accent:#0f9d78">
+ <div class="panel">
+  <div class="rail">
+   <div class="wordmark">ChatGPT</div>
+   <div class="navi" style="top:60px">New chat</div>
+   <div class="navi" style="top:92px">Images</div>
+   <div class="navi" style="top:124px">Library</div>
+   <div class="navi on" style="top:156px">Plugins</div>
+  </div>
+  <div class="ttl" style="left:142px;top:16px">Plugins</div>
+  <div class="btn" style="top:16px;right:16px;width:58px;background:#1d1d1f;color:#fff">+ Add</div>
+  <div class="menu" style="top:48px;right:16px;width:186px">
+   <div class="mitem">Create plugin</div>
+   <div class="mitem">Upload plugin archive</div>
+   <div class="mdiv"></div>
+   <div class="mact" style="background:#eaf7f3;color:#0f9d78">Add custom MCP server</div>
+  </div>
+  <div class="rowcard quiet" style="left:142px;top:102px;width:136px"><div class="cico"></div><div class="clabel">Doc Reader</div></div>
+  <div class="rowcard quiet" style="left:142px;top:140px;width:136px"><div class="cico"></div><div class="clabel">Data Charts</div></div>
+ </div>
+ <svg class="arrow" viewBox="0 0 480 360" aria-hidden="true">
+  <defs><marker id="tip-chatgpt-menu" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" refX="8.2" refY="4.5" orient="auto"><path d="M0 .8 8.2 4.5 0 8.2Z" fill="var(--accent)"/></marker></defs>
+  <path class="stem" d="M306 292C326 264 328 214 328 168" marker-end="url(#tip-chatgpt-menu)"/>
+ </svg>
+</section>
+
+<!-- 3. Gemini: Connected Apps settings, arrow on the outlined "+ Custom" button -->
+<section class="scene" id="gemini-settings" data-file="guide-gemini-settings" style="--accent:#3b82f6">
+ <div class="panel">
+  <div class="irail">
+   <svg class="logo" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 1.6l1.7 4.7 4.7 1.7-4.7 1.7L9 14.4 7.3 9.7 2.6 8l4.7-1.7z" fill="currentColor"/></svg>
+   <svg class="iico" style="top:50px" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+   <svg class="iico" style="top:78px" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2.2" y="3.2" width="11.6" height="9.6" rx="2.2" stroke="currentColor" stroke-width="1.5"/><path d="M5.4 12.8 4.6 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+   <svg class="iico" style="top:106px" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2.2" y="2.9" width="11.6" height="10.2" rx="2.2" stroke="currentColor" stroke-width="1.5"/><path d="M2.4 10.4 6 7.2l3 2.6 2.2-1.9 2.2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+   <svg class="iico" style="top:134px" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5.6" stroke="currentColor" stroke-width="1.5"/><path d="M8 5.2V8l2 1.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+   <div class="avatar"></div>
+  </div>
+  <div class="ttl" style="left:58px;top:16px">Connected Apps</div>
+  <div class="tabs" style="left:58px;top:50px"><span class="tab">Discover</span><span class="tab on">Connectors</span><span class="tab">Skills</span></div>
+  <div class="btn" style="top:50px;right:16px;width:84px;border:1px solid #dcdce0;background:#fff;color:#1d1d1f">+ Custom</div>
+  <div class="rowcard" style="left:58px;right:16px;top:120px"><div class="cico"></div><div class="clabel">Workspace</div><span class="badge">Installed</span></div>
+  <div class="rowcard" style="left:58px;right:16px;top:158px"><div class="cico"></div><div class="clabel">Calendar</div><span class="badge">Installed</span></div>
+ </div>
+ <svg class="arrow" viewBox="0 0 480 360" aria-hidden="true">
+  <defs><marker id="tip-gemini-settings" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" refX="8.2" refY="4.5" orient="auto"><path d="M0 .8 8.2 4.5 0 8.2Z" fill="var(--accent)"/></marker></defs>
+  <path class="stem" d="M300 130C330 124 360 110 382 94" marker-end="url(#tip-gemini-settings)"/>
+ </svg>
+</section>
+
+<!-- 4. Grok: Plugins › Connectors, outlined "New Connector" button top-right -->
+<section class="scene" id="grok-settings" data-file="guide-grok-settings" style="--accent:#1d1d1f">
+ <div class="panel">
+  <div class="rail">
+   <div class="wordmark">Grok</div>
+   <div class="navi" style="top:60px">Chat</div>
+   <div class="navi" style="top:92px">Images</div>
+   <div class="navi" style="top:124px">Library</div>
+   <div class="navi on" style="top:156px">Plugins</div>
+  </div>
+  <div class="ttl" style="left:142px;top:16px">Plugins</div>
+  <div class="tabs" style="left:142px;top:50px"><span class="tab on">Connectors</span><span class="tab">Skills</span><span class="tab">Bots</span></div>
+  <div class="btn" style="top:50px;right:16px;width:110px;border:1px solid #1d1d1f;background:#fff;color:#1d1d1f">New Connector</div>
+  <div class="rowcard" style="left:142px;right:16px;top:120px"><div class="cico"></div><div class="clabel">Weather</div><span class="badge">Featured</span></div>
+  <div class="rowcard" style="left:142px;right:16px;top:158px"><div class="cico"></div><div class="clabel">Code Runner</div><span class="badge">Featured</span></div>
+ </div>
+ <svg class="arrow" viewBox="0 0 480 360" aria-hidden="true">
+  <defs><marker id="tip-grok-settings" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" refX="8.2" refY="4.5" orient="auto"><path d="M0 .8 8.2 4.5 0 8.2Z" fill="var(--accent)"/></marker></defs>
+  <path class="stem" d="M286 130C314 124 344 110 372 94" marker-end="url(#tip-grok-settings)"/>
+ </svg>
+</section>
+
+<!-- 5. Claude: filled "Add custom connector" form, arrow on the active "Add" -->
+<section class="scene" id="claude-form" data-file="guide-claude-form" style="--accent:#c96442">
+ <div class="panel">
+  <div class="sc"></div>
+  <div class="modal" style="left:76px;top:24px;width:300px;height:244px">
+   <div class="mh">Add custom connector</div>
+   <div class="fl" style="top:46px">Name</div>
+   <div class="fi" style="top:66px">student-mcp</div>
+   <div class="fl" style="top:106px">Remote MCP server URL</div>
+   <div class="fi" style="top:126px">https://example.com/mcp</div>
+   <div class="row" style="top:170px"><span class="k">Authentication</span><span class="v">No sign in</span></div>
+   <div class="fbtn ghost" style="left:18px;width:62px">Cancel</div>
+   <div class="fbtn" style="right:18px;width:56px;background:#c96442;color:#fff">Add</div>
+  </div>
+ </div>
+ <svg class="arrow" viewBox="0 0 480 360" aria-hidden="true">
+  <defs><marker id="tip-claude-form" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" refX="8.2" refY="4.5" orient="auto"><path d="M0 .8 8.2 4.5 0 8.2Z" fill="var(--accent)"/></marker></defs>
+  <path class="stem" d="M170 330C230 318 300 296 344 276" marker-end="url(#tip-claude-form)"/>
+ </svg>
+</section>
+
+<!-- 6. ChatGPT: filled "Add custom MCP server" form, arrow on "Create as a plugin" -->
+<section class="scene" id="chatgpt-form" data-file="guide-chatgpt-form" style="--accent:#0f9d78">
+ <div class="panel">
+  <div class="sc"></div>
+  <div class="modal" style="left:76px;top:24px;width:300px;height:272px">
+   <div class="mh">Add custom MCP server</div>
+   <div class="fl" style="top:46px">Name</div>
+   <div class="fi" style="top:66px">student-mcp</div>
+   <div class="fl" style="top:106px;color:#1d1d1f;font-weight:500">Connection</div>
+   <div class="fl" style="top:124px">Server URL</div>
+   <div class="fi" style="top:142px">https://example.com/mcp</div>
+   <div class="row" style="top:182px"><span class="k">Authentication</span><span class="v">No authentication</span></div>
+   <div class="risk" style="top:206px">Custom MCP servers introduce risk.</div>
+   <div class="fbtn ghost" style="left:18px;width:62px">Cancel</div>
+   <div class="fbtn" style="right:18px;width:136px;background:#0f9d78;color:#fff">Create as a plugin</div>
+  </div>
+ </div>
+ <svg class="arrow" viewBox="0 0 480 360" aria-hidden="true">
+  <defs><marker id="tip-chatgpt-form" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" refX="8.2" refY="4.5" orient="auto"><path d="M0 .8 8.2 4.5 0 8.2Z" fill="var(--accent)"/></marker></defs>
+  <path class="stem" d="M150 340C215 334 290 318 344 304" marker-end="url(#tip-chatgpt-form)"/>
+ </svg>
+</section>
+
+<!-- 7. Gemini: filled "MCP Server URL" dialog, arrow on "Next" -->
+<section class="scene" id="gemini-form" data-file="guide-gemini-form" style="--accent:#3b82f6">
+ <div class="panel">
+  <div class="sc"></div>
+  <div class="modal" style="left:86px;top:30px;width:280px;height:186px">
+   <div class="mh">MCP Server URL</div>
+   <div class="fl" style="top:46px">Server URL</div>
+   <div class="fi" style="top:66px">https://example.com/mcp</div>
+   <div class="fbtn ghost" style="left:18px;width:62px">Cancel</div>
+   <div class="fbtn" style="right:18px;width:64px;background:#3b82f6;color:#fff">Next</div>
+  </div>
+ </div>
+ <svg class="arrow" viewBox="0 0 480 360" aria-hidden="true">
+  <defs><marker id="tip-gemini-form" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" refX="8.2" refY="4.5" orient="auto"><path d="M0 .8 8.2 4.5 0 8.2Z" fill="var(--accent)"/></marker></defs>
+  <path class="stem" d="M170 320C230 296 295 252 330 224" marker-end="url(#tip-gemini-form)"/>
+ </svg>
+</section>
+
+<!-- 8. Grok: filled "Custom Connector" form, arrow on "Add Connector" -->
+<section class="scene" id="grok-form" data-file="guide-grok-form" style="--accent:#1d1d1f">
+ <div class="panel">
+  <div class="sc"></div>
+  <div class="modal" style="left:76px;top:24px;width:300px;height:222px">
+   <div class="mh">Custom Connector</div>
+   <div class="fl" style="top:46px">Name</div>
+   <div class="fi" style="top:66px">student-mcp</div>
+   <div class="fl" style="top:106px">Server URL</div>
+   <div class="fi" style="top:126px">https://example.com/mcp</div>
+   <div class="fbtn ghost" style="left:18px;width:62px">Cancel</div>
+   <div class="fbtn" style="right:18px;width:110px;background:#1d1d1f;color:#fff">Add Connector</div>
+  </div>
+ </div>
+ <svg class="arrow" viewBox="0 0 480 360" aria-hidden="true">
+  <defs><marker id="tip-grok-form" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" refX="8.2" refY="4.5" orient="auto"><path d="M0 .8 8.2 4.5 0 8.2Z" fill="var(--accent)"/></marker></defs>
+  <path class="stem" d="M170 330C230 310 295 278 330 254" marker-end="url(#tip-grok-form)"/>
+ </svg>
+</section>
+
+<!-- 9. Claude: ask a first question, arrow on the send button -->
+<section class="scene" id="claude-chat" data-file="guide-claude-chat" style="--accent:#c96442">
+ <div class="panel">
+  <div class="rail">
+   <div class="wordmark">Claude</div>
+   <div class="navi on" style="top:60px">New chat</div>
+   <div class="navi" style="top:92px">Projects</div>
+  </div>
+  <div class="emptyh" style="left:142px;right:16px;top:96px">What are we working on?</div>
+  <div class="pill" style="left:142px;right:16px;top:168px;height:78px"></div>
+  <div class="ctext" style="left:158px;top:182px">Use student-mcp:</div>
+  <div class="ctext" style="left:158px;top:201px">what are my deadlines this week?</div>
+  <div class="plus" style="left:150px;top:212px"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+  <div class="mname" style="left:180px;top:217px">Sonnet 4.5<svg width="8" height="6" viewBox="0 0 8 6" fill="none" aria-hidden="true"><path d="M1 1.5 4 4.5 7 1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></div>
+  <div class="send" style="left:402px;top:203px"><svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M7 11V3M3.5 6.5 7 3l3.5 3.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+ </div>
+ <svg class="arrow" viewBox="0 0 480 360" aria-hidden="true">
+  <defs><marker id="tip-claude-chat" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" refX="8.2" refY="4.5" orient="auto"><path d="M0 .8 8.2 4.5 0 8.2Z" fill="var(--accent)"/></marker></defs>
+  <path class="stem" d="M332 338C386 330 416 304 420 270" marker-end="url(#tip-claude-chat)"/>
+ </svg>
+</section>
+
+<!-- 10. ChatGPT: ask a first question -->
+<section class="scene" id="chatgpt-chat" data-file="guide-chatgpt-chat" style="--accent:#0f9d78">
+ <div class="panel">
+  <div class="rail">
+   <div class="wordmark">ChatGPT</div>
+   <div class="navi on" style="top:60px">New chat</div>
+   <div class="navi" style="top:92px">Plugins</div>
+  </div>
+  <div class="emptyh" style="left:142px;right:16px;top:96px">What can I help with?</div>
+  <div class="pill" style="left:142px;right:16px;top:168px;height:78px"></div>
+  <div class="ctext" style="left:158px;top:182px">Use student-mcp:</div>
+  <div class="ctext" style="left:158px;top:201px">what are my deadlines this week?</div>
+  <div class="plus" style="left:150px;top:212px"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+  <div class="mname" style="left:180px;top:217px">GPT-5<svg width="8" height="6" viewBox="0 0 8 6" fill="none" aria-hidden="true"><path d="M1 1.5 4 4.5 7 1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></div>
+  <div class="send" style="left:402px;top:203px"><svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M7 11V3M3.5 6.5 7 3l3.5 3.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+ </div>
+ <svg class="arrow" viewBox="0 0 480 360" aria-hidden="true">
+  <defs><marker id="tip-chatgpt-chat" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" refX="8.2" refY="4.5" orient="auto"><path d="M0 .8 8.2 4.5 0 8.2Z" fill="var(--accent)"/></marker></defs>
+  <path class="stem" d="M332 338C386 330 416 304 420 270" marker-end="url(#tip-chatgpt-chat)"/>
+ </svg>
+</section>
+
+<!-- 11. Gemini: ask a first question -->
+<section class="scene" id="gemini-chat" data-file="guide-gemini-chat" style="--accent:#3b82f6">
+ <div class="panel">
+  <div class="irail">
+   <svg class="logo" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 1.6l1.7 4.7 4.7 1.7-4.7 1.7L9 14.4 7.3 9.7 2.6 8l4.7-1.7z" fill="currentColor"/></svg>
+   <svg class="iico" style="top:50px" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+   <svg class="iico" style="top:78px" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2.2" y="3.2" width="11.6" height="9.6" rx="2.2" stroke="currentColor" stroke-width="1.5"/><path d="M5.4 12.8 4.6 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+   <svg class="iico" style="top:106px" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2.2" y="2.9" width="11.6" height="10.2" rx="2.2" stroke="currentColor" stroke-width="1.5"/><path d="M2.4 10.4 6 7.2l3 2.6 2.2-1.9 2.2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+   <div class="avatar"></div>
+  </div>
+  <div class="emptyh" style="left:58px;right:16px;top:96px">How can I help?</div>
+  <div class="pill" style="left:58px;right:16px;top:168px;height:78px"></div>
+  <div class="ctext" style="left:74px;top:182px">Use student-mcp:</div>
+  <div class="ctext" style="left:74px;top:201px">what are my deadlines this week?</div>
+  <div class="plus" style="left:66px;top:212px"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+  <div class="mname" style="left:96px;top:217px">Gemini 2.5<svg width="8" height="6" viewBox="0 0 8 6" fill="none" aria-hidden="true"><path d="M1 1.5 4 4.5 7 1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></div>
+  <div class="send" style="left:402px;top:203px"><svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M7 11V3M3.5 6.5 7 3l3.5 3.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+ </div>
+ <svg class="arrow" viewBox="0 0 480 360" aria-hidden="true">
+  <defs><marker id="tip-gemini-chat" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" refX="8.2" refY="4.5" orient="auto"><path d="M0 .8 8.2 4.5 0 8.2Z" fill="var(--accent)"/></marker></defs>
+  <path class="stem" d="M332 338C386 330 416 304 420 270" marker-end="url(#tip-gemini-chat)"/>
+ </svg>
+</section>
+
+<!-- 12. Grok: ask a first question -->
+<section class="scene" id="grok-chat" data-file="guide-grok-chat" style="--accent:#1d1d1f">
+ <div class="panel">
+  <div class="rail">
+   <div class="wordmark">Grok</div>
+   <div class="navi on" style="top:60px">Chat</div>
+   <div class="navi" style="top:92px">Plugins</div>
+  </div>
+  <div class="emptyh" style="left:142px;right:16px;top:96px">What do you want to know?</div>
+  <div class="pill" style="left:142px;right:16px;top:168px;height:78px"></div>
+  <div class="ctext" style="left:158px;top:182px">Use student-mcp:</div>
+  <div class="ctext" style="left:158px;top:201px">what are my deadlines this week?</div>
+  <div class="plus" style="left:150px;top:212px"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+  <div class="mname" style="left:180px;top:217px">Grok 4<svg width="8" height="6" viewBox="0 0 8 6" fill="none" aria-hidden="true"><path d="M1 1.5 4 4.5 7 1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></div>
+  <div class="send" style="left:402px;top:203px"><svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M7 11V3M3.5 6.5 7 3l3.5 3.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+ </div>
+ <svg class="arrow" viewBox="0 0 480 360" aria-hidden="true">
+  <defs><marker id="tip-grok-chat" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" refX="8.2" refY="4.5" orient="auto"><path d="M0 .8 8.2 4.5 0 8.2Z" fill="var(--accent)"/></marker></defs>
+  <path class="stem" d="M332 338C386 330 416 304 420 270" marker-end="url(#tip-grok-chat)"/>
+ </svg>
+</section>
+
+</body>
+</html>

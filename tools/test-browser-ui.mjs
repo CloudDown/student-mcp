@@ -34,7 +34,8 @@ try {
   });
   await page.goto('http://student.test/#test-secret');
   await page.getByRole('combobox').fill('poly');
-  await page.getByRole('option',{name:/Polytechnique/}).click();
+  assert.match(await page.getByRole('option').first().innerText(),/Polytechnique Montréal/);
+  await page.getByRole('option').first().click();
   await page.getByLabel('Site address',{exact:true}).waitFor();
   assert.equal(await page.getByLabel('Site address',{exact:true}).inputValue(),'https://moodle.polymtl.ca');
   await page.getByRole('button',{name:'Back to services',exact:true}).click();
@@ -119,7 +120,7 @@ try {
   needsBrowser=false;
   await page.locator('[data-assistant-choose]').click();
   await page.getByRole('button',{name:'Set up Claude',exact:true}).click();
-  await page.getByRole('button',{name:'Set up on this computer',exact:true}).click();
+  await page.getByRole('button',{name:'Set up local app',exact:true}).click();
   await page.getByText(/This updates the assistant’s MCP settings/).waitFor();
   await page.getByRole('button',{name:'Confirm setup',exact:true}).click();
   await page.getByText('Local setup is ready',{exact:true}).waitFor();
@@ -134,7 +135,7 @@ try {
   await page.getByRole('button',{name:'Back to services',exact:true}).click();
   await page.locator('[data-assistant-choose]').click();
   await page.getByRole('button',{name:'Set up Gemini',exact:true}).click();
-  await page.getByRole('button',{name:'Set up on this computer',exact:true}).click();
+  await page.getByRole('button',{name:'Set up local app',exact:true}).click();
   await page.getByText('No supported local app was found.',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Back to services',exact:true}).click();
   assert.deepEqual(errors,[]);

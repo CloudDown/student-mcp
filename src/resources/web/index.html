@@ -127,10 +127,12 @@ button{transition:background 140ms ease-out,transform 140ms ease-out}button:acti
 .language-control svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .language-control>.icon-button[aria-expanded="true"]{background:var(--hover);color:var(--blue)}
 .language-menu{position:absolute;right:0;top:calc(100% + .5rem);width:11rem;padding:.375rem;border:1px solid var(--border);border-radius:1rem;background:#fffffff2;backdrop-filter:blur(20px) saturate(150%);box-shadow:0 8px 32px #20203418}
-.language-menu button{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:44px;padding:.625rem .75rem;border:0;border-radius:.625rem;background:transparent;text-align:left;font-size:.875rem}
-.language-menu button span{visibility:hidden;color:var(--blue)}
+.language-menu button{display:flex;align-items:center;gap:.75rem;width:100%;min-height:52px;padding:.625rem .75rem;border:0;border-radius:.75rem;background:transparent;text-align:left;font-size:.9375rem}
+.language-menu .language-flag{display:grid;place-items:center;width:1.75rem;height:1.25rem;flex:none;overflow:hidden;border:1px solid #00000012;border-radius:.25rem;box-shadow:0 1px 2px #20203412}
+.language-menu .language-flag svg{display:block;width:100%;height:100%;fill:initial;stroke:none}
+.language-menu .language-check{visibility:hidden;margin-left:auto;color:var(--blue);font-size:1rem;font-weight:700}
 .language-menu button[aria-pressed="true"]{color:var(--blue);font-weight:600;background:#0066cc0d}
-.language-menu button[aria-pressed="true"] span{visibility:visible}
+.language-menu button[aria-pressed="true"] .language-check{visibility:visible}
 .tools-entry svg{stroke:currentColor;fill:none}
 .tools-heading{position:relative;padding-top:0;margin-bottom:2rem}
 .tools-heading h1{font-size:2.125rem}
@@ -224,13 +226,14 @@ button{transition:background 140ms ease-out,transform 140ms ease-out}button:acti
 .tile.service-off,.tile.service-off:hover{background:#fff;box-shadow:var(--shadow)}
 @media(prefers-contrast:more){.tile.connected:not(.service-off),.tile.connected:not(.service-off):hover{border:2px solid var(--green);background:#fff;box-shadow:var(--shadow),inset 0 0 0 1px #fff,inset 0 0 22px -9px #2f8a4d66}}
 /* Assistant setup: one workspace, a quiet step list and contextual evidence. */
-.app.assistant-view{width:min(100%,64rem)}
-.assistant-heading{margin-bottom:1.75rem}.assistant-heading .page-nav{margin-bottom:1.75rem}.assistant-heading h1{font-size:2.25rem;letter-spacing:-.035em}
+.app.assistant-view{width:min(100%,72rem)}
+.app.assistant-view{padding-top:max(4rem,calc(env(safe-area-inset-top) + 3rem))}
+.assistant-heading{margin-bottom:1.25rem}.assistant-heading .page-nav{margin-bottom:1.25rem}.assistant-heading h1{font-size:2.25rem;letter-spacing:-.035em}
 .assistant-toolbar{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1.25rem;flex-wrap:wrap}
 .assistant-switcher{display:flex;gap:.25rem;padding:.25rem;background:#e9e9ed;border-radius:.875rem}
 .assistant-switcher button{display:flex;align-items:center;justify-content:center;gap:.5rem;min-height:44px;border:0;border-radius:.625rem;background:transparent;padding:.5rem .875rem;font-size:.875rem;font-weight:550;white-space:nowrap;color:var(--subtle)}
 .assistant-switcher button[aria-pressed="true"]{background:var(--white);color:var(--accent);box-shadow:0 1px 3px #1d1d1f12}.assistant-switcher img{width:1.125rem;height:1.125rem;object-fit:contain}
-.assistant-local-toggle{display:inline-flex;align-items:center;gap:.5rem;min-height:44px;padding:.625rem .875rem;border:1px solid var(--border);border-radius:.75rem;background:var(--white);color:var(--ink);font-size:.875rem;font-weight:550}.assistant-local-toggle::before{content:"";width:.5rem;height:.5rem;border-radius:50%;background:var(--green)}.assistant-local-toggle[aria-expanded="true"]{background:var(--hover)}
+.assistant-local-toggle{display:inline-flex;align-items:center;gap:.5rem;min-height:44px;padding:.625rem 1rem;border:1px solid var(--border);border-radius:.75rem;background:var(--white);color:var(--ink);font-size:.875rem;font-weight:550}.assistant-local-toggle[aria-expanded="true"]{background:var(--hover)}
 /* At full width: 224px step rail + the remaining content = the workspace width. */
 .assistant-workspace{display:grid;grid-template-columns:14rem minmax(0,1fr);background:var(--white);border:1px solid var(--border);border-radius:1.25rem;overflow:hidden}
 .journey-sidebar{padding:1.5rem 1rem;background:#fafafa;border-right:1px solid var(--border)}
@@ -247,6 +250,31 @@ button{transition:background 140ms ease-out,transform 140ms ease-out}button:acti
 .setup-prompt{margin:1.5rem 0;padding:1.25rem 1.5rem;border-radius:1rem;background:var(--canvas);font-size:1.125rem;line-height:1.6;letter-spacing:-.015em}.setup-prompt p{margin:0}
 .setup-footer{display:flex;align-items:center;justify-content:flex-end;gap:.75rem;margin-top:2rem}.setup-footer-actions{display:flex;align-items:center;gap:.5rem}.setup-footer button{min-height:44px;padding:.625rem 1rem;border:0;border-radius:.75rem;font-size:.9375rem;font-weight:550}.setup-footer .setup-previous{background:none;color:var(--ink)}.setup-footer .setup-next{background:var(--accent);color:var(--white)}
 .full-button.guide-link{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;width:auto;text-decoration:none;margin:0;min-height:44px;font-size:.875rem}
+/* Short wide windows: the step must fit the viewport, with the capture beside the instructions. */
+@media(min-width:52rem) and (max-height:74rem){
+ .app.assistant-view{padding-top:max(3.5rem,calc(env(safe-area-inset-top) + 2.5rem));padding-bottom:max(.75rem,env(safe-area-inset-bottom))}
+ .assistant-heading{margin-bottom:.5rem}.assistant-heading .page-nav{margin-bottom:.5rem}.assistant-heading h1{font-size:2rem}
+ .assistant-toolbar{margin-bottom:.75rem}
+ .setup-stage{padding:1.25rem}
+ .setup-content{margin-top:.75rem;display:grid;grid-template-columns:minmax(0,.82fr) minmax(0,1.18fr);gap:1rem 1.5rem;align-items:start;align-content:start}
+ .setup-content>*{grid-column:1;min-width:0}
+ .setup-content>.guide-capture{grid-column:2;grid-row:1 / span 3;align-self:start;margin:0;min-height:0;display:flex;flex-direction:column}
+ .setup-content>.guide-link{justify-self:start}
+ .setup-content>.guide-capture .guide-shot{width:100%;height:auto;max-height:none;object-fit:fill}
+ .setup-link{flex-direction:column;align-items:stretch;gap:.5rem;padding:.875rem}
+ .setup-link .copy-pill{justify-content:center}
+ .journey-field{grid-template-columns:1fr;gap:.125rem;padding:.375rem 0}
+ .journey-field dt{font-size:.8125rem}
+ .guide-path{margin-top:.875rem}
+ .setup-prompt{margin:.875rem 0;padding:1rem;font-size:1rem}
+ .setup-footer{margin-top:.75rem}
+}
+@media(min-width:52rem) and (max-height:46rem){
+ .setup-stage{padding:1rem}
+ .setup-link{padding:.75rem}
+ .setup-footer{margin-top:.5rem}
+ .journey-field{padding:.25rem 0}
+}
 .assistant-view .primary{background:var(--accent);color:var(--white)}
 .assistant-view .guide-link:hover{filter:brightness(.92)}
 .assistant-view .copy-pill{color:var(--accent)}
@@ -258,9 +286,9 @@ button{transition:background 140ms ease-out,transform 140ms ease-out}button:acti
 /* Screenshot viewer: the page stays behind a dark scrim; the image opens in place. */
 .lightbox{position:fixed;inset:0;z-index:50;width:100%;height:100%;max-width:none;max-height:none;margin:0;padding:3.5rem;border:0;display:none;place-items:center;background:#000}.lightbox[open]{display:grid;animation:lightbox-in 180ms ease-out}.lightbox::backdrop{background:#000}.lightbox img{display:block;max-width:100%;max-height:100%;border-radius:.75rem;box-shadow:0 24px 80px #00000080}.lightbox-close{position:fixed;top:max(1rem,env(safe-area-inset-top));right:max(1rem,env(safe-area-inset-right));display:grid;place-items:center;width:48px;height:48px;padding:0;border:0;border-radius:50%;background:#ffffff1f;color:#fff;font-size:1.75rem;line-height:1;backdrop-filter:blur(12px)}.lightbox-close:hover{background:#ffffff33}body.lightbox-open{overflow:hidden}@keyframes lightbox-in{from{opacity:0}to{opacity:1}}
 @media(hover:hover) and (pointer:fine){.assistant-switcher button:not([aria-pressed="true"]):hover,.journey-node:not([aria-current]):hover,.setup-footer button:hover,.assistant-entry:hover,.assistant-local-toggle:hover{background:var(--hover);color:var(--ink)}}
-@media(max-width:52rem){.assistant-workspace{grid-template-columns:12rem minmax(0,1fr)}.journey-sidebar{padding:1.25rem .75rem}.setup-stage{padding:1.5rem}.assistant-toolbar{gap:.5rem 1rem}.journey-field{grid-template-columns:7rem minmax(0,1fr)}}
-@media(max-width:40rem){.assistant-heading{margin-bottom:1.5rem}.assistant-heading .page-nav{margin-bottom:1.5rem}.assistant-heading h1{font-size:1.875rem}.assistant-toolbar{margin-bottom:1rem}.assistant-switcher{width:100%;display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}.assistant-switcher button{min-width:0;flex-direction:column;padding:.5rem .125rem;font-size:.75rem;gap:.25rem}.assistant-switcher img{width:1rem;height:1rem}.assistant-local-toggle{width:100%;justify-content:center}.assistant-workspace{grid-template-columns:minmax(0,1fr)}.journey-sidebar{padding:1rem;border-right:0;border-bottom:1px solid var(--border)}.journey-steps{grid-template-columns:repeat(4,minmax(0,1fr));gap:.25rem}.journey-node{flex-direction:column;justify-content:center;gap:.5rem;text-align:center;padding:.5rem .125rem;font-size:.75rem;min-height:4.25rem}.journey-long{display:none}.journey-short{display:inline}.setup-stage{padding:1.5rem 1.25rem}.setup-stage h2{font-size:1.5rem}.setup-content{min-height:0}.setup-link{flex-direction:column;align-items:stretch;gap:.75rem}.setup-link .copy-pill{justify-content:center}.journey-field{grid-template-columns:1fr;gap:.25rem;padding:.75rem 0}.setup-footer{gap:.5rem}.setup-footer button{padding:.625rem .75rem}.setup-prompt{font-size:1rem;padding:1rem}.assistant-confirm-actions{flex-direction:column}.lightbox{padding:1rem;padding-top:4.5rem}}
-@media(max-width:360px){.assistant-switcher{grid-template-columns:repeat(2,minmax(0,1fr))}.assistant-switcher button{flex-direction:row;gap:.5rem}.setup-stage{padding:1.25rem 1rem}.setup-footer-actions{gap:.25rem}}
+@media(max-width:52rem){.assistant-workspace{grid-template-columns:12rem minmax(0,1fr)}.journey-sidebar{padding:1.25rem .75rem}.setup-stage{padding:1.25rem}.assistant-toolbar{gap:.5rem 1rem}.journey-field{grid-template-columns:7rem minmax(0,1fr);padding:.625rem 0}.setup-link{padding:.875rem}.setup-footer{margin-top:1.25rem}}
+@media(max-width:40rem){.app.assistant-view{padding-top:max(3.5rem,calc(env(safe-area-inset-top) + 2.5rem));padding-bottom:max(.75rem,env(safe-area-inset-bottom))}.assistant-heading{margin-bottom:.75rem}.assistant-heading .page-nav{margin-bottom:.75rem}.assistant-heading h1{font-size:1.75rem}.assistant-toolbar{margin-bottom:.625rem;gap:.375rem}.assistant-switcher{width:100%;display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}.assistant-switcher button{min-width:0;flex-direction:column;padding:.375rem .125rem;font-size:.75rem;gap:.25rem;min-height:44px}.assistant-switcher img{width:1rem;height:1rem}.assistant-local-toggle{width:100%;min-height:38px;justify-content:center;padding:.4rem .75rem}.assistant-workspace{grid-template-columns:minmax(0,1fr)}.journey-sidebar{padding:.5rem .75rem;border-right:0;border-bottom:1px solid var(--border)}.journey-steps{grid-template-columns:repeat(3,minmax(0,1fr));gap:.25rem}.journey-node{flex-direction:column;justify-content:center;gap:.125rem;text-align:center;padding:.25rem .125rem;font-size:.6875rem;min-height:2.75rem}.journey-number{width:1.25rem;height:1.25rem;font-size:.6875rem}.journey-long{display:none}.journey-short{display:inline}.setup-stage{padding:1rem}.setup-stage h2{font-size:1.375rem}.setup-content{margin-top:.5rem;min-height:0}.setup-link{flex-direction:column;align-items:stretch;gap:.5rem;padding:.75rem}.setup-link-label{font-size:.75rem;margin-bottom:.25rem}.setup-link code{font-size:.75rem;line-height:1.4}.setup-link .copy-pill{justify-content:center;padding:0 .5rem;min-width:44px;font-size:.75rem}.journey-field{grid-template-columns:7rem minmax(0,1fr);gap:.5rem;padding:.5rem 0;font-size:.875rem}.guide-path{margin-top:.5rem;font-size:.8125rem;gap:.375rem}.guide-path li{gap:.375rem}.guide-capture{margin-top:.75rem}.guide-shot{max-height:110px;object-fit:contain}.setup-footer{margin-top:.75rem;gap:.5rem}.setup-footer button{padding:.5rem .75rem;min-height:40px}.setup-prompt{font-size:.9375rem;padding:.75rem 1rem;margin:1rem 0}.assistant-confirm-actions{flex-direction:column}.lightbox{padding:1rem;padding-top:4.5rem}}
+@media(max-width:360px){.assistant-switcher{grid-template-columns:repeat(4,minmax(0,1fr))}.assistant-switcher button{flex-direction:column;gap:.25rem}.setup-stage{padding:1rem}.setup-footer-actions{gap:.25rem}}
 .screen h1:focus,.screen h1:focus-visible{outline:none}
 </style></head>
 <body>
@@ -268,9 +296,9 @@ button{transition:background 140ms ease-out,transform 140ms ease-out}button:acti
 <div class="language-control">
  <button id="language-button" class="icon-button" type="button" aria-label="Change language" aria-expanded="false" aria-controls="language-menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h12M9 3v2M5 5c1 5 4 8 8 10M13 5c-1 5-4 8-9 11M14 21l4-10 4 10M15.5 17h5"/></svg></button>
  <div id="language-menu" class="language-menu" hidden role="group" aria-label="Language">
-  <button type="button" data-language="fr" lang="fr" aria-pressed="false">Français<span aria-hidden="true">✓</span></button>
-  <button type="button" data-language="es" lang="es" aria-pressed="false">Español<span aria-hidden="true">✓</span></button>
-  <button type="button" data-language="en" lang="en" aria-pressed="false">English<span aria-hidden="true">✓</span></button>
+   <button type="button" data-language="fr" lang="fr" aria-pressed="false"><span class="language-flag" aria-hidden="true"><svg viewBox="0 0 28 20"><path fill="#1d3f8f" d="M0 0h9.34v20H0z"/><path fill="#fff" d="M9.33 0h9.34v20H9.33z"/><path fill="#ed2939" d="M18.67 0H28v20h-9.33z"/></svg></span>Français<span class="language-check" aria-hidden="true">✓</span></button>
+   <button type="button" data-language="es" lang="es" aria-pressed="false"><span class="language-flag" aria-hidden="true"><svg viewBox="0 0 28 20"><path fill="#aa151b" d="M0 0h28v20H0z"/><path fill="#f1bf00" d="M0 5h28v10H0z"/><path fill="#aa151b" d="M7 7h3v5H7z"/><path fill="#f1bf00" d="M7.6 8h1.8v2H7.6z"/></svg></span>Español<span class="language-check" aria-hidden="true">✓</span></button>
+   <button type="button" data-language="en" lang="en" aria-pressed="false"><span class="language-flag" aria-hidden="true"><svg viewBox="0 0 28 20"><path fill="#012169" d="M0 0h28v20H0z"/><path stroke="#fff" stroke-width="5" d="m0 0 28 20M28 0 0 20"/><path stroke="#c8102e" stroke-width="2" d="m0 0 28 20M28 0 0 20"/><path stroke="#fff" stroke-width="8" d="M14 0v20M0 10h28"/><path stroke="#c8102e" stroke-width="4" d="M14 0v20M0 10h28"/></svg></span>English<span class="language-check" aria-hidden="true">✓</span></button>
  </div>
 </div>
 <div id="update-control" class="language-control update-control">
@@ -329,7 +357,7 @@ const translations={
  'Checking local setup…':['Vérification de la configuration locale…','Comprobando la configuración local…'],
  'Local app detected':['Application locale détectée','Aplicación local detectada'], 'Local setup is ready':['Configuration locale terminée','Configuración local lista'],
  'Restart the assistant to finish setup.':['Redémarre l’assistant pour terminer la configuration.','Reinicia el asistente para terminar la configuración.'],
- 'Set up on this computer':['Configurer sur cet ordinateur','Configurar en este ordenador'],
+ 'Set up local app':['Configurer l’appli locale','Configurar la app local'],
  'This updates the assistant’s MCP settings. Your other servers stay unchanged and a backup is created.':['Cette action modifie les réglages MCP de l’assistant. Tes autres serveurs restent inchangés et une sauvegarde est créée.','Esto actualiza los ajustes MCP del asistente. Tus otros servidores no cambian y se crea una copia de seguridad.'],
  'Confirm setup':['Confirmer la configuration','Confirmar configuración'], 'Configured':['Configuré','Configurado'],
  'No supported local app was found.':['Aucune application locale compatible n’a été détectée.','No se encontró una aplicación local compatible.'],
@@ -708,7 +736,7 @@ const assistantInfo={
 const assistantJourney={step:0};
 function assistantSwitcher(){return `<nav class="assistant-switcher" aria-label="${t('Your assistant')}">${Object.entries(assistantInfo).map(([id,info])=>`<button data-assistant="${id}" aria-pressed="${state.assistant===id}" aria-label="${t('Set up '+info.name)}"><img src="/assets/${id}.png" alt=""><span>${info.name}</span></button>`).join('')}</nav>`}
 function publicGuideLink(label='Your public link'){const ready=state.public&&state.tunnel.startsWith('Ready(')&&/^https:\/\//.test(state.link);return `<div class="setup-link"><div><span class="setup-link-label">${t(label)}</span>${ready?`<code>${esc(state.link)}</code>`:`<span>${t('Enable your public link')}</span>`}</div>${ready?`<button class="copy-pill" data-copy="assistant">${icon('copy')}<span>${t('Copy link')}</span></button>`:`<button class="copy-pill" data-screen="links">${t('Open link settings')}</button>`}</div>${ready?'':`<p class="setup-note">${t('Your public link is not ready. Open link settings and turn on From the web.')}</p>`}`}
-function guideCapture(file,caption){const path='/assets/'+file+'.webp';return `<figure class="guide-capture"><button class="guide-shot-link" type="button" data-lightbox="${path}" aria-label="${t('Enlarge screenshot')}"><img class="guide-shot" src="${path}" alt="${esc(t(caption))}" width="1600" height="929" loading="lazy" decoding="async"></button></figure>`}
+function guideCapture(file,caption){const path='/assets/'+file+'.webp';return `<figure class="guide-capture"><button class="guide-shot-link" type="button" data-lightbox="${path}" aria-label="${t('Enlarge screenshot')}"><img class="guide-shot" src="${path}" alt="${esc(t(caption))}" width="1440" height="1080" loading="lazy" decoding="async"></button></figure>`}
 function guideFields(fields){return `<dl class="journey-fields">${fields.map(([label,value])=>`<div class="journey-field"><dt>${t(label)}</dt><dd>${value}</dd></div>`).join('')}</dl>`}
 function guidePath(items){return `<ol class="guide-path" aria-label="${t('Click path')}">${items.map(text=>`<li><span data-server-text>${esc(text)}</span></li>`).join('')}</ol>`}
 function guideOpen(id){return `<a class="full-button primary guide-link" href="${assistantInfo[id].settings}" target="_blank" rel="noopener noreferrer">${t('Open '+assistantInfo[id].name+' settings')} <span aria-hidden="true">↗</span></a>`}
@@ -747,69 +775,53 @@ function assistantScreen(){
  const id=state.assistant,info=assistantInfo[id],step=assistantJourney.step;
  const labels=['Open settings','Add the server','Ask a question'],short=['Settings','Connect','Try it'];
  const guide=assistantGuide(id);
- return `<section style="--accent:${info.accent}"><header class="assistant-heading"><div class="page-nav"><button class="back" data-screen="home" aria-label="${t('Back to services')}">${icon('back')}</button></div><h1>${t('Connect an assistant')}</h1></header><div class="assistant-toolbar">${assistantSwitcher()}${info.local?`<button class="assistant-local-toggle" data-assistant-setup="${id}" aria-expanded="${state.assistantConfirm}" aria-controls="assistant-local" ${state.assistantBusy?'disabled':''}>${t('Set up on this computer')}</button>`:''}</div>${info.local&&state.assistantConfirm?assistantLocal(id):''}<div class="assistant-workspace assistant-journey"><aside class="journey-sidebar"><ol class="journey-steps" aria-label="${t('Setup steps')}">${labels.map((label,index)=>`<li><button class="journey-node" data-guide-step="${index}"${index===step?' aria-current="step"':''} aria-controls="setup-stage" aria-label="${index+1}. ${t(label)}"><span class="journey-number" aria-hidden="true">${index+1}</span><span class="journey-long">${t(label)}</span><span class="journey-short" aria-hidden="true">${t(short[index])}</span></button></li>`).join('')}</ol></aside><article class="setup-stage" id="setup-stage" aria-labelledby="setup-title"><h2 id="setup-title" tabindex="-1">${t(guide.title)}</h2><div class="setup-content">${guide.content}</div><footer class="setup-footer"><div class="setup-footer-actions">${step?`<button class="setup-previous" data-guide-previous>${t('Previous')}</button>`:''}<button class="setup-next" ${step===2?'data-screen="home"':'data-guide-next'}>${t(step===2?'Finish guide':'Continue')} <span aria-hidden="true">→</span></button></div></footer></article></div>${notice()}</section>`;
+ return `<section style="--accent:${info.accent}"><header class="assistant-heading"><div class="page-nav"><button class="back" data-screen="home" aria-label="${t('Back to services')}">${icon('back')}</button></div><h1>${t('Connect an assistant')}</h1></header><div class="assistant-toolbar">${assistantSwitcher()}${info.local?`<button class="assistant-local-toggle" data-assistant-setup="${id}" aria-expanded="${state.assistantConfirm}" aria-controls="assistant-local" ${state.assistantBusy?'disabled':''}>${t('Set up local app')}</button>`:''}</div>${info.local&&state.assistantConfirm?assistantLocal(id):''}<div class="assistant-workspace assistant-journey"><aside class="journey-sidebar"><ol class="journey-steps" aria-label="${t('Setup steps')}">${labels.map((label,index)=>`<li><button class="journey-node" data-guide-step="${index}"${index===step?' aria-current="step"':''} aria-controls="setup-stage" aria-label="${index+1}. ${t(label)}"><span class="journey-number" aria-hidden="true">${index+1}</span><span class="journey-long">${t(label)}</span><span class="journey-short" aria-hidden="true">${t(short[index])}</span></button></li>`).join('')}</ol></aside><article class="setup-stage" id="setup-stage" aria-labelledby="setup-title"><h2 id="setup-title" tabindex="-1">${t(guide.title)}</h2><div class="setup-content">${guide.content}</div><footer class="setup-footer"><div class="setup-footer-actions">${step?`<button class="setup-previous" data-guide-previous>${t('Previous')}</button>`:''}<button class="setup-next" ${step===2?'data-screen="home"':'data-guide-next'}>${t(step===2?'Finish guide':'Continue')} <span aria-hidden="true">→</span></button></div></footer></article></div>${notice()}</section>`;
 }
 async function openAssistant(id){if(!assistantInfo[id]||state.assistantBusy)return;state.assistant=id;assistantJourney.step=0;state.assistantStatus=null;state.assistantConfirm=false;state.notice=null;state.screen='assistant';render();if(!assistantInfo[id].local)return;try{const status=await api('/assistant/'+id);if(state.screen==='assistant'&&state.assistant===id){state.assistantStatus=status;render()}}catch(error){if(state.screen==='assistant'&&state.assistant===id){state.assistantStatus={detected:false};state.notice={text:error.message,error:true};render()}}}
 async function configureAssistant(id){state.assistantBusy=true;state.notice=null;render();try{state.assistantStatus=await api('/action',{action:'assistant_setup',assistant:id})}catch(error){state.notice={text:error.message,error:true}}finally{state.assistantBusy=false;if(state.screen==='assistant'&&state.assistant===id)render()}}
 async function api(path,data){const response=await fetch(path,{method:data?'POST':'GET',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:data?JSON.stringify(data):undefined});const value=await response.json();if(!response.ok)throw Error(value.error||'Request failed');return value;}
 const names={moodle:'Moodle',omnivox:'Omnivox',brightspace:'Brightspace',canvas:'Canvas'};
-// 140 établissements vérifiés par HTTP (200 + titre du portail) le 2026-11-08.
+// 280 établissements vérifiés par HTTP (200 + titre du portail) le 2026-11-09.
 // Un portail principal par établissement ; ajouter une ligne suffit.
 const schools=[
- {n:'Acadia University',s:'moodle',u:'https://moodle.acadiau.ca',a:'acadia university'},
- {n:'Algonquin College',s:'brightspace',u:'https://brightspace.algonquincollege.com',a:'algonquin college ottawa'},
- {n:'Athabasca University',s:'brightspace',u:'https://brightspace.athabascau.ca',a:'athabasca university'},
- {n:"Bishop's University",s:'moodle',u:'https://moodle.ubishops.ca',a:'bishops bishop university'},
- {n:'Bow Valley College',s:'brightspace',u:'https://d2l.bowvalleycollege.ca',a:'bow valley college calgary'},
- {n:'Brandon University',s:'moodle',u:'https://moodle.brandonu.ca',a:'brandon university'},
- {n:'Brock University',s:'brightspace',u:'https://lms.brocku.ca',a:'brock university'},
- {n:'Cambrian College',s:'moodle',u:'https://moodle.cambriancollege.ca',a:'cambrian college sudbury'},
- {n:'Capilano University',s:'moodle',u:'https://moodle.capilanou.ca',a:'capilano university'},
+ {n:'Acadia University',s:'moodle',u:'https://moodle.acadiau.ca',a:'acadia university acadiau'},
+ {n:'Algonquin College',s:'brightspace',u:'https://brightspace.algonquincollege.com',a:'algonquin college ottawa algonquincollege'},
+ {n:'Arizona State University',s:'canvas',u:'https://canvas.asu.edu',a:'arizona state university asu'},
+ {n:'Athabasca University',s:'brightspace',u:'https://brightspace.athabascau.ca',a:'athabasca university athabascau'},
+ {n:'Baylor University',s:'canvas',u:'https://canvas.baylor.edu',a:'baylor university'},
+ {n:"Bishop's University",s:'moodle',u:'https://moodle.ubishops.ca',a:'bishops bishop university ubishops'},
+ {n:'Boise State University',s:'canvas',u:'https://canvas.boisestate.edu',a:'boise state university boisestate'},
+ {n:'Bordeaux INP',s:'moodle',u:'https://moodle.bordeaux-inp.fr',a:'bordeaux inp'},
+ {n:'Bow Valley College',s:'brightspace',u:'https://d2l.bowvalleycollege.ca',a:'bow valley college calgary bowvalleycollege'},
+ {n:'Brandeis University',s:'moodle',u:'https://moodle.brandeis.edu',a:'brandeis university'},
+ {n:'Brandon University',s:'moodle',u:'https://moodle.brandonu.ca',a:'brandon university brandonu'},
+ {n:'Brigham Young University',s:'canvas',u:'https://canvas.byu.edu',a:'brigham young university byu'},
+ {n:'Brock University',s:'brightspace',u:'https://lms.brocku.ca',a:'brock university brocku'},
+ {n:'Brown University',s:'canvas',u:'https://canvas.brown.edu',a:'brown university'},
+ {n:'California Institute of Technology',s:'canvas',u:'https://canvas.caltech.edu',a:'california institute technology caltech'},
+ {n:'California Polytechnic State University',s:'canvas',u:'https://canvas.calpoly.edu',a:'california polytechnic state university calpoly'},
+ {n:'Cambrian College',s:'moodle',u:'https://moodle.cambriancollege.ca',a:'cambrian college sudbury cambriancollege'},
+ {n:'Capilano University',s:'moodle',u:'https://moodle.capilanou.ca',a:'capilano university capilanou'},
  {n:'Carleton University',s:'brightspace',u:'https://brightspace.carleton.ca',a:'carleton university'},
- {n:'Champlain College Lennoxville',s:'omnivox',u:'https://champlaincollege-lennoxville.omnivox.ca',a:'champlain lennoxville college champlaincollege-lennoxville'},
- {n:'Champlain College Saint-Lambert',s:'omnivox',u:'https://champlaincollege-st-lambert.omnivox.ca',a:'champlain saint-lambert college saint lambert champlaincollege-st-lambert'},
- {n:'Champlain College Saint-Lawrence',s:'omnivox',u:'https://slc.omnivox.ca',a:'champlain saint-lawrence college saint lawrence slc'},
- {n:'College of New Caledonia',s:'brightspace',u:'https://brightspace.cnc.bc.ca',a:'college new caledonia nouvelle-caledonie prince george'},
- {n:'College of the North Atlantic',s:'brightspace',u:'https://d2l.cna.nl.ca',a:'college north atlantic terre-neuve'},
- {n:'Collège Ahuntsic',s:'omnivox',u:'https://collegeahuntsic.omnivox.ca',a:'ahuntsic college collegeahuntsic'},
- {n:'Collège André-Grasset',s:'omnivox',u:'https://grasset.omnivox.ca',a:'grasset college andre'},
- {n:'Collège Bart',s:'omnivox',u:'https://bart.omnivox.ca',a:'college bart'},
- {n:'Collège Ellis',s:'omnivox',u:'https://ellis.omnivox.ca',a:'college ellis trois-rivieres'},
- {n:'Collège Gérald-Godin',s:'omnivox',u:'https://cgodin.omnivox.ca',a:'cgodin college gerald godin gerald-godin'},
- {n:'Collège Inter-Dec',s:'omnivox',u:'https://interdec.omnivox.ca',a:'college inter dec interdec inter-dec'},
- {n:'Collège Jean-de-Brébeuf',s:'omnivox',u:'https://brebeuf.omnivox.ca',a:'brebeuf college jean'},
- {n:'Collège LaSalle',s:'omnivox',u:'https://collegelasalle.omnivox.ca',a:'lasalle college collegelasalle'},
- {n:'Collège Laflèche',s:'omnivox',u:'https://clafleche.omnivox.ca',a:'college lafleche clafleche trois-rivieres'},
- {n:'Collège Lionel-Groulx',s:'moodle',u:'https://clg.moodle.decclic.qc.ca',a:'clg college lionel groulx'},
- {n:'Collège Marianopolis',s:'omnivox',u:'https://marianopolis.omnivox.ca',a:'marianopolis college'},
- {n:'Collège Mathieu',s:'omnivox',u:'https://collegemathieu.omnivox.ca',a:'college mathieu collegemathieu gravalbourg'},
- {n:'Collège Montmorency',s:'moodle',u:'https://cmontmorency.moodle.decclic.qc.ca',a:'cmontmorency college montmorency'},
- {n:'Collège Mérici',s:'omnivox',u:'https://college-merici.omnivox.ca',a:'college merici college-merici'},
- {n:'Collège Regina Assumpta',s:'moodle',u:'https://moodle.reginaassumpta.qc.ca',a:'cra college regina assumpta'},
- {n:'Collège Sainte-Anne',s:'omnivox',u:'https://sainteanne.omnivox.ca',a:'sainte-anne college sainte anne sainteanne'},
- {n:'Collège Universel',s:'omnivox',u:'https://collegeuniversel.omnivox.ca',a:'college universel collegeuniversel gatineau'},
- {n:"Collège d'Alma",s:'moodle',u:'https://moodle.collegealma.ca',a:'alma college'},
- {n:'Collège de Maisonneuve',s:'omnivox',u:'https://cmaisonneuve.omnivox.ca',a:'cmaisonneuve college maisonneuve'},
- {n:'Collège de Montréal',s:'moodle',u:'https://cours.college-montreal.qc.ca',a:'cdm college montreal cours de'},
+ {n:'Carnegie Mellon University',s:'canvas',u:'https://canvas.cmu.edu',a:'carnegie mellon university cmu'},
+ {n:'Case Western Reserve University',s:'canvas',u:'https://canvas.case.edu',a:'case western reserve university'},
  {n:'Cégep André-Laurendeau',s:'omnivox',u:'https://claurendeau.omnivox.ca',a:'claurendeau cegep andre laurendeau'},
  {n:'Cégep Beauce-Appalaches',s:'omnivox',u:'https://cegepba.omnivox.ca',a:'cegepba cegep beauce appalaches'},
- {n:'Cégep Garneau',s:'omnivox',u:'https://cegepgarneau.omnivox.ca',a:'francois-xavier-garneau cegep garneau cegepgarneau'},
- {n:'Cégep Heritage College',s:'omnivox',u:'https://cegep-heritage.omnivox.ca',a:'heritage cegep college cegep-heritage'},
- {n:'Cégep Limoilou',s:'omnivox',u:'https://climoilou.omnivox.ca',a:'limoilou quebec cegep climoilou'},
- {n:'Cégep Marie-Victorin',s:'omnivox',u:'https://collegemv.omnivox.ca',a:'collegemv cegep marie victorin marie-victorin'},
- {n:'Cégep Saint-Jean-sur-Richelieu',s:'omnivox',u:'https://cstjean.omnivox.ca',a:'cegep saint jean sur richelieu cstjean saint-jean'},
  {n:'Cégep de Baie-Comeau',s:'omnivox',u:'https://cegep-baie-comeau.omnivox.ca',a:'cegep-baie-comeau cegep baie comeau baie-comeau'},
  {n:'Cégep de Bois-de-Boulogne',s:'omnivox',u:'https://bdeb.omnivox.ca',a:'bdeb bois-de-boulogne cegep bois boulogne'},
  {n:'Cégep de Chicoutimi',s:'omnivox',u:'https://cchic.omnivox.ca',a:'cegep chicoutimi cchic'},
  {n:'Cégep de Drummondville',s:'omnivox',u:'https://cegepdrummond.omnivox.ca',a:'cegepdrummond cegep drummondville'},
  {n:'Cégep de Granby Haute-Yamaska',s:'omnivox',u:'https://cegepgranby.omnivox.ca',a:'cegepgranby cegep granby haute yamaska'},
  {n:'Cégep de Jonquière',s:'moodle',u:'https://moodle.cegepjonquiere.ca',a:'cegepjonquiere cegep jonquiere'},
+ {n:"Cégep de l'Abitibi-Témiscamingue",s:'omnivox',u:'https://cegepat.omnivox.ca',a:'cegepat cegep abitibi temiscamingue rouyn'},
+ {n:"Cégep de l'Outaouais",s:'omnivox',u:'https://cegepoutaouais.omnivox.ca',a:'cegepoutaouais cegep outaouais gatineau hull'},
+ {n:'Cégep de la Gaspésie et des Îles',s:'omnivox',u:'https://cegepgim.omnivox.ca',a:'cegepgim cegep gaspesie iles'},
  {n:'Cégep de Lévis',s:'omnivox',u:'https://cegeplevis.omnivox.ca',a:'cegeplevis cegep levis'},
  {n:'Cégep de Matane',s:'omnivox',u:'https://cegep-matane.omnivox.ca',a:'cegep-matane cegep matane'},
  {n:'Cégep de Rimouski',s:'omnivox',u:'https://cegep-rimouski.omnivox.ca',a:'cegep-rimouski cegep rimouski'},
  {n:'Cégep de Rivière-du-Loup',s:'omnivox',u:'https://cegeprdl.omnivox.ca',a:'cegeprdl cegep riviere loup riviere-du-loup'},
  {n:'Cégep de Rosemont',s:'omnivox',u:'https://crosemont.omnivox.ca',a:'cegep rosemont crosemont'},
- {n:'Cégep de Saint-Félicien',s:'moodle',u:'https://moodle.cegepstfe.ca',a:'stfe cegep saint felicien saint-felicien'},
+ {n:'Cégep de Saint-Félicien',s:'moodle',u:'https://moodle.cegepstfe.ca',a:'stfe cegep saint felicien saint-felicien cegepstfe'},
  {n:'Cégep de Saint-Hyacinthe',s:'omnivox',u:'https://cegepsth.omnivox.ca',a:'cegepsth cegep saint hyacinthe saint-hyacinthe'},
  {n:'Cégep de Saint-Jérôme',s:'omnivox',u:'https://cstj.omnivox.ca',a:'cstj cegep saint jerome saint-jerome'},
  {n:'Cégep de Saint-Laurent',s:'omnivox',u:'https://cegep-st-laurent.omnivox.ca',a:'cegepsl cegep saint laurent cegep-st-laurent saint-laurent'},
@@ -822,84 +834,240 @@ const schools=[
  {n:'Cégep de Trois-Rivières',s:'omnivox',u:'https://cegeptr.omnivox.ca',a:'cegeptr cegep trois rivieres trois-rivieres'},
  {n:'Cégep de Valleyfield',s:'omnivox',u:'https://colval.omnivox.ca',a:'colval cegep valleyfield'},
  {n:'Cégep de Victoriaville',s:'omnivox',u:'https://cgpvicto.omnivox.ca',a:'cgpvicto cegep victoriaville'},
- {n:"Cégep de l'Abitibi-Témiscamingue",s:'omnivox',u:'https://cegepat.omnivox.ca',a:'cegepat cegep abitibi temiscamingue rouyn'},
- {n:"Cégep de l'Outaouais",s:'omnivox',u:'https://cegepoutaouais.omnivox.ca',a:'cegepoutaouais cegep outaouais gatineau hull'},
- {n:'Cégep de la Gaspésie et des Îles',s:'omnivox',u:'https://cegepgim.omnivox.ca',a:'cegepgim cegep gaspesie iles'},
  {n:'Cégep du Vieux Montréal',s:'omnivox',u:'https://cvm.omnivox.ca',a:'vieux montreal cvm cegep'},
  {n:'Cégep Édouard-Montpetit',s:'omnivox',u:'https://cegepmontpetit.omnivox.ca',a:'edouard-montpetit longueuil cegep edouard montpetit cegepmontpetit'},
+ {n:'Cégep Garneau',s:'omnivox',u:'https://cegepgarneau.omnivox.ca',a:'francois-xavier-garneau cegep garneau cegepgarneau'},
+ {n:'Cégep Heritage College',s:'omnivox',u:'https://cegep-heritage.omnivox.ca',a:'heritage cegep college cegep-heritage'},
+ {n:'Cégep Limoilou',s:'omnivox',u:'https://climoilou.omnivox.ca',a:'limoilou quebec cegep climoilou'},
+ {n:'Cégep Marie-Victorin',s:'omnivox',u:'https://collegemv.omnivox.ca',a:'collegemv cegep marie victorin marie-victorin'},
+ {n:'Cégep Saint-Jean-sur-Richelieu',s:'omnivox',u:'https://cstjean.omnivox.ca',a:'cegep saint jean sur richelieu cstjean saint-jean'},
+ {n:'Champlain College Lennoxville',s:'omnivox',u:'https://champlaincollege-lennoxville.omnivox.ca',a:'champlain lennoxville college champlaincollege-lennoxville'},
+ {n:'Champlain College Saint-Lambert',s:'omnivox',u:'https://champlaincollege-st-lambert.omnivox.ca',a:'champlain saint-lambert college saint lambert champlaincollege-st-lambert'},
+ {n:'Champlain College Saint-Lawrence',s:'omnivox',u:'https://slc.omnivox.ca',a:'champlain saint-lawrence college saint lawrence slc'},
+ {n:'Clemson University',s:'canvas',u:'https://canvas.clemson.edu',a:'clemson university'},
+ {n:'Collège Ahuntsic',s:'omnivox',u:'https://collegeahuntsic.omnivox.ca',a:'ahuntsic college collegeahuntsic'},
+ {n:'Collège André-Grasset',s:'omnivox',u:'https://grasset.omnivox.ca',a:'grasset college andre'},
+ {n:'Collège Bart',s:'omnivox',u:'https://bart.omnivox.ca',a:'college bart'},
+ {n:"Collège d'Alma",s:'moodle',u:'https://moodle.collegealma.ca',a:'alma college collegealma'},
+ {n:'Collège de Maisonneuve',s:'omnivox',u:'https://cmaisonneuve.omnivox.ca',a:'cmaisonneuve college maisonneuve'},
+ {n:'Collège de Montréal',s:'moodle',u:'https://cours.college-montreal.qc.ca',a:'cdm college montreal cours de'},
+ {n:'Collège Ellis',s:'omnivox',u:'https://ellis.omnivox.ca',a:'college ellis trois-rivieres'},
+ {n:'Collège Gérald-Godin',s:'omnivox',u:'https://cgodin.omnivox.ca',a:'cgodin college gerald godin gerald-godin'},
+ {n:'Collège Inter-Dec',s:'omnivox',u:'https://interdec.omnivox.ca',a:'college inter dec interdec inter-dec'},
+ {n:'Collège Jean-de-Brébeuf',s:'omnivox',u:'https://brebeuf.omnivox.ca',a:'brebeuf college jean'},
+ {n:'Collège Laflèche',s:'omnivox',u:'https://clafleche.omnivox.ca',a:'college lafleche clafleche trois-rivieres'},
+ {n:'Collège LaSalle',s:'omnivox',u:'https://collegelasalle.omnivox.ca',a:'lasalle college collegelasalle'},
+ {n:'Collège Lionel-Groulx',s:'moodle',u:'https://clg.moodle.decclic.qc.ca',a:'clg college lionel groulx'},
+ {n:'Collège Marianopolis',s:'omnivox',u:'https://marianopolis.omnivox.ca',a:'marianopolis college'},
+ {n:'Collège Mathieu',s:'omnivox',u:'https://collegemathieu.omnivox.ca',a:'college mathieu collegemathieu gravalbourg'},
+ {n:'Collège Mérici',s:'omnivox',u:'https://college-merici.omnivox.ca',a:'college merici college-merici'},
+ {n:'Collège Montmorency',s:'moodle',u:'https://cmontmorency.moodle.decclic.qc.ca',a:'cmontmorency college montmorency'},
+ {n:'College of New Caledonia',s:'brightspace',u:'https://brightspace.cnc.bc.ca',a:'college new caledonia nouvelle-caledonie prince george cnc'},
+ {n:'College of the North Atlantic',s:'brightspace',u:'https://d2l.cna.nl.ca',a:'college north atlantic terre-neuve cna'},
+ {n:'Collège Regina Assumpta',s:'moodle',u:'https://moodle.reginaassumpta.qc.ca',a:'cra college regina assumpta reginaassumpta'},
+ {n:'Collège Sainte-Anne',s:'omnivox',u:'https://sainteanne.omnivox.ca',a:'sainte-anne college sainte anne sainteanne'},
+ {n:'Collège Universel',s:'omnivox',u:'https://collegeuniversel.omnivox.ca',a:'college universel collegeuniversel gatineau'},
+ {n:'Colorado State University',s:'canvas',u:'https://canvas.colostate.edu',a:'colorado state university colostate'},
+ {n:'Columbia University',s:'canvas',u:'https://courseworks2.columbia.edu',a:'columbia university courseworks2'},
+ {n:'Cornell University',s:'canvas',u:'https://canvas.cornell.edu',a:'cornell university'},
+ {n:'Creighton University',s:'canvas',u:'https://blueline.instructure.com',a:'creighton university blueline'},
+ {n:'CY Cergy Paris Université',s:'moodle',u:'https://cours.cyu.fr',a:'cergy cyu cy paris universite cours'},
+ {n:'Dartmouth College',s:'canvas',u:'https://canvas.dartmouth.edu',a:'dartmouth college'},
  {n:'Dawson College',s:'omnivox',u:'https://dawsoncollege.omnivox.ca',a:'dawson college dawsoncollege'},
- {n:'First Nations University of Canada',s:'brightspace',u:'https://learn.fnuniv.ca',a:'first nations university canada learn premieres'},
- {n:'Fleming College',s:'brightspace',u:'https://learn.flemingcollege.ca',a:'fleming college learn peterborough'},
- {n:'George Brown College',s:'brightspace',u:'https://learn.georgebrown.ca',a:'george brown college learn toronto'},
+ {n:'Drexel University',s:'canvas',u:'https://canvas.drexel.edu',a:'drexel university'},
+ {n:'Duke University',s:'canvas',u:'https://canvas.duke.edu',a:'duke university'},
+ {n:'École de technologie supérieure',s:'moodle',u:'https://ena.etsmtl.ca',a:'ets genie ecole technologie superieure ena etsmtl'},
+ {n:'École nationale de cirque',s:'omnivox',u:'https://ecolenationaledecirque.omnivox.ca',a:'ecole nationale cirque ecolenationaledecirque'},
+ {n:'EM Lyon',s:'moodle',u:'https://learn.em-lyon.com',a:'emlyon em lyon learn'},
+ {n:'ENS Paris',s:'moodle',u:'https://moodle.ens.psl.eu',a:'ens paris'},
+ {n:'First Nations University of Canada',s:'brightspace',u:'https://learn.fnuniv.ca',a:'first nations university canada learn premieres fnuniv'},
+ {n:'Fleming College',s:'brightspace',u:'https://learn.flemingcollege.ca',a:'fleming college learn peterborough flemingcollege'},
+ {n:'Florida International University',s:'canvas',u:'https://canvas.fiu.edu',a:'florida international university fiu'},
+ {n:'Florida State University',s:'canvas',u:'https://canvas.fsu.edu',a:'florida state university fsu'},
+ {n:'George Brown College',s:'brightspace',u:'https://learn.georgebrown.ca',a:'george brown college learn toronto georgebrown'},
+ {n:'George Mason University',s:'canvas',u:'https://canvas.gmu.edu',a:'george mason university gmu'},
+ {n:'George Washington University',s:'canvas',u:'https://canvas.gwu.edu',a:'george washington university gwu'},
+ {n:'Georgetown University',s:'canvas',u:'https://canvas.georgetown.edu',a:'georgetown university'},
+ {n:'Georgia Institute of Technology',s:'canvas',u:'https://canvas.gatech.edu',a:'georgia institute technology gatech'},
+ {n:'Grenoble École de Management',s:'moodle',u:'https://moodle.grenoble-em.com',a:'grenoble ecole management em'},
+ {n:'Grenoble INP',s:'moodle',u:'https://moodle.grenoble-inp.fr',a:'grenoble inp'},
+ {n:'Harvard University',s:'canvas',u:'https://canvas.harvard.edu',a:'harvard university'},
  {n:'HEC Montréal',s:'canvas',u:'https://zonecours.hec.ca',a:'hec zonecours gestion montreal'},
+ {n:'Howard University',s:'canvas',u:'https://canvas.howard.edu',a:'howard university'},
+ {n:'INALCO',s:'moodle',u:'https://moodle.inalco.fr',a:'inalco'},
+ {n:'Indiana University Bloomington',s:'canvas',u:'https://canvas.iu.edu',a:'indiana university bloomington'},
  {n:'INRS',s:'moodle',u:'https://moodle.inrs.ca',a:'recherche scientifique inrs'},
+ {n:'INSA Lyon',s:'moodle',u:'https://moodle.insa-lyon.fr',a:'insa lyon'},
+ {n:'INSA Rouen',s:'moodle',u:'https://moodle.insa-rouen.fr',a:'insa rouen'},
+ {n:'INSA Strasbourg',s:'moodle',u:'https://moodle.insa-strasbourg.fr',a:'insa strasbourg'},
+ {n:'INSA Toulouse',s:'moodle',u:'https://moodle.insa-toulouse.fr',a:'insa toulouse'},
  {n:"Institut de tourisme et d'hôtellerie du Québec",s:'moodle',u:'https://moodle.ithq.qc.ca',a:'ithq hotellerie tourisme institut quebec'},
+ {n:'Institut Polytechnique de Paris',s:'moodle',u:'https://moodle.ip-paris.fr',a:'ip paris institut polytechnique'},
+ {n:'Iowa State University',s:'canvas',u:'https://canvas.iastate.edu',a:'iowa state university iastate'},
+ {n:'ISAE-SUPAERO',s:'moodle',u:'https://online.isae-supaero.fr',a:'isae supaero online'},
  {n:'John Abbott College',s:'omnivox',u:'https://johnabbott.omnivox.ca',a:'john abbott college johnabbott'},
- {n:'Lambton College',s:'brightspace',u:'https://d2l.lambtoncollege.ca',a:'lambton college sarnia'},
+ {n:'Kansas State University',s:'canvas',u:'https://canvas.k-state.edu',a:'kansas state university k'},
+ {n:'Lambton College',s:'brightspace',u:'https://d2l.lambtoncollege.ca',a:'lambton college sarnia lambtoncollege'},
  {n:'Laurentian University',s:'brightspace',u:'https://d2l.laurentian.ca',a:'laurentian university laurentienne sudbury'},
  {n:'Lethbridge Polytechnic',s:'canvas',u:'https://lethbridge.instructure.com',a:'lethbridge polytechnic'},
+ {n:'Louisiana State University',s:'moodle',u:'https://moodle.lsu.edu',a:'louisiana state university lsu'},
  {n:'Manitoba Institute of Trades and Technology',s:'brightspace',u:'https://mylearning.mitt.ca',a:'manitoba institute trades technology mylearning mitt winnipeg'},
+ {n:'Marquette University',s:'brightspace',u:'https://d2l.mu.edu',a:'marquette university'},
+ {n:'Massachusetts Institute of Technology',s:'canvas',u:'https://canvas.mit.edu',a:'mit massachusetts institute technology'},
  {n:'McGill University',s:'brightspace',u:'https://mycourses2.mcgill.ca',a:'mcgill university mycourses2'},
  {n:'McMaster University',s:'brightspace',u:'https://avenue.mcmaster.ca',a:'mcmaster university avenue'},
- {n:'Memorial University of Newfoundland',s:'brightspace',u:'https://online.mun.ca',a:'memorial terre-neuve university newfoundland online'},
+ {n:'Memorial University of Newfoundland',s:'brightspace',u:'https://online.mun.ca',a:'memorial terre-neuve university newfoundland online mun'},
+ {n:'Michigan State University',s:'brightspace',u:'https://d2l.msu.edu',a:'michigan state university msu'},
  {n:'Mohawk College',s:'canvas',u:'https://mycanvas.mohawkcollege.ca',a:'mohawk college mycanvas hamilton'},
- {n:'Mount Saint Vincent University',s:'moodle',u:'https://learn.msvu.ca',a:'mount saint vincent university learn'},
+ {n:'Mount Saint Vincent University',s:'moodle',u:'https://learn.msvu.ca',a:'mount saint vincent university learn msvu'},
+ {n:'NEOMA Business School',s:'moodle',u:'https://online.neoma-bs.fr',a:'neoma business school online bs'},
  {n:'New Brunswick Community College',s:'brightspace',u:'https://elearning.nbcc.ca',a:'new brunswick community college elearning nbcc'},
- {n:'Niagara College',s:'brightspace',u:'https://brightspace.niagaracollege.ca',a:'niagara college'},
- {n:'North Island College',s:'brightspace',u:'https://mycourses.nic.bc.ca',a:'north island college mycourses'},
+ {n:'New Jersey Institute of Technology',s:'canvas',u:'https://canvas.njit.edu',a:'new jersey institute technology njit'},
+ {n:'Niagara College',s:'brightspace',u:'https://brightspace.niagaracollege.ca',a:'niagara college niagaracollege'},
+ {n:'North Carolina State University',s:'canvas',u:'https://canvas.ncsu.edu',a:'north carolina state university ncsu'},
+ {n:'North Island College',s:'brightspace',u:'https://mycourses.nic.bc.ca',a:'north island college mycourses nic'},
+ {n:'Northeastern University',s:'canvas',u:'https://canvas.northeastern.edu',a:'northeastern university'},
  {n:'Northern Alberta Institute of Technology',s:'brightspace',u:'https://lms.nait.ca',a:'northern alberta institute technology nait edmonton'},
- {n:'Northern Lights College',s:'brightspace',u:'https://d2l.nlc.bc.ca',a:'northern lights college'},
+ {n:'Northern Lights College',s:'brightspace',u:'https://d2l.nlc.bc.ca',a:'northern lights college nlc'},
+ {n:'Northwestern University',s:'canvas',u:'https://canvas.northwestern.edu',a:'northwestern university'},
  {n:'Nova Scotia Community College',s:'brightspace',u:'https://nscconline.brightspace.com',a:'nova scotia community college nscconline nscc'},
+ {n:'Ohio University',s:'canvas',u:'https://canvas.ohio.edu',a:'ohio university'},
+ {n:'Oklahoma State University',s:'canvas',u:'https://canvas.okstate.edu',a:'oklahoma state university okstate'},
+ {n:'Oregon State University',s:'canvas',u:'https://canvas.oregonstate.edu',a:'oregon state university oregonstate'},
  {n:'Polytechnique Montréal',s:'moodle',u:'https://moodle.polymtl.ca',a:'poly polymtl genie polytechnique montreal'},
- {n:"Queen's University",s:'brightspace',u:'https://onq.queensu.ca',a:'queens kingston queen university onq'},
- {n:'Red River College Polytechnic',s:'brightspace',u:'https://learn.rrc.ca',a:'red river college polytechnic learn winnipeg'},
- {n:'Royal Roads University',s:'moodle',u:'https://moodle.royalroads.ca',a:'royal roads university'},
+ {n:'Portland State University',s:'canvas',u:'https://learn.pdx.edu',a:'portland state university learn pdx'},
+ {n:'Purdue University',s:'brightspace',u:'https://purdue.brightspace.com',a:'purdue university'},
+ {n:"Queen's University",s:'brightspace',u:'https://onq.queensu.ca',a:'queens kingston queen university onq queensu'},
+ {n:'Red River College Polytechnic',s:'brightspace',u:'https://learn.rrc.ca',a:'red river college polytechnic learn winnipeg rrc'},
+ {n:'Rochester Institute of Technology',s:'brightspace',u:'https://mycourses.rit.edu',a:'rochester institute technology mycourses rit'},
+ {n:'Royal Roads University',s:'moodle',u:'https://moodle.royalroads.ca',a:'royal roads university royalroads'},
+ {n:'Saint Louis University',s:'canvas',u:'https://canvas.slu.edu',a:'saint louis university slu'},
  {n:"Saint Mary's University",s:'brightspace',u:'https://smu.brightspace.com',a:'saint mary university smu halifax'},
+ {n:'San Diego State University',s:'canvas',u:'https://canvas.sdsu.edu',a:'san diego state university sdsu'},
+ {n:'San Francisco State University',s:'canvas',u:'https://canvas.sfsu.edu',a:'san francisco state university sfsu'},
+ {n:'San Jose State University',s:'canvas',u:'https://sjsu.instructure.com',a:'san jose state university sjsu'},
  {n:'Selkirk College',s:'moodle',u:'https://learn.selkirk.ca',a:'selkirk college learn nelson'},
- {n:'Sheridan College',s:'canvas',u:'https://lms.sheridancollege.ca',a:'sheridan college'},
+ {n:'Séminaire de Sherbrooke',s:'omnivox',u:'https://seminaire-sherbrooke.omnivox.ca',a:'seminaire sherbrooke seminaire-sherbrooke'},
+ {n:'Sheridan College',s:'canvas',u:'https://lms.sheridancollege.ca',a:'sheridan college sheridancollege'},
  {n:'Simon Fraser University',s:'canvas',u:'https://canvas.sfu.ca',a:'sfu simon fraser university'},
+ {n:'SKEMA Business School',s:'moodle',u:'https://moodle.skema.edu',a:'skema business school'},
  {n:'Southern Alberta Institute of Technology',s:'brightspace',u:'https://learn.sait.ca',a:'southern alberta institute technology learn sait calgary'},
  {n:'St. Clair College',s:'moodle',u:'https://lms1.stclaircollege.ca',a:'st clair college lms1 saint windsor'},
  {n:'St. Francis Xavier University',s:'moodle',u:'https://moodle.stfx.ca',a:'st francis xavier university stfx'},
- {n:'St. Thomas University',s:'moodle',u:'https://moodle.stu.ca',a:'st thomas university saint-thomas'},
- {n:'Séminaire de Sherbrooke',s:'omnivox',u:'https://seminaire-sherbrooke.omnivox.ca',a:'seminaire sherbrooke seminaire-sherbrooke'},
- {n:'Thompson Rivers University',s:'moodle',u:'https://moodle.tru.ca',a:'thompson rivers university tru kamloops'},
- {n:'Trent University',s:'brightspace',u:'https://learn.trentu.ca',a:'trent university learn'},
+ {n:'St. Thomas University',s:'moodle',u:'https://moodle.stu.ca',a:'st thomas university saint-thomas stu'},
+ {n:'Stanford University',s:'canvas',u:'https://canvas.stanford.edu',a:'stanford university'},
+ {n:'Stony Brook University',s:'brightspace',u:'https://mycourses.stonybrook.edu',a:'stony brook university mycourses stonybrook'},
  {n:'TÉLUQ',s:'moodle',u:'https://ena.teluq.ca',a:'tele-universite teluq ena'},
+ {n:'Texas A&M University',s:'canvas',u:'https://canvas.tamu.edu',a:'texas university tamu'},
+ {n:'Texas Christian University',s:'brightspace',u:'https://d2l.tcu.edu',a:'texas christian university tcu'},
+ {n:'Thompson Rivers University',s:'moodle',u:'https://moodle.tru.ca',a:'thompson rivers university tru kamloops'},
+ {n:'Toulouse INP',s:'moodle',u:'https://moodle.inp-toulouse.fr',a:'toulouse inp'},
+ {n:'Trent University',s:'brightspace',u:'https://learn.trentu.ca',a:'trent university learn trentu'},
+ {n:'Tufts University',s:'canvas',u:'https://canvas.tufts.edu',a:'tufts university'},
+ {n:'Université Claude Bernard Lyon 1',s:'moodle',u:'https://moodle.univ-lyon1.fr',a:'universite claude bernard lyon univ lyon1'},
+ {n:'Université Concordia',s:'brightspace',u:'https://brightspace.concordia.ca',a:'concordia universite'},
+ {n:"Université d'Aix-Marseille",s:'moodle',u:'https://ametice.univ-amu.fr',a:'amu aix marseille universite ametice univ'},
+ {n:"Université d'Angers",s:'moodle',u:'https://moodle.univ-angers.fr',a:'universite angers univ'},
+ {n:"Université d'Artois",s:'moodle',u:'https://moodle.univ-artois.fr',a:'universite artois univ'},
+ {n:'Université de Bordeaux',s:'moodle',u:'https://moodle.u-bordeaux.fr',a:'universite bordeaux u'},
+ {n:'Université de Caen Normandie',s:'moodle',u:'https://ecampus.unicaen.fr',a:'universite caen normandie ecampus unicaen'},
+ {n:'Université de Guyane',s:'moodle',u:'https://cours.univ-guyane.fr',a:'universite guyane cours univ'},
+ {n:"Université de l'Ontario français",s:'moodle',u:'https://moodle.uontario.ca',a:'universite ontario francais uof uontario'},
+ {n:'Université de la Nouvelle-Calédonie',s:'moodle',u:'https://moodle.unc.nc',a:'universite nouvelle caledonie unc'},
+ {n:'Université de La Réunion',s:'moodle',u:'https://moodle.univ-reunion.fr',a:'universite reunion univ'},
+ {n:'Université de Lille',s:'moodle',u:'https://moodle.univ-lille.fr',a:'universite lille univ'},
+ {n:'Université de Mayotte',s:'moodle',u:'https://moodle.univ-mayotte.fr',a:'universite mayotte univ'},
+ {n:'Université de Montpellier',s:'moodle',u:'https://moodle.umontpellier.fr',a:'universite montpellier umontpellier'},
+ {n:'Université de Montréal',s:'moodle',u:'https://studium.umontreal.ca',a:'udem universite montreal studium umontreal'},
+ {n:'Université de Perpignan',s:'moodle',u:'https://cours.univ-perp.fr',a:'universite perpignan cours univ perp'},
+ {n:'Université de Reims Champagne-Ardenne',s:'moodle',u:'https://cours.univ-reims.fr',a:'universite reims champagne ardenne cours univ'},
+ {n:'Université de Sherbrooke',s:'moodle',u:'https://moodle.usherbrooke.ca',a:'udes sherbrooke universite usherbrooke'},
+ {n:'Université de Strasbourg',s:'moodle',u:'https://moodle.unistra.fr',a:'universite strasbourg unistra'},
+ {n:'Université de Technologie de Belfort-Montbéliard',s:'moodle',u:'https://moodle.utbm.fr',a:'universite technologie belfort montbeliard utbm'},
+ {n:'Université de Technologie de Compiègne',s:'moodle',u:'https://moodle.utc.fr',a:'universite technologie compiegne utc'},
+ {n:'Université de Technologie de Troyes',s:'moodle',u:'https://moodle.utt.fr',a:'universite technologie troyes utt'},
+ {n:"Université du Littoral Côte d'Opale",s:'moodle',u:'https://moodle.univ-littoral.fr',a:'universite littoral cote opale univ'},
+ {n:'Université Gustave Eiffel',s:'moodle',u:'https://elearning.univ-eiffel.fr',a:'eiffel universite gustave elearning univ'},
+ {n:'Université Jean Moulin Lyon 3',s:'moodle',u:'https://moodle.univ-lyon3.fr',a:'universite jean moulin lyon univ lyon3'},
+ {n:'Université Lumière Lyon 2',s:'moodle',u:'https://moodle.univ-lyon2.fr',a:'universite lumiere lyon univ lyon2'},
+ {n:'Université Marie-et-Louis-Pasteur',s:'moodle',u:'https://moodle.univ-fcomte.fr',a:'universite marie louis pasteur univ fcomte besancon franche-comte'},
+ {n:'Université Paris 8',s:'moodle',u:'https://moodle.univ-paris8.fr',a:'paris8 universite paris univ'},
+ {n:'Université Paris Cité',s:'moodle',u:'https://moodle.u-paris.fr',a:'upcite universite paris cite u'},
+ {n:'Université Paul-Valéry Montpellier 3',s:'moodle',u:'https://moodle.univ-montp3.fr',a:'universite paul valery montpellier univ montp3'},
+ {n:'Université Polytechnique Hauts-de-France',s:'moodle',u:'https://moodle.uphf.fr',a:'universite polytechnique hauts france uphf'},
+ {n:'Université Sainte-Anne',s:'moodle',u:'https://moodle.usainteanne.ca',a:"universite sainte anne sainte-anne pointe-de-l'eglise usainteanne"},
+ {n:'Université Savoie Mont Blanc',s:'moodle',u:'https://moodle.univ-smb.fr',a:'universite savoie mont blanc univ smb'},
+ {n:'University at Albany',s:'brightspace',u:'https://brightspace.albany.edu',a:'university at albany'},
+ {n:'University College of the North',s:'brightspace',u:'https://d2l.ucn.ca',a:'university college north nord the pas ucn'},
+ {n:'University of Arizona',s:'brightspace',u:'https://d2l.arizona.edu',a:'university arizona'},
+ {n:'University of British Columbia',s:'canvas',u:'https://canvas.ubc.ca',a:'ubc university british columbia vancouver'},
+ {n:'University of Calgary',s:'brightspace',u:'https://d2l.ucalgary.ca',a:'ucalgary university calgary'},
+ {n:'University of California, Berkeley',s:'canvas',u:'https://learn.berkeley.edu',a:'uc berkeley university california learn'},
+ {n:'University of California, Davis',s:'canvas',u:'https://canvas.ucdavis.edu',a:'university california davis ucdavis'},
+ {n:'University of California, Riverside',s:'canvas',u:'https://canvas.ucr.edu',a:'university california riverside ucr'},
+ {n:'University of California, San Diego',s:'canvas',u:'https://canvas.ucsd.edu',a:'university california san diego ucsd'},
+ {n:'University of California, Santa Cruz',s:'canvas',u:'https://canvas.ucsc.edu',a:'university california santa cruz ucsc'},
+ {n:'University of Central Florida',s:'canvas',u:'https://webcourses.ucf.edu',a:'university central florida webcourses ucf'},
+ {n:'University of Chicago',s:'canvas',u:'https://canvas.uchicago.edu',a:'uchicago university chicago'},
+ {n:'University of Colorado Boulder',s:'canvas',u:'https://canvas.colorado.edu',a:'university colorado boulder'},
+ {n:'University of Denver',s:'canvas',u:'https://canvas.du.edu',a:'university denver'},
+ {n:'University of Georgia',s:'brightspace',u:'https://elc.uga.edu',a:'university georgia elc'},
+ {n:'University of Guelph',s:'brightspace',u:'https://courselink.uoguelph.ca',a:'guelph university courselink'},
+ {n:'University of Illinois Urbana-Champaign',s:'canvas',u:'https://canvas.illinois.edu',a:'university illinois urbana champaign'},
+ {n:'University of Iowa',s:'canvas',u:'https://icon.uiowa.edu',a:'university iowa icon uiowa'},
+ {n:'University of Kansas',s:'canvas',u:'https://canvas.ku.edu',a:'university kansas'},
+ {n:'University of Lethbridge',s:'moodle',u:'https://moodle.uleth.ca',a:'university lethbridge uleth'},
+ {n:'University of Maryland',s:'canvas',u:'https://elms.umd.edu',a:'university maryland elms umd'},
+ {n:'University of Miami',s:'canvas',u:'https://canvas.miami.edu',a:'university miami'},
+ {n:'University of Michigan',s:'canvas',u:'https://canvas.umich.edu',a:'umich university michigan'},
+ {n:'University of Missouri',s:'canvas',u:'https://canvas.missouri.edu',a:'university missouri'},
+ {n:'University of Nebraska-Lincoln',s:'canvas',u:'https://canvas.unl.edu',a:'university nebraska lincoln unl'},
+ {n:'University of Nevada, Reno',s:'canvas',u:'https://canvas.unr.edu',a:'university nevada reno unr'},
+ {n:'University of New Hampshire',s:'canvas',u:'https://mycourses.unh.edu',a:'university new hampshire mycourses unh'},
+ {n:'University of New Mexico',s:'canvas',u:'https://learn.unm.edu',a:'university new mexico learn unm'},
+ {n:'University of North Carolina at Charlotte',s:'canvas',u:'https://canvas.charlotte.edu',a:'university north carolina at charlotte'},
+ {n:'University of Northern British Columbia',s:'moodle',u:'https://moodle.unbc.ca',a:'university northern british columbia unbc'},
+ {n:'University of Notre Dame',s:'canvas',u:'https://canvas.nd.edu',a:'university notre dame'},
+ {n:'University of Oklahoma',s:'canvas',u:'https://canvas.ou.edu',a:'university oklahoma'},
+ {n:'University of Oregon',s:'canvas',u:'https://canvas.uoregon.edu',a:'university oregon uoregon'},
+ {n:'University of Ottawa',s:'brightspace',u:'https://uottawa.brightspace.com',a:'uottawa university ottawa'},
+ {n:'University of Pennsylvania',s:'canvas',u:'https://canvas.upenn.edu',a:'upenn penn university pennsylvania'},
+ {n:'University of Prince Edward Island',s:'moodle',u:'https://moodle.upei.ca',a:'upei university prince edward island'},
+ {n:'University of Regina',s:'moodle',u:'https://moodle.uregina.ca',a:'university regina uregina'},
+ {n:'University of Rhode Island',s:'brightspace',u:'https://brightspace.uri.edu',a:'university rhode island uri'},
+ {n:'University of Southern California',s:'brightspace',u:'https://brightspace.usc.edu',a:'usc university southern california'},
+ {n:'University of Tennessee',s:'canvas',u:'https://canvas.utk.edu',a:'university tennessee utk'},
+ {n:'University of Texas at Dallas',s:'canvas',u:'https://elearning.utdallas.edu',a:'university texas at dallas elearning utdallas'},
+ {n:'University of the Fraser Valley',s:'brightspace',u:'https://brightspace.ufv.ca',a:'university fraser valley ufv'},
+ {n:'University of Toronto',s:'canvas',u:'https://q.utoronto.ca',a:'uoft toronto university q utoronto'},
+ {n:'University of Utah',s:'canvas',u:'https://canvas.utah.edu',a:'university utah'},
+ {n:'University of Vermont',s:'brightspace',u:'https://brightspace.uvm.edu',a:'university vermont uvm'},
+ {n:'University of Washington',s:'canvas',u:'https://canvas.uw.edu',a:'uw udub university washington'},
+ {n:'University of Waterloo',s:'brightspace',u:'https://learn.uwaterloo.ca',a:'uwaterloo university waterloo learn'},
+ {n:'University of Windsor',s:'brightspace',u:'https://brightspace.uwindsor.ca',a:'university windsor uwindsor'},
+ {n:'University of Winnipeg',s:'brightspace',u:'https://nexus.uwinnipeg.ca',a:'university winnipeg nexus'},
+ {n:'University of Wisconsin-Madison',s:'canvas',u:'https://canvas.wisc.edu',a:'university wisconsin madison wisc'},
  {n:'UQAC',s:'moodle',u:'https://moodle.uqac.ca',a:'chicoutimi saguenay uqac'},
  {n:'UQAM',s:'moodle',u:'https://moodle.uqam.ca',a:'uqam universite du quebec a montreal'},
  {n:'UQAT',s:'moodle',u:'https://moodle.uqat.ca',a:'abitibi temiscamingue rouyn uqat'},
  {n:'UQO',s:'moodle',u:'https://moodle.uqo.ca',a:'outaouais gatineau uqo'},
  {n:'UQTR',s:'moodle',u:'https://moodle.uqtr.ca',a:'trois-rivieres uqtr'},
- {n:'University College of the North',s:'brightspace',u:'https://d2l.ucn.ca',a:'university college north nord the pas'},
- {n:'University of British Columbia',s:'canvas',u:'https://canvas.ubc.ca',a:'ubc university british columbia vancouver'},
- {n:'University of Calgary',s:'brightspace',u:'https://d2l.ucalgary.ca',a:'ucalgary university calgary'},
- {n:'University of Guelph',s:'brightspace',u:'https://courselink.uoguelph.ca',a:'guelph university courselink'},
- {n:'University of Lethbridge',s:'moodle',u:'https://moodle.uleth.ca',a:'university lethbridge'},
- {n:'University of Northern British Columbia',s:'moodle',u:'https://moodle.unbc.ca',a:'university northern british columbia unbc'},
- {n:'University of Ottawa',s:'brightspace',u:'https://uottawa.brightspace.com',a:'uottawa university ottawa'},
- {n:'University of Prince Edward Island',s:'moodle',u:'https://moodle.upei.ca',a:'upei university prince edward island'},
- {n:'University of Regina',s:'moodle',u:'https://moodle.uregina.ca',a:'university regina uregina'},
- {n:'University of Toronto',s:'canvas',u:'https://q.utoronto.ca',a:'uoft toronto university q'},
- {n:'University of Waterloo',s:'brightspace',u:'https://learn.uwaterloo.ca',a:'uwaterloo university waterloo learn'},
- {n:'University of Windsor',s:'brightspace',u:'https://brightspace.uwindsor.ca',a:'university windsor'},
- {n:'University of Winnipeg',s:'brightspace',u:'https://nexus.uwinnipeg.ca',a:'university winnipeg nexus'},
- {n:'University of the Fraser Valley',s:'brightspace',u:'https://brightspace.ufv.ca',a:'university fraser valley ufv'},
- {n:'Université Concordia',s:'brightspace',u:'https://brightspace.concordia.ca',a:'concordia universite'},
- {n:'Université Sainte-Anne',s:'moodle',u:'https://moodle.usainteanne.ca',a:"universite sainte anne sainte-anne pointe-de-l'eglise"},
- {n:'Université de Montréal',s:'moodle',u:'https://studium.umontreal.ca',a:'udem universite montreal studium'},
- {n:'Université de Sherbrooke',s:'moodle',u:'https://moodle.usherbrooke.ca',a:'udes sherbrooke universite'},
- {n:"Université de l'Ontario français",s:'moodle',u:'https://moodle.uontario.ca',a:'universite ontario francais uof'},
- {n:'Vancouver Community College',s:'moodle',u:'https://moodle.vcc.ca',a:'vancouver community college'},
+ {n:'Vancouver Community College',s:'moodle',u:'https://moodle.vcc.ca',a:'vancouver community college vcc'},
  {n:'Vancouver Island University',s:'brightspace',u:'https://d2l.viu.ca',a:'vancouver island university viu nanaimo'},
+ {n:'Vanderbilt University',s:'brightspace',u:'https://brightspace.vanderbilt.edu',a:'vanderbilt university'},
  {n:'Vanier College',s:'omnivox',u:'https://vaniercollege.omnivox.ca',a:'vanier college vaniercollege'},
+ {n:'Villanova University',s:'brightspace',u:'https://brightspace.villanova.edu',a:'villanova university'},
+ {n:'Virginia Commonwealth University',s:'canvas',u:'https://canvas.vcu.edu',a:'virginia commonwealth university vcu'},
+ {n:'Wake Forest University',s:'canvas',u:'https://canvas.wfu.edu',a:'wake forest university wfu'},
+ {n:'Washington State University',s:'canvas',u:'https://learn.wsu.edu',a:'washington state university learn wsu'},
+ {n:'Washington University in St. Louis',s:'canvas',u:'https://canvas.wustl.edu',a:'washington university in st louis wustl'},
  {n:'Wilfrid Laurier University',s:'brightspace',u:'https://d2l.wlu.ca',a:'wlu laurier wilfrid university'},
- {n:'École de technologie supérieure',s:'moodle',u:'https://ena.etsmtl.ca',a:'ets genie ecole technologie superieure ena'},
- {n:'École nationale de cirque',s:'omnivox',u:'https://ecolenationaledecirque.omnivox.ca',a:'ecole nationale cirque ecolenationaledecirque'}
+ {n:'Worcester Polytechnic Institute',s:'canvas',u:'https://canvas.wpi.edu',a:'worcester polytechnic institute wpi'},
+ {n:'Yale University',s:'canvas',u:'https://canvas.yale.edu',a:'yale university'}
 ];
 function schoolKey(text){return String(text).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()}
 for(const school of schools)school.k=schoolKey(school.n+' '+school.a);
-function schoolMatches(value){const q=schoolKey(value).trim();if(q.length<2)return[];const scored=[];for(const school of schools){const name=schoolKey(school.n);let score=name.startsWith(q)?0:name.split(' ').some(word=>word.startsWith(q))?1:school.k.split(' ').some(word=>word.startsWith(q))?2:school.k.includes(q)?3:9;if(score<9)scored.push([score,school])}scored.sort((a,b)=>a[0]-b[0]||a[1].n.localeCompare(b[1].n,'fr'));return scored.slice(0,6).map(hit=>hit[1])}
+function schoolMatches(value){const q=schoolKey(value).trim();if(q.length<2)return[];const scored=[];for(const school of schools){const name=schoolKey(school.n),words=school.k.split(' ');let score=name.startsWith(q)?0:words.includes(q)?1:name.split(' ').some(word=>word.startsWith(q))?2:words.some(word=>word.startsWith(q))?3:school.k.includes(q)?4:9;if(score<9)scored.push([score,school])}scored.sort((a,b)=>a[0]-b[0]||a[1].n.localeCompare(b[1].n,'fr'));return scored.slice(0,6).map(hit=>hit[1])}
 function selectSchool(school){state.draft.school='';state.schoolIndex=-1;state.notice=null;openService(school.s);if(!state.accounts.some(a=>a.service===school.s)){state.editing=true;state.draft.url=school.u}render()}
 function selected(){return state.accounts.find(a=>a.service===state.service&&a.id===state.accountId)}
 function messageLang(text){return t(text)===text?'en':language}
