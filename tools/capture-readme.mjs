@@ -1,5 +1,5 @@
 // Captures local configuration screens for the student README. No school logins.
-import {readFileSync, mkdirSync} from 'node:fs';
+import {readFileSync, mkdirSync, existsSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : 'playwright');
 const html=readFileSync(new URL('../src/resources/web/index.html',import.meta.url),'utf8');
@@ -25,10 +25,22 @@ await page.route('http://student.test/**',async route=>{
   const path=new URL(route.request().url()).pathname;
   if(path==='/')return route.fulfill({contentType:'text/html',body:html});
   if(path==='/state')return route.fulfill({json:state});
-  if(path==='/update')return route.fulfill({json:{available:false,current:'0.6.9',latest:'v0.6.9',checking:false,checked:true}});
+  if(path==='/update')return route.fulfill({json:{available:false,current:'0.7.0',latest:'v0.7.0',checking:false,checked:true}});
+  if(path==='/assistants')return route.fulfill({json:{assistants:[
+    {assistant:'claude',name:'Claude Desktop',detected:true,configured:true,reload:'restart'},
+    {assistant:'opencode',name:'OpenCode',detected:true,configured:false,reload:'automatic'},
+    {assistant:'cursor',name:'Cursor',detected:true,configured:false,reload:'restart'},
+    {assistant:'vscode',name:'GitHub Copilot / VS Code',detected:true,configured:false,reload:'restart'},
+    {assistant:'gemini',name:'Gemini CLI',detected:true,configured:false,reload:'restart'},
+    {assistant:'omp',name:'Oh My Pi',detected:false,configured:false,reload:'mcp'},
+  ]}});
+  if(path==='/action')return route.fulfill({json:{message:'Connected'}});
   if(path.startsWith('/assets/')){
     const name=path.split('/').pop();
-    const file=new URL(`../src/resources/assets/${name==='app-icon.png'?'app-icon-64.png':name.replace('.png','-icon.png')}`,import.meta.url);
+    const assets=new URL('../src/resources/assets/',import.meta.url);
+    const direct=new URL(name,assets);
+    const fallback=new URL(name==='app-icon.png'?'app-icon-64.png':name.replace('.png','-icon.png'),assets);
+    const file=name==='app-icon.png'||!existsSync(direct)?fallback:direct;
     try {return route.fulfill({contentType:'image/png',body:readFileSync(file)});}
     catch {return route.fulfill({status:404,body:''});}
   }
@@ -56,8 +68,20 @@ await page.locator('.link-open').click();
 await page.waitForSelector('[data-link-card="public"] .link-detail');
 await shot('link.png');
 await page.getByRole('button',{name:'Back to services',exact:true}).click();
+state.accounts=[{id:'moodle',service:'moodle',url:'https://studium.umontreal.ca',name:'Léa',enabled:true}];
+await page.evaluate(()=>refresh());
+await page.getByRole('button',{name:'Moodle manage connection',exact:true}).click();
+await page.locator('.manage-status-text').filter({hasText:'Léa'}).waitFor();
+await shot('profile.png');
+await page.getByRole('button',{name:'Back to services',exact:true}).click();
+await page.locator('[data-assistant-choose]').click();
+await page.locator('[data-assistant-mode="local"]').click();
+await page.locator('.local-app-card').first().waitFor();
+await page.locator('details').evaluate(element=>element.open=true);
+await shot('assistant.png');
+await page.getByRole('button',{name:'Back to services',exact:true}).click();
 await page.getByRole('button',{name:'Omnivox connect',exact:true}).click();
 await page.getByRole('button',{name:'Connect with browser',exact:true}).waitFor();
 await shot('omnivox.png');
 await browser.close();
-console.log('Captured README screens (1540×866; fictitious empty account state).');
+console.log('Captured README screens (1540×866; fictitious account names, URLs and tokens).');

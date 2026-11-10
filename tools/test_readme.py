@@ -15,7 +15,7 @@ class ReadmeTests(unittest.TestCase):
         self.assertNotIn("experimental", README.lower())
         self.assertIn("tools/GUIDE.md", README)
         self.assertNotRegex(README, r"https?://(www\.)?(x|twitter)\.com")
-        for image in ("home.png", "moodle.png", "link.png", "omnivox.png"):
+        for image in ("home.png", "moodle.png", "profile.png", "link.png", "assistant.png", "omnivox.png"):
             path = ROOT / "tools" / "screens" / image
             self.assertTrue(path.is_file(), image)
             self.assertGreater(path.stat().st_size, 1000)
@@ -23,6 +23,7 @@ class ReadmeTests(unittest.TestCase):
         self.assertTrue(re.search(r"Connect with browser", README))
         self.assertNotIn("Mail transfer", README)
         self.assertNotIn("SPEC.md", README)
+        self.assertIn("0.7.0", (ROOT / "tools" / "capture-readme.mjs").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

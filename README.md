@@ -26,11 +26,11 @@ The installer adds student-mcp to the application menu. Windows or macOS may war
 
 Launch it from the Start menu, Applications, or your app launcher. A local page opens. Closing the tab leaves a tray icon; quit from there when you are done.
 
-<p align="center"><img src="tools/screens/home.png" width="100%" alt="student-mcp home: school search, Moodle, Omnivox, Brightspace and Canvas tiles branching to the AI link, then Claude, ChatGPT and Gemini" /></p>
+<p align="center"><img src="tools/screens/home.png" width="100%" alt="student-mcp 0.7.0 home screen with school search, four learning platforms, link settings and assistant setup" /></p>
 
 ## 2. Connect your school
 
-Click **Moodle**, **Omnivox**, **Brightspace** or **Canvas** — or type your cégep or university in the search field, which opens the right service with the address already filled in. Then **Connect with browser**. Sign in on the school site, including MFA if asked. Only a token or a private browser profile is saved — not your password. Canvas uses that session cookie; it does not ask for a personal access token.
+Click **Moodle**, **Omnivox**, **Brightspace** or **Canvas** — or type your school in the search field, which opens the right service with the address already filled in. Then **Connect with browser**. Sign in on the school site, including MFA if asked. Only a token or a private browser profile is saved — not your password. Canvas uses that session cookie; it does not ask for a personal access token.
 
 If Chrome, Edge or Brave is already installed, that browser is used. A download is offered only if none is found, and only after you agree.
 
@@ -38,21 +38,25 @@ If Chrome, Edge or Brave is already installed, that browser is used. A download 
 
 When the page says you are connected, go back to the home screen.
 
-Use the pencil on a connected account to name its profile, such as **Léa** or **Alex**. Your assistant can then find the right platform and account when you ask “What are Léa's deadlines?” If names are ambiguous, it should ask you to clarify.
+Use the pencil on a connected account to give it a name, such as **Léa** or **Alex**. Your assistant can use that label to select the right platform and account when you ask “What are Léa’s deadlines?” Names are labels you choose, not verified identities; if one is ambiguous, the assistant should ask you to clarify.
+
+<p align="center"><img src="tools/screens/profile.png" width="100%" alt="Connected Moodle account named Léa, with its school address and account controls" /></p>
 
 <p align="center"><img src="tools/screens/omnivox.png" width="100%" alt="Omnivox sign-in with Connect with browser" /></p>
 
 ## 3. Copy your AI link
 
-Your link appears under your school. Press the copy button. Keep this computer awake and online. Do not put the link in a screenshot or a chat. Open the card to choose between the local and public link.
+Your link appears under your school. Press the copy button. Keep this computer awake and online. Do not share your real link: anyone who has it can access enabled tools. Open the card to choose between **On this computer** and **From the web**.
 
-<p align="center"><img src="tools/screens/link.png" width="100%" alt="Local and public link cards with copy buttons. Example URLs only, not a real token." /></p>
+<p align="center"><img src="tools/screens/link.png" width="100%" alt="Local and public link cards with copy buttons; URLs are fictitious examples" /></p>
 
 ## 4. Add the link to your assistant
 
 Paste the **complete** `https://…/mcp/…` link into the assistant’s MCP connector settings, not into a chat message.
 
-Click **Connect an assistant** under **Your link**, then choose **Web** or **On this computer**. **Web** has three-step guides for **Grok**, **Claude**, **ChatGPT** and **Gemini**, with illustrative interface renders and a copy button where you need the public link. **On this computer** detects supported local apps: choose an app, then **Confirm setup**. No terminal or public link is needed. Automatic setup supports Claude Desktop, Claude Code, Codex / ChatGPT Desktop, Gemini CLI, OpenCode, Cursor, Grok Build, Oh My Pi, GitHub Copilot / VS Code, Windsurf, Pi, Qwen Code, Kiro, Amp, Crush and Devin CLI. Other settings and MCP servers are preserved and an existing configuration is backed up first. Detection checks known locations, not every app on the disk; **Scan again** refreshes the list.
+Click **Set up an assistant** under **Your link**, then choose **Web** or **On this computer**. **Web** has three-step guides for **Grok**, **Claude**, **ChatGPT** and **Gemini**, with illustrative interface renders and a copy button where you need the public link. **On this computer** shows supported local apps: select a detected app, review the change, then confirm. No terminal or public link is needed. Automatic setup supports Claude Desktop, Claude Code, Codex / ChatGPT Desktop, Gemini CLI, OpenCode, Cursor, Grok Build, Oh My Pi, GitHub Copilot / VS Code, Windsurf, Pi, Qwen Code, Kiro, Amp, Crush and Devin CLI. Other settings and MCP servers are preserved, and an existing configuration is backed up first. Detection checks known locations, not every app on the disk; **Scan again** refreshes the list.
+
+<p align="center"><img src="tools/screens/assistant.png" width="100%" alt="On this computer assistant setup with detected local apps, app logos, and a separate not-detected section" /></p>
 
 ### Grok
 
