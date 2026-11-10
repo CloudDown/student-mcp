@@ -87,6 +87,7 @@ body{background:var(--canvas)}
 .manage-status-copy{display:flex;flex-direction:column;min-width:0}
 .manage-account-host{font-size:.75rem;color:var(--subtle);overflow-wrap:anywhere}
 .profile-actions{display:flex;flex-shrink:0;gap:.25rem}
+.profile-actions [data-action="rename"] svg{stroke-width:1.35}
 .profile-name-form{padding:0 1.25rem 1rem}
 .profile-name-form .input{height:3rem}
 .profile-name-actions{display:flex;gap:.5rem}.profile-name-actions .small-button{width:auto;flex:1}
@@ -296,22 +297,63 @@ button{transition:background 140ms ease-out,transform 140ms ease-out}button:acti
 @media(max-width:360px){.assistant-switcher{grid-template-columns:repeat(4,minmax(0,1fr))}.assistant-switcher button{flex-direction:column;gap:.25rem}.setup-stage{padding:1rem}.setup-footer-actions{gap:.25rem}}
 .screen h1:focus,.screen h1:focus-visible{outline:none}
 .local-apps header .assistant-local-toggle{width:auto;flex:none;min-height:44px}
+
+/* Consistency pass: one chrome, one radius scale, one green, one focus ring. */
+:root{--radius-sm:.75rem;--radius-md:1rem;--radius-lg:1.5rem;--h1-size:clamp(1.75rem,4.2vw,2.125rem);--green:#2f8a4d;--green-soft:#e8f5eb;--green-border:#b6d5bf}
+.global-bar{position:fixed;top:0;left:50%;transform:translateX(-50%);width:min(100%,64rem);display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:max(1rem,env(safe-area-inset-top)) max(1.5rem,env(safe-area-inset-right)) 0 max(1.5rem,env(safe-area-inset-left));z-index:20;pointer-events:none}
+.global-bar>*{pointer-events:auto;min-width:0}
+.global-actions{display:flex;align-items:center;gap:.5rem;margin-left:auto;min-width:0}
+.global-bar .language-control,.global-bar .update-control{position:relative;top:auto;right:auto;left:auto}
+.global-bar .app-startup{position:static;margin:0;padding:.5rem .75rem;gap:.65rem;font-size:.8125rem;font-weight:500;color:var(--subtle);border-radius:var(--radius-sm);box-shadow:none;white-space:nowrap;min-width:0}
+.global-bar .app-startup>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.app,.app.home-view,.app.tools-view,.app.assistant-view{width:min(100%,64rem);padding-top:max(5rem,calc(env(safe-area-inset-top) + 4rem))}
+.form-screen,.links-heading,.link-settings,.links-heading~.notice{width:100%;max-width:34rem;margin-left:auto;margin-right:auto}
+.page-nav{width:100%}
+h1,.service-head h1,.tools-heading h1,.links-heading h1,.assistant-heading h1{font-size:var(--h1-size);line-height:1.12;letter-spacing:-.035em}
+.full-button,.small-button,.copy-pill,.back,.language-control>.icon-button,.assistant-local-toggle,.assistant-entry,.assistant-modes button,.assistant-switcher button,.journey-node,.language-menu button,.account-select option,.notice,.help-panel,.update-status{border-radius:var(--radius-sm)}
+.card,.link-card,.manage-card,.assistant-workspace,.local-apps,.assistant-local,.tool-card,.local-app-card,.setup-link,.guide-capture,.language-menu,.assistant-modes,.assistant-switcher,.account-select,.account-select::picker(select){border-radius:var(--radius-md)}
+.tile,.logo-frame,.find{border-radius:var(--radius-lg)}
+.link-open{border-radius:var(--radius-md)}
+.tile{border-radius:var(--radius-lg)}
+.tile.connected{border-color:var(--green-border)}
+.guide-shot{border-radius:var(--radius-sm)}
+button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--blue);outline-offset:4px}
+.switch:checked,.startup-row .switch:checked{background:var(--green);border-color:var(--green)}
+.account-row .account-mark{background:var(--green)}
+.account-row.active{background:var(--green-soft)}
+.manage-card .manage-actions{display:flex;gap:0;margin:0;padding:0;border-top:1px solid var(--border);border-radius:0}
+.manage-card .manage-actions button{flex:1;min-width:0;min-height:3.25rem;margin:0;padding:.75rem 1rem;border:0;border-radius:0;background:#fff;font-size:.875rem;font-weight:600;line-height:1.25}
+.manage-card .manage-actions button+button{border-left:1px solid var(--border)}
+.manage-card .manage-actions .secondary{color:var(--ink)}
+.manage-card .manage-actions .danger{color:var(--red);background:#fff}
+.tools-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(16rem,1fr));gap:1rem;columns:auto}
+.tool-card{min-width:0;margin:0}
+.local-apps summary{list-style:none;display:flex;align-items:center;gap:.5rem;line-height:1.5;padding:.75rem 0}
+.local-apps summary::-webkit-details-marker{display:none}
+.local-apps summary::before{content:"";width:.45rem;height:.45rem;flex:none;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;rotate:45deg;transition:rotate 140ms ease-out;margin-left:.125rem}
+.local-apps details[open] summary::before{rotate:-135deg}
+@media(max-width:380px){#update-label{display:none}.global-bar{padding-left:1rem;padding-right:1rem}}
+@media(max-width:40rem){.app.assistant-view{padding-top:max(2.5rem,calc(env(safe-area-inset-top) + 1.5rem))}}
 </style></head>
 <body>
-<label class="startup-row app-startup" id="app-startup" hidden><span id="app-startup-label"></span><input class="switch" type="checkbox" name="autostart"></label>
-<div class="language-control">
- <button id="language-button" class="icon-button" type="button" aria-label="Change language" aria-expanded="false" aria-controls="language-menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h12M9 3v2M5 5c1 5 4 8 8 10M13 5c-1 5-4 8-9 11M14 21l4-10 4 10M15.5 17h5"/></svg></button>
- <div id="language-menu" class="language-menu" hidden role="group" aria-label="Language">
-   <button type="button" data-language="fr" lang="fr" aria-pressed="false"><span class="language-flag" aria-hidden="true"><svg viewBox="0 0 28 20"><path fill="#1d3f8f" d="M0 0h9.34v20H0z"/><path fill="#fff" d="M9.33 0h9.34v20H9.33z"/><path fill="#ed2939" d="M18.67 0H28v20h-9.33z"/></svg></span>Français<span class="language-check" aria-hidden="true">✓</span></button>
-   <button type="button" data-language="es" lang="es" aria-pressed="false"><span class="language-flag" aria-hidden="true"><svg viewBox="0 0 28 20"><path fill="#aa151b" d="M0 0h28v20H0z"/><path fill="#f1bf00" d="M0 5h28v10H0z"/><path fill="#aa151b" d="M7 7h3v5H7z"/><path fill="#f1bf00" d="M7.6 8h1.8v2H7.6z"/></svg></span>Español<span class="language-check" aria-hidden="true">✓</span></button>
-   <button type="button" data-language="en" lang="en" aria-pressed="false"><span class="language-flag" aria-hidden="true"><svg viewBox="0 0 28 20"><path fill="#012169" d="M0 0h28v20H0z"/><path stroke="#fff" stroke-width="5" d="m0 0 28 20M28 0 0 20"/><path stroke="#c8102e" stroke-width="2" d="m0 0 28 20M28 0 0 20"/><path stroke="#fff" stroke-width="8" d="M14 0v20M0 10h28"/><path stroke="#c8102e" stroke-width="4" d="M14 0v20M0 10h28"/></svg></span>English<span class="language-check" aria-hidden="true">✓</span></button>
+<header class="global-bar">
+ <div id="update-control" class="update-control">
+  <span id="update-label" class="update-label" role="status"></span>
+  <button id="update-button" class="icon-button" type="button" aria-label="Install update" title="Install update" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg></button>
+  <div id="update-status" class="update-status" role="status" hidden></div>
  </div>
-</div>
-<div id="update-control" class="language-control update-control">
- <span id="update-label" class="update-label" role="status"></span>
- <button id="update-button" class="icon-button" type="button" aria-label="Install update" title="Install update" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg></button>
- <div id="update-status" class="update-status" role="status" hidden></div>
-</div>
+ <div class="global-actions">
+  <label class="startup-row app-startup" id="app-startup" hidden><span id="app-startup-label"></span><input class="switch" type="checkbox" name="autostart"></label>
+  <div class="language-control">
+   <button id="language-button" class="icon-button" type="button" aria-label="Change language" aria-expanded="false" aria-controls="language-menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h12M9 3v2M5 5c1 5 4 8 8 10M13 5c-1 5-4 8-9 11M14 21l4-10 4 10M15.5 17h5"/></svg></button>
+   <div id="language-menu" class="language-menu" hidden role="group" aria-label="Language">
+    <button type="button" data-language="fr" lang="fr" aria-pressed="false"><span class="language-flag" aria-hidden="true"><svg viewBox="0 0 28 20"><path fill="#1d3f8f" d="M0 0h9.34v20H0z"/><path fill="#fff" d="M9.33 0h9.34v20H9.33z"/><path fill="#ed2939" d="M18.67 0H28v20h-9.33z"/></svg></span>Français<span class="language-check" aria-hidden="true">✓</span></button>
+    <button type="button" data-language="es" lang="es" aria-pressed="false"><span class="language-flag" aria-hidden="true"><svg viewBox="0 0 28 20"><path fill="#aa151b" d="M0 0h28v20H0z"/><path fill="#f1bf00" d="M0 5h28v10H0z"/><path fill="#aa151b" d="M7 7h3v5H7z"/><path fill="#f1bf00" d="M7.6 8h1.8v2H7.6z"/></svg></span>Español<span class="language-check" aria-hidden="true">✓</span></button>
+    <button type="button" data-language="en" lang="en" aria-pressed="false"><span class="language-flag" aria-hidden="true"><svg viewBox="0 0 28 20"><path fill="#012169" d="M0 0h28v20H0z"/><path stroke="#fff" stroke-width="5" d="m0 0 28 20M28 0 0 20"/><path stroke="#c8102e" stroke-width="2" d="m0 0 28 20M28 0 0 20"/><path stroke="#fff" stroke-width="8" d="M14 0v20M0 10h28"/><path stroke="#c8102e" stroke-width="4" d="M14 0v20M0 10h28"/></svg></span>English<span class="language-check" aria-hidden="true">✓</span></button>
+   </div>
+  </div>
+ </div>
+</header>
 <main class="app"><div id="screen" class="screen"></div></main>
 <div id="live" class="sr-only" role="status" aria-live="polite"></div>
 <dialog id="lightbox" class="lightbox" aria-label="Screenshot"><button class="lightbox-close" type="button" data-lightbox-close aria-label="Close">×</button><img id="lightbox-image" alt=""></dialog>
@@ -324,29 +366,29 @@ if(!languages.includes(language))language='en';
 // English is the source language; only UI copy is translated, never account data or server diagnostics.
 const translations={
  'Web':['Web','Web'], 'On this computer':['Sur cet ordinateur','En este ordenador'],
- 'Choose an app':['Choisis une application','Elige una aplicación'],
+ 'Choose an assistant app':['Choisis une application assistante','Elige una aplicación asistente'],
  'Scan again':['Relancer le scan','Volver a buscar'], 'Scanning…':['Recherche…','Buscando…'],
  'Only known app locations are checked. Nothing is changed during the scan.':['Le scan vérifie les emplacements connus, sans rien modifier.','Se revisan las ubicaciones conocidas sin cambiar nada.'],
  'Detected':['Détectée','Detectada'], 'Not detected':['Non détectée','No detectada'],
- 'Settings saved':['Réglages enregistrés','Ajustes guardados'], 'Connect app':['Connecter','Conectar'],
+ 'Settings saved':['Réglages enregistrés','Ajustes guardados'],
  'Other apps':['Autres applications','Otras aplicaciones'],
  'Reload MCP in the app to use the saved settings.':['Recharge les MCP dans l’application pour utiliser ces réglages.','Recarga los MCP en la aplicación para usar estos ajustes.'],
  'Settings apply automatically in OpenCode.':['Les réglages s’appliquent automatiquement dans OpenCode.','Los ajustes se aplican automáticamente en OpenCode.'],
  'New app? Open it once, then scan again.':['Nouvelle application ? Ouvre-la une fois, puis relance le scan.','¿Aplicación nueva? Ábrela una vez y vuelve a buscar.'],
  'Connect with browser':['Se connecter avec le navigateur','Conectar con el navegador'],
- 'Sign in on your school’s website. Only the Moodle mobile token is saved, never your password.':['Connectez-vous sur le site de votre établissement. Seul le jeton mobile Moodle est conservé, jamais votre mot de passe.','Inicia sesión en el sitio de tu institución. Solo se guarda el token móvil de Moodle, nunca tu contraseña.'],
+ 'Sign in on your school’s website. Only the Moodle mobile token is saved, never your password.':['Connecte-toi sur le site de ton établissement. Seul le jeton mobile Moodle est conservé, jamais ton mot de passe.','Inicia sesión en el sitio de tu institución. Solo se guarda el token móvil de Moodle, nunca tu contraseña.'],
  'Manual sign-in':['Connexion manuelle','Inicio de sesión manual'],
- 'Rename profile':['Renommer le profil','Renombrar perfil'],
- 'Profile name':['Nom du profil','Nombre del perfil'],
+ 'Rename account':['Renommer le compte','Cambiar el nombre de la cuenta'],
+ 'Account name':['Nom du compte','Nombre de la cuenta'],
  'e.g. Léa':['Ex. : Léa','P. ej., Léa'],
  'Save':['Enregistrer','Guardar'],
- 'Profile name saved':['Nom du profil enregistré','Nombre del perfil guardado'],
- 'Use a profile name of at most 80 characters, without control characters.':['Utilisez un nom de 80 caractères maximum, sans caractères de contrôle.','Usa un nombre de hasta 80 caracteres, sin caracteres de control.'],
+ 'Account name saved':['Nom du compte enregistré','Nombre de la cuenta guardado'],
+ 'Use an account name of at most 80 characters, without control characters.':['Utilise un nom de compte de 80 caractères maximum, sans caractères de contrôle.','Usa un nombre de cuenta de hasta 80 caracteres, sin caracteres de control.'],
  'Session cookie or access token':['Cookie de session ou jeton d’accès','Cookie de sesión o token de acceso'],
- 'Sign in on your school’s website. A private browser profile remembers this account; MFA may be requested again.':['Connectez-vous sur le site de votre établissement. Un profil de navigateur privé conserve ce compte ; le MFA peut être redemandé.','Inicia sesión en el sitio de tu institución. Un perfil privado del navegador conserva esta cuenta; se puede volver a solicitar MFA.'],
- 'Finish signing in in the browser window. This page will update automatically.':['Terminez la connexion dans la fenêtre du navigateur. Cette page se mettra à jour automatiquement.','Completa el inicio de sesión en la ventana del navegador. Esta página se actualizará automáticamente.'],
- 'Keep Safari or Firefox as your default. If needed, student-mcp downloads a dedicated Chromium-based browser for school sign-in.':['Gardez votre navigateur par défaut. Chrome, Edge ou Brave déjà installé est utilisé en priorité. Tout téléchargement nécessite votre accord.','Mantén tu navegador predeterminado. Se usa primero Chrome, Edge o Brave instalado. Cualquier descarga requiere tu permiso.'],
- 'No compatible browser found. Download Chrome for Testing from Google (about 200 MB)? Your default browser stays the same.':['Aucun navigateur compatible trouvé. Télécharger Chrome for Testing depuis Google (environ 200 Mo) ? Votre navigateur par défaut reste le même.','No se encontró un navegador compatible. ¿Descargar Chrome for Testing de Google (unos 200 MB)? Tu navegador predeterminado no cambia.'],
+ 'Sign in on your school’s website. A private browser profile remembers this account; MFA may be requested again.':['Connecte-toi sur le site de ton établissement. Un profil de navigateur privé conserve ce compte ; le MFA peut être redemandé.','Inicia sesión en el sitio de tu institución. Un perfil privado del navegador conserva esta cuenta; se puede volver a solicitar MFA.'],
+ 'Finish signing in; this page will update automatically.':['Termine la connexion ; cette page se mettra à jour automatiquement.','Termina de iniciar sesión; esta página se actualizará automáticamente.'],
+ 'Keep Safari or Firefox as your default. If needed, student-mcp downloads a dedicated Chromium-based browser for school sign-in.':['Garde ton navigateur par défaut. Chrome, Edge ou Brave déjà installé est utilisé en priorité. Tout téléchargement nécessite ton accord.','Mantén tu navegador predeterminado. Se usa primero Chrome, Edge o Brave instalado. Cualquier descarga requiere tu permiso.'],
+ 'No compatible browser found. Download Chrome for Testing from Google (about 200 MB)? Your default browser stays the same.':['Aucun navigateur compatible trouvé. Télécharger Chrome for Testing depuis Google (environ 200 Mo) ? Ton navigateur par défaut reste le même.','No se encontró un navegador compatible. ¿Descargar Chrome for Testing de Google (unos 200 MB)? Tu navegador predeterminado no cambia.'],
  'Download and continue':['Télécharger et continuer','Descargar y continuar'],
  'Not now':['Pas maintenant','Ahora no'],
  'Preparing the sign-in browser…':['Préparation du navigateur de connexion…','Preparando el navegador de inicio de sesión…'],
@@ -366,20 +408,18 @@ const translations={
  'Downloading update…':['Téléchargement de la mise à jour…','Descargando actualización…'],
  'Update ready. student-mcp will restart or open its installer.':['Mise à jour prête. student-mcp va redémarrer ou ouvrir son installateur.','Actualización lista. student-mcp se reiniciará o abrirá su instalador.'],
  ', selected':[', sélectionné',', seleccionada'],
- 'MCP tools':['Outils MCP','Herramientas MCP'], 'Back to connection':['Retour à la connexion','Volver a la conexión'],
+ 'MCP tools':['Outils MCP','Herramientas MCP'],
  'Loading tools…':['Chargement des outils…','Cargando herramientas…'],
  'Could not load tools.':['Impossible de charger les outils.','No se pudieron cargar las herramientas.'],
  'No tools available.':['Aucun outil disponible.','No hay herramientas disponibles.'],
   'Your link':['Ton lien','Tu enlace'], 'Launch at startup':['Lancer au démarrage','Iniciar al arrancar'],
- 'Your cégep or university':['Ton cégep ou ton université','Tu institución'], 'No school found':['Aucun établissement trouvé','No se encontró la institución'],
- 'Copy':['Copier','Copiar'], 'Link settings':['Réglages du lien','Ajustes del enlace'],
+ 'Search your school':['Recherche ton établissement','Busca tu institución'], 'No school found':['Aucun établissement trouvé','No se encontró la institución'],
+ 'Copy':['Copier','Copiar'],
  'Your assistant':['Ton assistant','Tu asistente'],
  'Set up Claude':['Configurer Claude','Configurar Claude'], 'Set up ChatGPT':['Configurer ChatGPT','Configurar ChatGPT'], 'Set up Gemini':['Configurer Gemini','Configurar Gemini'],
- 'Connect your assistant':['Connecter ton assistant','Conectar tu asistente'], 'Choose a local app or the web.':['Choisis une application locale ou le web.','Elige una aplicación local o la web.'],
+ 'Set up your assistant':['Configurer ton assistant','Configurar tu asistente'], 'Choose a local app or the web.':['Choisis une application locale ou le web.','Elige una aplicación local o la web.'],
  'Checking local setup…':['Vérification de la configuration locale…','Comprobando la configuración local…'],
- 'Local app detected':['Application locale détectée','Aplicación local detectada'], 'Local setup is ready':['Configuration locale terminée','Configuración local lista'],
  'Restart the assistant to finish setup.':['Redémarre l’assistant pour terminer la configuration.','Reinicia el asistente para terminar la configuración.'],
- 'Set up local app':['Configurer l’appli locale','Configurar la app local'],
  'This updates the assistant’s MCP settings. Your other servers stay unchanged and a backup is created.':['Cette action modifie les réglages MCP de l’assistant. Tes autres serveurs restent inchangés et une sauvegarde est créée.','Esto actualiza los ajustes MCP del asistente. Tus otros servidores no cambian y se crea una copia de seguridad.'],
  'Confirm setup':['Confirmer la configuration','Confirmar configuración'], 'Configured':['Configuré','Configurado'],
  'No supported local app was found.':['Aucune application locale compatible n’a été détectée.','No se encontró una aplicación local compatible.'],
@@ -406,38 +446,34 @@ const translations={
  'Official Claude connector steps':['Étapes officielles des connecteurs Claude','Pasos oficiales de los conectores de Claude'], 'Official ChatGPT plugin steps':['Étapes officielles des plugins ChatGPT','Pasos oficiales de los plugins de ChatGPT'], 'Official Gemini custom app steps':['Étapes officielles des applications Gemini','Pasos oficiales de las aplicaciones de Gemini'],
  'On this computer':['Sur cet ordinateur','En este ordenador'], 'From the web':['Depuis le web','Desde la web'],
  'Active':['Actif','Activo'], 'Off':['Désactivé','Desactivado'], 'Unavailable':['Indisponible','No disponible'],
- 'Allow the assistant':['Autoriser l’assistant','Permitir al asistente'],
+ 'Available to assistants':['Disponible pour les assistants','Disponible para los asistentes'],
  'Click again to disconnect this account.':['Clique encore pour déconnecter ce compte.','Haz clic otra vez para desconectar esta cuenta.'],
- 'Creating your public link…':['Création de votre lien public…','Creando tu enlace público…'],
- 'Reconnecting your public link…':['Reconnexion de votre lien public…','Reconectando tu enlace público…'],
+ 'Creating your public link…':['Création de ton lien public…','Creando tu enlace público…'],
+ 'Reconnecting your public link…':['Reconnexion de ton lien public…','Reconectando tu enlace público…'],
  'Public link unavailable — click to retry':['Lien public indisponible — réessayer','Enlace público no disponible — reintentar'],
  'Public link off — click to enable':['Lien public désactivé — activer','Enlace público desactivado — activar'],
- 'Connect a service to create your link':['Connectez un service pour créer votre lien','Conecta un servicio para crear tu enlace'],
+ 'Connect a service to create your link':['Connecte un service pour créer ton lien','Conecta un servicio para crear tu enlace'],
  'Copy link':['Copier le lien','Copiar enlace'], 'Back to services':['Retour aux services','Volver a los servicios'],
+ 'Back to Moodle':['Retour à Moodle','Volver a Moodle'], 'Back to Omnivox':['Retour à Omnivox','Volver a Omnivox'], 'Back to Brightspace':['Retour à Brightspace','Volver a Brightspace'], 'Back to Canvas':['Retour à Canvas','Volver a Canvas'],
  'Accounts':['Comptes','Cuentas'], 'Add account':['Ajouter un compte','Añadir cuenta'],
- 'Service enabled':['Service activé','Servicio activado'],
  'DevTools → Application/Storage → Cookies':['Outils de développement → Application/Stockage → Cookies','Herramientas de desarrollo → Aplicación/Almacenamiento → Cookies'],
  'Username':['Nom d’utilisateur','Nombre de usuario'], 'firstname.lastname':['prenom.nom','nombre.apellido'],
  'Password':['Mot de passe','Contraseña'], 'Moodle password':['Mot de passe Moodle','Contraseña de Moodle'],
- 'College address':['Adresse du cégep','Dirección de la institución'], 'Student number':['Numéro étudiant','Número de estudiante'],
+ 'Omnivox address':['Adresse Omnivox','Dirección de Omnivox'], 'Student number':['Numéro étudiant','Número de estudiante'],
  'Omnivox password':['Mot de passe Omnivox','Contraseña de Omnivox'], 'Site address':['Adresse du site','Dirección del sitio'],
  'Cookie value':['Valeur du cookie','Valor de la cookie'], 'Checking the connection…':['Vérification de la connexion…','Comprobando la conexión…'],
  'Connecting…':['Connexion…','Conectando…'], 'Save changes':['Enregistrer','Guardar cambios'],
  'Connection failed':['Échec de la connexion','Error de conexión'], 'Checking connection…':['Vérification de la connexion…','Comprobando la conexión…'],
- 'Connected':['Connecté','Conectado'], 'Retry':['Réessayer','Reintentar'], 'Change login':['Modifier les identifiants','Cambiar credenciales'],
+ 'Connected':['Connecté','Conectado'], 'Retry':['Réessayer','Reintentar'], 'Edit sign-in':['Modifier les identifiants','Cambiar credenciales'],
  'Disconnect':['Déconnecter','Desconectar'], 'Identity verification':['Vérification d’identité','Verificación de identidad'],
  'Security code (6 digits)':['Code de sécurité (6 chiffres)','Código de seguridad (6 dígitos)'],
  'Verifying…':['Vérification…','Verificando…'], 'Verify and connect':['Vérifier et connecter','Verificar y conectar'],
  'Send a new code':['Envoyer un nouveau code','Enviar un nuevo código'], 'Cancel verification':['Annuler la vérification','Cancelar verificación'],
- 'LOCAL LINK':['LIEN LOCAL','ENLACE LOCAL'], 'PUBLIC LINK':['LIEN PUBLIC','ENLACE PÚBLICO'],
- 'Local link active':['Lien local actif','Enlace local activo'], 'Local link off':['Lien local désactivé','Enlace local desactivado'],
- 'Public link active':['Lien public actif','Enlace público activo'], 'Copy local link':['Copier le lien local','Copiar enlace local'],
- 'Copy public link':['Copier le lien public','Copiar enlace público'], 'This can take a few seconds.':['Cela peut prendre quelques secondes.','Esto puede tardar unos segundos.'],
- 'Public link is off. Turn the switch on to restore your stable HTTPS link through srv.us. No account needed.':['Le lien public est désactivé. Activez-le pour rétablir votre lien HTTPS stable via srv.us. Aucun compte requis.','El enlace público está desactivado. Actívalo para restablecer tu enlace HTTPS estable mediante srv.us. No necesitas una cuenta.'],
- 'Opening your stable HTTPS link through srv.us.':['Ouverture de votre lien HTTPS stable via srv.us.','Abriendo tu enlace HTTPS estable mediante srv.us.'],
- 'Reconnecting to srv.us. Your saved link stays the same.':['Reconnexion à srv.us. Votre lien enregistré reste identique.','Reconectando a srv.us. Tu enlace guardado sigue siendo el mismo.'],
- 'The public link was not created. Turn the switch on to try again.':['Le lien public n’a pas été créé. Activez-le pour réessayer.','No se ha creado el enlace público. Actívalo para volver a intentarlo.'],
- 'No service is connected yet. Turn the switch on to create the HTTPS link anyway.':['Aucun service n’est encore connecté. Activez le lien pour créer quand même le lien HTTPS.','Todavía no hay servicios conectados. Activa el enlace para crear el enlace HTTPS de todos modos.'],
+ 'Public link is off. Turn the switch on to restore your stable HTTPS link through srv.us. No account needed.':['Le lien public est désactivé. Active-le pour rétablir ton lien HTTPS stable via srv.us. Aucun compte requis.','El enlace público está desactivado. Actívalo para restablecer tu enlace HTTPS estable mediante srv.us. No necesitas una cuenta.'],
+ 'Opening your stable HTTPS link through srv.us.':['Ouverture de ton lien HTTPS stable via srv.us.','Abriendo tu enlace HTTPS estable mediante srv.us.'],
+ 'Reconnecting to srv.us. Your saved link stays the same.':['Reconnexion à srv.us. Ton lien enregistré reste identique.','Reconectando a srv.us. Tu enlace guardado sigue siendo el mismo.'],
+ 'The public link was not created. Turn the switch on to try again.':['Le lien public n’a pas été créé. Active-le pour réessayer.','No se ha creado el enlace público. Actívalo para volver a intentarlo.'],
+ 'No service is connected yet. Turn the switch on to create the HTTPS link anyway.':['Aucun service n’est encore connecté. Active-le pour créer quand même le lien HTTPS.','Todavía no hay servicios conectados. Activa el enlace para crear el enlace HTTPS de todos modos.'],
  'Copied':['Copié','Copiado'], 'Request failed':['Échec de la requête','Error en la solicitud'],
  'Disconnected':['Déconnecté','Desconectado'], 'Code sent':['Code envoyé','Código enviado'], 'Cancelled':['Annulé','Cancelado'],
  'student-mcp stopped':['student-mcp arrêté','student-mcp detenido'],
@@ -445,18 +481,18 @@ const translations={
  'Omnivox is not connected anymore.':['Omnivox n’est plus connecté.','Omnivox ya no está conectado.'],
  'Brightspace is not connected anymore.':['Brightspace n’est plus connecté.','Brightspace ya no está conectado.'],
  'Moodle is not connected anymore.':['Moodle n’est plus connecté.','Moodle ya no está conectado.'],
- 'Enter the 6-digit security code sent to your Omnivox Mobile app.':['Saisissez le code de sécurité à 6 chiffres envoyé à l’application Omnivox Mobile.','Introduce el código de seguridad de 6 dígitos enviado a la aplicación Omnivox Mobile.'],
- 'Enter the 6-digit code from your authenticator or security token.':['Saisissez le code à 6 chiffres de votre application d’authentification ou de votre jeton de sécurité.','Introduce el código de 6 dígitos de tu aplicación de autenticación o token de seguridad.'],
- 'Enter the 6-digit security code provided by your college.':['Saisissez le code de sécurité à 6 chiffres fourni par votre cégep.','Introduce el código de seguridad de 6 dígitos proporcionado por tu institución.'],
- 'Enter the 6-digit security code from Omnivox.':['Saisissez le code de sécurité Omnivox à 6 chiffres.','Introduce el código de seguridad de Omnivox de 6 dígitos.'],
- 'Omnivox blocked further code attempts. Wait a few minutes, then sign in again.':['Omnivox a bloqué les nouvelles tentatives. Attendez quelques minutes, puis reconnectez-vous.','Omnivox bloqueó nuevos intentos. Espera unos minutos y vuelve a iniciar sesión.'],
- 'The security code is invalid or has expired. Try the latest code or request a new one.':['Le code de sécurité est invalide ou expiré. Essayez le plus récent ou demandez-en un nouveau.','El código de seguridad no es válido o ha caducado. Prueba el más reciente o solicita uno nuevo.'],
+ 'Enter the 6-digit security code sent to your Omnivox Mobile app.':['Saisis le code de sécurité à 6 chiffres envoyé à l’application Omnivox Mobile.','Introduce el código de seguridad de 6 dígitos enviado a la aplicación Omnivox Mobile.'],
+ 'Enter the 6-digit code from your authenticator or security token.':['Saisis le code à 6 chiffres de ton application d’authentification ou de ton jeton de sécurité.','Introduce el código de 6 dígitos de tu aplicación de autenticación o token de seguridad.'],
+ 'Enter the 6-digit security code provided by your school.':['Saisis le code de sécurité à 6 chiffres fourni par ton établissement.','Introduce el código de seguridad de 6 dígitos proporcionado por tu institución.'],
+ 'Enter the 6-digit security code from Omnivox.':['Saisis le code de sécurité Omnivox à 6 chiffres.','Introduce el código de seguridad de Omnivox de 6 dígitos.'],
+ 'Omnivox blocked further code attempts. Wait a few minutes, then sign in again.':['Omnivox a bloqué les nouvelles tentatives. Attends quelques minutes, puis reconnecte-toi.','Omnivox bloqueó nuevos intentos. Espera unos minutos y vuelve a iniciar sesión.'],
+ 'The security code is invalid or has expired. Try the latest code or request a new one.':['Le code de sécurité est invalide ou expiré. Essaie le plus récent ou demandes-en un nouveau.','El código de seguridad no es válido o ha caducado. Prueba el más reciente o solicita uno nuevo.'],
  'A new code cannot be requested for this verification session.':['Impossible de demander un nouveau code pour cette session de vérification.','No se puede solicitar un nuevo código para esta sesión de verificación.'],
- 'Omnivox has reached its code resend limit. Wait a few minutes before requesting another code.':['La limite de renvoi de codes Omnivox est atteinte. Attendez quelques minutes avant de réessayer.','Se alcanzó el límite de reenvío de códigos de Omnivox. Espera unos minutos antes de intentarlo de nuevo.'],
- 'Omnivox did not confirm sending a new code. Try again.':['Omnivox n’a pas confirmé l’envoi d’un nouveau code. Réessayez.','Omnivox no confirmó el envío de un nuevo código. Inténtalo de nuevo.'],
+ 'Omnivox has reached its code resend limit. Wait a few minutes before requesting another code.':['La limite de renvoi de codes Omnivox est atteinte. Attends quelques minutes avant de réessayer.','Se alcanzó el límite de reenvío de códigos de Omnivox. Espera unos minutos antes de intentarlo de nuevo.'],
+ 'Omnivox did not confirm sending a new code. Try again.':['Omnivox n’a pas confirmé l’envoi d’un nouveau code. Réessaie.','Omnivox no confirmó el envío de un nuevo código. Inténtalo de nuevo.'],
  'This Omnivox identity verification method is not supported by the app.':['Cette méthode de vérification Omnivox n’est pas prise en charge.','Esta aplicación no admite este método de verificación de Omnivox.'],
  'Connection status unavailable. Retrying…':['État de connexion indisponible. Nouvelle tentative…','Estado de conexión no disponible. Reintentando…'],
- 'Could not copy the link. Open connection settings and select the link to copy it manually.':['Impossible de copier le lien. Ouvrez les réglages de connexion et sélectionnez le lien pour le copier manuellement.','No se pudo copiar el enlace. Abre los ajustes de conexión y selecciona el enlace para copiarlo manualmente.']
+ 'Could not copy the link. Open link settings and select the link to copy it manually.':['Impossible de copier le lien. Ouvre les réglages du lien et sélectionne le lien pour le copier manuellement.','No se pudo copiar el enlace. Abre los ajustes del enlace y selecciona el enlace para copiarlo manualmente.']
 };
 // Localized UI summaries keyed by stable MCP tool name. MCP names and schemas remain untouched.
 // Keep a summary for every tool returned by /tools/{service}; the browser test checks coverage.
@@ -470,7 +506,7 @@ Object.assign(translations,{
  'Close':['Fermer','Cerrar'],
  'Cancel':['Annuler','Cancelar'],
  'Availability depends on your plan and workspace permissions.':['La disponibilité dépend de ton forfait et des permissions de ton espace de travail.','La disponibilidad depende de tu plan y de los permisos de tu espacio de trabajo.'],
- 'Connect an assistant':['Connecter un assistant','Conectar un asistente'],
+ 'Set up an assistant':['Configurer un assistant','Configurar un asistente'],
  'Your courses, one conversation away.':['Tes cours, directement dans ton assistant.','Tus cursos, directamente en tu asistente.'],
  'Set up Grok':['Configurer Grok','Configurar Grok'],
  'Open Grok settings':['Ouvrir Grok','Abrir Grok'],
@@ -488,7 +524,7 @@ Object.assign(translations,{
  'Settings':['Réglages','Ajustes'], 'Connect':['Connexion','Conectar'], 'Try it':['Essai','Probar'],
  'Check the app':['Vérifier l’application','Comprobar la aplicación'], 'Set up':['Configurer','Configurar'], 'Restart':['Redémarrer','Reiniciar'],
  'App':['Appli','App'], 'Setup':['Réglages','Ajustes'],
- 'This link lets your assistant access the school accounts you have enabled.':['Ce lien donne accès aux comptes scolaires que tu as activés.','Este enlace permite acceder a las cuentas escolares que has activado.'],
+ 'This link lets your assistants access the school accounts you have enabled.':['Ce lien permet à tes assistants d’accéder aux comptes scolaires que tu as activés.','Este enlace permite que tus asistentes accedan a las cuentas escolares que has activado.'],
  'Keep this link private. Paste it in the connector settings, never in a conversation.':['Garde ce lien privé. Colle-le dans les réglages du connecteur, jamais dans une conversation.','Mantén este enlace privado. Pégalo en los ajustes del conector, nunca en una conversación.'],
  'Keep student-mcp running and this computer awake while using your assistant.':['Garde student-mcp ouvert et cet ordinateur allumé pendant que tu utilises ton assistant.','Mantén student-mcp abierto y este ordenador encendido mientras usas tu asistente.'],
  'Your school':['Ton établissement','Tu institución'],
@@ -537,7 +573,7 @@ Object.assign(translations,{
  'Your assistant should use student-mcp to check your courses. Approve only the tools and actions you recognise.':['Ton assistant devrait utiliser student-mcp pour consulter tes cours. N’autorise que les outils et actions que tu reconnais.','Tu asistente debería usar student-mcp para consultar tus cursos. Autoriza solo las herramientas y acciones que reconozcas.'],
  'If no tools appear, check that a school account is connected and enabled, and that student-mcp is still running.':['Si aucun outil n’apparaît, vérifie qu’un compte scolaire est connecté et activé, et que student-mcp fonctionne encore.','Si no aparece ninguna herramienta, comprueba que una cuenta escolar esté conectada y activada y que student-mcp siga funcionando.'],
  'Details and help':['Détails et aide','Detalles y ayuda'], 'Previous':['Précédent','Anterior'], 'Continue':['Continuer','Continuar'], 'Finish guide':['Terminer le guide','Terminar la guía'],
- 'Connect a local assistant':['Connecte un assistant local','Conecta un asistente local'],
+ 'Set up a local assistant':['Configurer un assistant local','Configurar un asistente local'],
  'Use stdio when your assistant runs on this computer. No public link is needed.':['Utilise stdio si ton assistant fonctionne sur cet ordinateur. Aucun lien public n’est nécessaire.','Usa stdio si tu asistente funciona en este ordenador. No se necesita un enlace público.'],
  'Command':['Commande','Comando'], 'Arguments':['Arguments','Argumentos'],
  'Use the installed student-mcp executable. If it is not on PATH, enter its full path.':['Utilise l’exécutable student-mcp installé. S’il n’est pas dans le PATH, indique son chemin complet.','Usa el ejecutable student-mcp instalado. Si no está en PATH, introduce su ruta completa.'],
@@ -604,9 +640,9 @@ const toolDescriptions={
  omnivox_cancelled_classes:['Liste les avis de cours annulés.','Enumera los avisos de clases canceladas.'],
  omnivox_notifications:['Affiche les compteurs du tableau de bord, sans masquer les notifications.','Muestra los contadores del panel, sin ocultar notificaciones.'],
  omnivox_services:['Liste les modules disponibles et leur état bloqué ou en maintenance.','Enumera los módulos disponibles y su estado bloqueado o en mantenimiento.'],
- omnivox_college_news:['Affiche les dernières nouvelles du cégep, avec une limite bornée.','Muestra las últimas noticias de la institución, con un límite acotado.'],
+ omnivox_college_news:['Affiche les dernières nouvelles de l’établissement, avec une limite bornée.','Muestra las últimas noticias de la institución, con un límite acotado.'],
  omnivox_communities:['Liste les communautés et les filtres de calendrier disponibles.','Enumera las comunidades y los filtros de calendario disponibles.'],
- omnivox_college_events:['Affiche les cartes d’événements du cégep rendues par le serveur.','Muestra las tarjetas de eventos de la institución renderizadas por el servidor.'],
+ omnivox_college_events:['Affiche les cartes d’événements de l’établissement rendues par le serveur.','Muestra las tarjetas de eventos de la institución renderizadas por el servidor.'],
  omnivox_college_documents:['Liste les documents, messages et contrats officiels, métadonnées seulement.','Enumera documentos, mensajes y contratos oficiales, solo metadatos.'],
  omnivox_forms:['Liste les formulaires en ligne sans les ouvrir ni les remplir.','Enumera los formularios en línea sin abrirlos ni responderlos.'],
  omnivox_mio_folders:['Liste les dossiers MIO avec les compteurs lus et non lus.','Enumera las carpetas MIO con contadores leídos y no leídos.'],
@@ -752,7 +788,7 @@ function toolsScreen(){
   const translated=language!=='en'&&toolDescriptions[tool.name]?.[language==='fr'?0:1];
   return `<article class="tool-card"><h2>${esc(tool.name)}</h2><p lang="${translated?language:'en'}" data-server-text>${esc(translated||tool.description)}</p></article>`
  }).join('')}</div>`:'<p class="subtitle">No tools available.</p>';
- return `<section><header class="tools-heading">${pageNav('service','Back to connection')}<h1>MCP tools</h1><p class="subtitle">${names[state.service]}${catalog?.tools?' · '+catalog.tools.length:''}</p></header>${content}</section>`;
+ return `<section><header class="tools-heading">${pageNav('service','Back to '+names[state.service])}<h1>MCP tools</h1><p class="subtitle">${names[state.service]}${catalog?.tools?' · '+catalog.tools.length:''}</p></header>${content}</section>`;
 }
 const assistantInfo={
  grok:{name:'Grok',accent:'#1d1d1f',settings:'https://grok.com/connectors',guide:'https://docs.x.ai/grok/connectors'},
@@ -776,11 +812,11 @@ function assistantLocal(id){
   if(status.configured)return `<div class="assistant-local" id="assistant-local" role="status"><div class="assistant-local-copy"><i class="status-dot" aria-hidden="true"></i><div><strong>${esc(name)} · ${t('Settings saved')}</strong><p>${t(status.reload==='automatic'?'Settings apply automatically in OpenCode.':status.reload==='mcp'?'Reload MCP in the app to use the saved settings.':'Restart the assistant to finish setup.')}</p></div></div><button class="local-close" data-assistant-cancel>${t('Close')}</button></div>`;
   return `<div class="assistant-local" id="assistant-local"><div class="assistant-local-copy"><div><strong>${esc(name)}</strong></div></div><div class="assistant-confirm"><p>${t('This updates the assistant’s MCP settings. Your other servers stay unchanged and a backup is created.')}</p><div class="assistant-confirm-actions"><button class="full-button secondary" data-assistant-cancel ${state.assistantBusy?'disabled':''}>${t('Cancel')}</button><button class="full-button primary" data-assistant-confirm="${id}" ${state.assistantBusy?'disabled':''}>${state.assistantBusy?t('Connecting…'):t('Confirm setup')}</button></div></div></div>`;
 }
-const localLogos={'claude':'/assets/claude.png','claude-code':'/assets/claude.png',codex:'/assets/chatgpt.png',gemini:'/assets/gemini.png','grok-build':'/assets/grok.png',opencode:'/assets/local-opencode.png',cursor:'/assets/local-cursor.png',vscode:'/assets/local-vscode.png',windsurf:'/assets/local-windsurf.png',qwen:'/assets/local-qwen.png',pi:'/assets/local-pi.png',omp:'/assets/local-omp.png',kiro:'/assets/local-kiro.png',amp:'/assets/local-amp.png',crush:'/assets/local-crush.png',devin:'/assets/local-devin.png'};
-function localAppCard(app){const selected=localAssistants.selected===app.assistant,mark=app.name.replace(/[^A-Za-z0-9]/g,'').slice(0,2),logo=localLogos[app.assistant];const visual=logo?`<img class="local-app-logo" src="${logo}" alt="" width="128" height="128" loading="lazy" decoding="async">`:`<span class="local-app-mark" aria-hidden="true">${esc(mark)}</span>`;return `<li><button class="local-app-card${app.configured?' is-ready':''}" data-local-assistant="${esc(app.assistant)}" aria-pressed="${selected}" aria-controls="assistant-local" ${!app.detected||state.assistantBusy||localAssistants.scanning?'disabled':''}>${visual}<span class="local-app-copy"><span class="local-app-name">${esc(app.name)}</span><span class="local-app-state"><i class="local-app-dot" aria-hidden="true"></i>${t(!app.detected?'Not detected':app.configured?'Connected':'Detected')}</span></span></button></li>`}
+const localLogos={'claude':'/assets/claude.png','claude-code':'/assets/local-claude-code.png',codex:'/assets/chatgpt.png',gemini:'/assets/gemini.png','grok-build':'/assets/grok.png',opencode:'/assets/local-opencode.png',cursor:'/assets/local-cursor.png',vscode:'/assets/local-vscode.png',windsurf:'/assets/local-windsurf.png',qwen:'/assets/local-qwen.png',pi:'/assets/local-pi.png',omp:'/assets/local-omp.png',kiro:'/assets/local-kiro.png',amp:'/assets/local-amp.png',crush:'/assets/local-crush.png',devin:'/assets/local-devin.png'};
+function localAppCard(app){const selected=localAssistants.selected===app.assistant,mark=app.name.replace(/[^A-Za-z0-9]/g,'').slice(0,2),logo=localLogos[app.assistant];const visual=logo?`<img class="local-app-logo" src="${logo}" alt="" width="128" height="128" loading="lazy" decoding="async">`:`<span class="local-app-mark" aria-hidden="true">${esc(mark)}</span>`;return `<li><button class="local-app-card${app.configured?' is-ready':''}" data-local-assistant="${esc(app.assistant)}" aria-pressed="${selected}" aria-controls="assistant-local" ${!app.detected||state.assistantBusy||localAssistants.scanning?'disabled':''}>${visual}<span class="local-app-copy"><span class="local-app-name">${esc(app.name)}</span><span class="local-app-state"><i class="local-app-dot" aria-hidden="true"></i>${t(!app.detected?'Not detected':app.configured?'Configured':'Detected')}</span></span></button></li>`}
 function localAppsScreen(){
  const items=localAssistants.items||[],found=items.filter(app=>app.detected),missing=items.filter(app=>!app.detected);
- return `<section class="local-apps" aria-labelledby="local-apps-title"><header><h2 id="local-apps-title">${t('Choose an app')}</h2><button class="assistant-local-toggle" data-assistant-scan ${state.assistantBusy||localAssistants.scanning?'disabled':''}>${t(localAssistants.scanning?'Scanning…':'Scan again')}</button></header><p>${t('Only known app locations are checked. Nothing is changed during the scan.')}</p><div role="status" aria-live="polite">${localAssistants.scanning?`<p class="busy">${t('Scanning…')}</p>`:''}${localAssistants.error?`<p class="local-scan-error" role="alert">${esc(localAssistants.error)}</p>`:''}${!localAssistants.scanning&&localAssistants.items&&!found.length?`<p>${t('No supported local app was found.')}</p>`:''}</div><ul class="local-app-list">${found.map(localAppCard).join('')}</ul>${localAssistants.selected?assistantLocal(localAssistants.selected):''}${missing.length?`<details><summary>${t('Other apps')} (${missing.length})</summary><ul class="local-app-list">${missing.map(localAppCard).join('')}</ul><p>${t('New app? Open it once, then scan again.')}</p></details>`:''}</section>`;
+ return `<section class="local-apps" aria-labelledby="local-apps-title"><header><h2 id="local-apps-title">${t('Choose an assistant app')}</h2><button class="assistant-local-toggle" data-assistant-scan ${state.assistantBusy||localAssistants.scanning?'disabled':''}>${t(localAssistants.scanning?'Scanning…':'Scan again')}</button></header><p>${t('Only known app locations are checked. Nothing is changed during the scan.')}</p><div role="status" aria-live="polite">${localAssistants.scanning?`<p class="busy">${t('Scanning…')}</p>`:''}${localAssistants.error?`<p class="local-scan-error" role="alert">${esc(localAssistants.error)}</p>`:''}${!localAssistants.scanning&&localAssistants.items&&!found.length?`<p>${t('No supported local app was found.')}</p>`:''}</div><ul class="local-app-list">${found.map(localAppCard).join('')}</ul>${localAssistants.selected?assistantLocal(localAssistants.selected):''}${missing.length?`<details><summary>${t('Other apps')} (${missing.length})</summary><ul class="local-app-list">${missing.map(localAppCard).join('')}</ul><p>${t('New app? Open it once, then scan again.')}</p></details>`:''}</section>`;
 }
 async function scanAssistants(){if(localAssistants.scanning||state.assistantBusy)return;localAssistants.scanning=true;localAssistants.error=null;localAssistants.selected=null;state.assistantConfirm=false;render();try{const result=await api('/assistants');localAssistants.items=result.assistants}catch(error){localAssistants.error=error.message}finally{localAssistants.scanning=false;if(state.screen==='assistant')render()}}
 function assistantGuide(id){
@@ -809,7 +845,7 @@ function assistantGuide(id){
 }
 function assistantScreen(){
   const id=state.assistant,info=assistantInfo[id],step=assistantJourney.step;
-  const heading=`<header class="assistant-heading"><div class="page-nav"><button class="back" data-screen="home" aria-label="${t('Back to services')}">${icon('back')}</button></div><h1>${t('Connect an assistant')}</h1></header>${assistantModes()}`;
+  const heading=`<header class="assistant-heading"><div class="page-nav"><button class="back" data-screen="home" aria-label="${t('Back to services')}">${icon('back')}</button></div><h1>${t('Set up an assistant')}</h1></header>${assistantModes()}`;
   if(localAssistants.mode==='local')return `<section style="--accent:var(--blue)">${heading}${localAppsScreen()}${notice()}</section>`;
  const labels=['Open settings','Add the server','Ask a question'],short=['Settings','Connect','Try it'];
  const guide=assistantGuide(id);
@@ -817,7 +853,13 @@ function assistantScreen(){
 }
 async function openAssistant(id){if(!assistantInfo[id]||state.assistantBusy)return;localAssistants.mode='web';state.assistant=id;assistantJourney.step=0;state.assistantStatus=null;state.assistantConfirm=false;state.notice=null;state.screen='assistant';render()}
 async function configureAssistant(id){if(state.assistantBusy||localAssistants.selected!==id||!state.assistantConfirm)return;state.assistantBusy=true;state.notice=null;render();try{const status=await api('/action',{action:'assistant_setup',assistant:id});state.assistantStatus=status;localAssistants.items=localAssistants.items.map(app=>app.assistant===id?{...app,...status}:app)}catch(error){state.notice={text:error.message,error:true}}finally{state.assistantBusy=false;if(state.screen==='assistant'){render();if(localAssistants.mode==='local'&&state.assistantStatus?.configured)document.querySelector('.assistant-local .local-close')?.focus({preventScroll:true})}}}
-async function api(path,data){const response=await fetch(path,{method:data?'POST':'GET',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:data?JSON.stringify(data):undefined});const value=await response.json();if(!response.ok)throw Error(value.error||'Request failed');return value;}
+async function api(path,data){
+ const response=await fetch(path,{method:data?'POST':'GET',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:data?JSON.stringify(data):undefined});
+ const text=await response.text();let value={};
+ if(text){try{value=JSON.parse(text)}catch{throw Error(t('Request failed'))}}
+ if(!response.ok)throw Error(value.error||t('Request failed'));
+ return value;
+}
 const names={moodle:'Moodle',omnivox:'Omnivox',brightspace:'Brightspace',canvas:'Canvas'};
 // 280 établissements vérifiés par HTTP (200 + titre du portail) le 2026-11-09.
 // Un portail principal par établissement ; ajouter une ligne suffit.
@@ -1114,11 +1156,11 @@ function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&l
 function icon(name){const paths={copy:'<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 5V4a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h1"/>',check:'<path d="m5 12 4 4L19 6"/>',back:'<path d="m12 5-7 7 7 7M5 12h14"/>',refresh:'<path d="M19 8a8 8 0 1 0 1 7M19 3v5h-5"/>',spark:'<path d="M11 3.5l1.6 4.2 4.2 1.6-4.2 1.6L11 15.1l-1.6-4.2L5.2 9.3l4.2-1.6z"/><path d="M17.5 14.5l.9 2.2 2.2.9-2.2.9-.9 2.2-.9-2.2-2.2-.9 2.2-.9z"/>',search:'<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/>',down:'<path d="M12 5v14m-5.5-5.5L12 19l5.5-5.5"/>'};return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name]||paths.back}</svg>`}
 function normalizeUrl(value,service){const raw=(value||'').trim().replace(/\s+/g,'');if(!raw)return raw;const host=raw.replace(/^https?:\/\//i,'').split('/')[0];if(service==='omnivox')return 'https://'+(/omnivox\.ca$/i.test(host)?host:host.includes('.')?host:host+'.omnivox.ca');return 'https://'+raw.replace(/^https?:\/\//i,'').replace(/\/+$/,'')}
 function findRows(matches){return matches.length?matches.map((school,index)=>`<button type="button" class="find-row" role="option" id="find-opt-${index}" aria-selected="${index===state.schoolIndex}" data-school="${schools.indexOf(school)}" tabindex="-1"><img src="/assets/${school.s}.png" alt=""><span>${esc(school.n)}</span><span class="find-service">${names[school.s]}</span></button>`).join(''):`<p class="find-empty">${t('No school found')}</p>`}
-function findField(){const query=state.draft.school||'';const matches=schoolMatches(query);const open=query.trim().length>=2;return `<div class="find">${icon('search')}<input id="school-find" name="school" type="search" role="combobox" aria-haspopup="listbox" aria-expanded="${open}" aria-controls="find-list" aria-autocomplete="list" aria-label="${t('Your cégep or university')}" placeholder="${t('Your cégep or university')}" autocomplete="off" spellcheck="false" value="${esc(query)}"${open&&state.schoolIndex>=0?` aria-activedescendant="find-opt-${state.schoolIndex}"`:''}>${open?`<div class="find-list" id="find-list" role="listbox" aria-label="${t('Your cégep or university')}">${findRows(matches)}</div>`:''}</div>`}
+function findField(){const query=state.draft.school||'';const matches=schoolMatches(query);const open=query.trim().length>=2;return `<div class="find">${icon('search')}<input id="school-find" name="school" type="search" role="combobox" aria-haspopup="listbox" aria-expanded="${open}" aria-controls="find-list" aria-autocomplete="list" aria-label="${t('Search your school')}" placeholder="${t('Search your school')}" autocomplete="off" spellcheck="false" value="${esc(query)}"${open&&state.schoolIndex>=0?` aria-activedescendant="find-opt-${state.schoolIndex}"`:''}>${open?`<div class="find-list" id="find-list" role="listbox" aria-label="${t('Search your school')}">${findRows(matches)}</div>`:''}</div>`}
 // Mise à jour en place : re-rendre l'écran déplacerait le curseur au début du champ.
-function renderFindList(){const input=$('school-find');if(!input)return;const query=state.draft.school||'';const matches=schoolMatches(query);const find=input.closest('.find');let list=find.querySelector('.find-list');if(query.trim().length<2){list?.remove();input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');return}if(!list){list=document.createElement('div');list.className='find-list';list.id='find-list';list.setAttribute('role','listbox');list.setAttribute('aria-label',t('Your cégep or university'));find.appendChild(list)}list.innerHTML=findRows(matches);input.setAttribute('aria-expanded','true');if(state.schoolIndex>=0)input.setAttribute('aria-activedescendant','find-opt-'+state.schoolIndex);else input.removeAttribute('aria-activedescendant')}
+function renderFindList(){const input=$('school-find');if(!input)return;const query=state.draft.school||'';const matches=schoolMatches(query);const find=input.closest('.find');let list=find.querySelector('.find-list');if(query.trim().length<2){list?.remove();input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');return}if(!list){list=document.createElement('div');list.className='find-list';list.id='find-list';list.setAttribute('role','listbox');list.setAttribute('aria-label',t('Search your school'));find.appendChild(list)}list.innerHTML=findRows(matches);input.setAttribute('aria-expanded','true');if(state.schoolIndex>=0)input.setAttribute('aria-activedescendant','find-opt-'+state.schoolIndex);else input.removeAttribute('aria-activedescendant')}
 function mapLines(){return `<svg class="map-lines" aria-hidden="true"><defs><linearGradient id="map-branch-gradient" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b7c9dc"/><stop offset="1" stop-color="#7899bd"/></linearGradient><marker id="map-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0 8 4 0 8Z" fill="#7899bd"/></marker></defs><g class="map-paths"></g><g class="map-ports"></g></svg>`}
-function home(){const tiles=['moodle','omnivox','brightspace','canvas'].map(s=>{const account=state.accounts.find(a=>a.service===s),connected=!!account,enabled=account?.enabled!==false;return `<button class="tile ${connected?'connected':''} ${connected&&!enabled?'service-off':''}" data-open="${s}" aria-label="${names[s]} ${connected?'manage connection':'connect'}"><img src="/assets/${s}.png" alt=""><span>${names[s]}</span>${connected?'<i class="dot"></i>':''}</button>`}).join('');const ready=state.tunnel.startsWith('Ready(');const value=ready?state.link:state.tunnel.startsWith('Starting')?t('Creating your public link…'):state.tunnel.startsWith('Reconnecting')?t('Reconnecting your public link…'):state.tunnel.startsWith('Failed')?t('Unavailable'):state.tunnel==='Stopped'?t('Off'):t('Connect a service to create your link');return `<section class="home"><h1 class="sr-only">${t('Student MCP')}</h1>${findField()}<div class="mind-map">${mapLines()}<div class="tiles">${tiles}</div><div class="link-card"><button class="link-open" data-screen="links"><span class="link-title">${t('Your link')}</span><span class="link-value">${esc(value)}</span></button><button class="icon-button copy-home" data-copy="home" aria-label="${t('Copy link')}" ${ready?'':'disabled'}>${icon('copy')}</button></div><div class="ais"><button class="assistant-entry" data-assistant-choose>${icon('spark')}<span>${t('Connect an assistant')}</span><span class="assistant-entry-arrow" aria-hidden="true">›</span></button></div></div>${notice()}</section>`}
+function home(){const tiles=['moodle','omnivox','brightspace','canvas'].map(s=>{const account=state.accounts.find(a=>a.service===s),connected=!!account,enabled=account?.enabled!==false;return `<button class="tile ${connected?'connected':''} ${connected&&!enabled?'service-off':''}" data-open="${s}" aria-label="${names[s]} ${connected?'manage connection':'connect'}"><img src="/assets/${s}.png" alt=""><span>${names[s]}</span>${connected?'<i class="dot"></i>':''}</button>`}).join('');const ready=state.tunnel.startsWith('Ready(');const value=ready?state.link:state.tunnel.startsWith('Starting')?t('Creating your public link…'):state.tunnel.startsWith('Reconnecting')?t('Reconnecting your public link…'):state.tunnel.startsWith('Failed')?t('Unavailable'):state.tunnel==='Stopped'?t('Off'):t('Connect a service to create your link');return `<section class="home"><h1 class="sr-only">${t('Student MCP')}</h1>${findField()}<div class="mind-map">${mapLines()}<div class="tiles">${tiles}</div><div class="link-card"><button class="link-open" data-screen="links"><span class="link-title">${t('Your link')}</span><span class="link-value">${esc(value)}</span></button><button class="icon-button copy-home" data-copy="home" aria-label="${t('Copy link')}" ${ready?'':'disabled'}>${icon('copy')}</button></div><div class="ais"><button class="assistant-entry" data-assistant-choose>${icon('spark')}<span>${t('Set up an assistant')}</span><span class="assistant-entry-arrow" aria-hidden="true">›</span></button></div></div>${notice()}</section>`}
 let mindMapFrame=0;
 function scheduleMindMap(){cancelAnimationFrame(mindMapFrame);mindMapFrame=requestAnimationFrame(drawMindMap)}
 function drawMindMap(){
@@ -1153,14 +1195,14 @@ const eyeBtn=secret?`<button type="button" class="icon-button eye" data-eye="${n
 const helpPanel=help&&open?`<div class="help-panel" id="help-${name}" role="note">${help}</div>`:'';
 return `<div class="field"><div class="field-head"><label for="f-${name}">${label}</label>${helpBtn}${eyeBtn}</div>${helpPanel}<input id="f-${name}" class="input" name="${name}" type="${secret&&state.visible[name]?'text':type==='url'?'text':type}" placeholder="${esc(placeholder)}" value="${esc(value)}" autocomplete="${autofill||'off'}" ${type==='url'?'inputmode="url"':''} ${name==='code'?'inputmode="numeric" maxlength="6"':name==='profile_name'?'maxlength="80"':''}></div>`}
 function brightspaceReady(v,a){return !!(v.url||a?.url)&&!!(v.token||'').trim()}
-function loginScreenContent(){const a=selected(),s=state.service;if(!state.manualLogin)return `<form id="browser-connect-form">${input('url',s==='omnivox'?'College address':'Site address',s==='omnivox'?'https://cegepxxx.omnivox.ca':s==='moodle'?'https://studium.umontreal.ca':s==='canvas'?'https://zonecours2.hec.ca':'https://school.brightspace.com','url',a?.url||'')}${notice()}<button class="full-button primary" type="submit" ${state.busy?'disabled':''}>Connect with browser</button>${s==='canvas'?'':`<button class="full-button secondary" type="button" data-action="manual-login">Manual sign-in</button>`}</form>`;let fields='',ready=false;if(s==='moodle'){fields=input('url','Site address','https://studium.umontreal.ca','url',a?.url||'')+input('username','Username','firstname.lastname','text','','username')+input('password','Password','Moodle password','password','','current-password');ready=!!state.draft.username&&!!state.draft.password}
-if(s==='omnivox'){fields=input('url','College address','https://cegepxxx.omnivox.ca','url',a?.url||'')+input('username','Student number','0000000','text','','username')+input('password','Password','Omnivox password','password','','current-password');ready=!!(state.draft.url||a?.url)&&!!state.draft.username&&!!state.draft.password}
+function loginScreenContent(){const a=selected(),s=state.service;if(!state.manualLogin)return `<form id="browser-connect-form">${input('url',s==='omnivox'?'Omnivox address':'Site address',s==='omnivox'?'https://cegepxxx.omnivox.ca':s==='moodle'?'https://studium.umontreal.ca':s==='canvas'?'https://zonecours2.hec.ca':'https://school.brightspace.com','url',a?.url||'')}${notice()}<button class="full-button primary" type="submit" ${state.busy?'disabled':''}>Connect with browser</button>${s==='canvas'?'':`<button class="full-button secondary" type="button" data-action="manual-login">Manual sign-in</button>`}</form>`;let fields='',ready=false;if(s==='moodle'){fields=input('url','Site address','https://studium.umontreal.ca','url',a?.url||'')+input('username','Username','firstname.lastname','text','','username')+input('password','Password','Moodle password','password','','current-password');ready=!!state.draft.username&&!!state.draft.password}
+if(s==='omnivox'){fields=input('url','Omnivox address','https://cegepxxx.omnivox.ca','url',a?.url||'')+input('username','Student number','0000000','text','','username')+input('password','Password','Omnivox password','password','','current-password');ready=!!(state.draft.url||a?.url)&&!!state.draft.username&&!!state.draft.password}
 if(s==='brightspace'){fields=input('url','Site address','https://mycourses2.mcgill.ca','url',a?.url||'')+input('token','Session cookie or access token','d2lSessionVal=…; d2lSecureSessionVal=…','password');ready=brightspaceReady(state.draft,a)}
 return `<form id="connect-form">${fields}${notice()}${state.busy?'<p class="busy">Checking the connection…</p>':''}<button class="full-button primary" ${!ready||state.busy?'disabled':''}>${state.busy?'Connecting…':a?'Save changes':`Connect to ${names[s]}`}</button></form>`}
 function connectionSummary(){if(state.health?.error)return t('Connection failed');if(!state.health)return t('Checking connection…');const text=state.health.text;if(state.service==='moodle'){const user=text.match(/signed in as ([^(]+?)(?:\s*\(Moodle|\.$)/i)?.[1]?.trim();return user?`${t('Connected')} · ${user}`:t('Connected')}return state.service==='omnivox'||state.service==='brightspace'||state.service==='canvas'?t('Connected'):text}
-function profileNameForm(){return state.renaming?`<form id="profile-name-form" class="profile-name-form">${input('profile_name','Profile name','e.g. Léa','text',selected()?.name||'')}<div class="profile-name-actions"><button class="small-button" type="submit" ${state.busy?'disabled':''}>Save</button><button class="small-button" type="button" data-action="cancel-rename" ${state.busy?'disabled':''}>Cancel</button></div></form>`:''}
-function manageScreenContent(){const a=selected(),enabled=a?.enabled!==false;return `<div class="card manage-card">${accountChoices()}<div class="status-row"><span class="manage-status"><i class="status-dot ${state.health?.error?'offline':''}"></i><span class="manage-status-copy"><span class="manage-status-text ${a?.name?'profile-label':''}">${esc(a?.name||connectionSummary())}</span><span class="manage-account-host profile-label">${esc(accountHost(a))}</span></span></span><div class="profile-actions"><button class="icon-button" data-action="rename" aria-label="Rename profile" ${state.busy?'disabled':''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15l-1 6Z"/></svg></button><button class="icon-button" data-action="check" aria-label="Retry">${icon('refresh')}</button></div></div>${profileNameForm()}${state.health?.error?`<p class="hint" lang="${messageLang(state.health.text)}">${esc(t(state.health.text))}</p>`:''}<label class="service-enabled-row"><span class="service-enabled-copy">${t('Allow the assistant')}</span><input class="switch" type="checkbox" name="service_enabled" ${enabled?'checked':''} ${state.busy?'disabled':''}></label><button class="account-row add-account" data-add><span class="plus" aria-hidden="true">+</span><span>${t('Add account')}</span></button><div class="manage-actions"><button class="secondary" data-action="${state.confirmDisconnect?'cancel-disconnect':'edit'}">${state.confirmDisconnect?t('Cancel'):t('Change login')}</button><button class="danger" data-action="disconnect">${t('Disconnect')}</button></div></div>${notice()}`}
- function browserProgress(){const p=state.browserLogin?.progress;const labels={preparing:'Preparing the sign-in browser…',downloading:'Downloading Chrome for Testing…',extracting:'Installing the sign-in browser…',opening:'Opening the sign-in window…'};let text=t(labels[p?.phase]||'Finish signing in in the browser window. This page will update automatically.');if(p?.phase==='downloading'){const mb=n=>(n/1048576).toFixed(1);text+=' '+mb(p.downloaded||0)+(p.total?' / '+mb(p.total):'')+' MB'}return esc(text)}
+function profileNameForm(){return state.renaming?`<form id="profile-name-form" class="profile-name-form">${input('profile_name','Account name','e.g. Léa','text',selected()?.name||'')}<div class="profile-name-actions"><button class="small-button" type="submit" ${state.busy?'disabled':''}>Save</button><button class="small-button" type="button" data-action="cancel-rename" ${state.busy?'disabled':''}>Cancel</button></div></form>`:''}
+function manageScreenContent(){const a=selected(),enabled=a?.enabled!==false,multiple=state.accounts.filter(x=>x.service===state.service).length>1,statusText=multiple?connectionSummary():(a?.name||connectionSummary());return `<div class="card manage-card">${accountChoices()}<div class="status-row"><span class="manage-status"><i class="status-dot ${state.health?.error?'offline':''}"></i><span class="manage-status-copy"><span class="manage-status-text ${multiple?'':a?.name?'profile-label':''}">${esc(statusText)}</span><span class="manage-account-host profile-label">${esc(accountHost(a))}</span></span></span><div class="profile-actions"><button class="icon-button" data-action="rename" aria-label="Rename account" ${state.busy?'disabled':''}><svg viewBox="3 3 18 18" aria-hidden="true"><g transform="rotate(45 12 12)"><path d="M10.5 3.5h3a1 1 0 0 1 1 1v11.75L12 20.5l-2.5-4.25V4.5a1 1 0 0 1 1-1Z"/><path d="M9.5 7h5M9.5 16.25h5"/></g></svg></button><button class="icon-button" data-action="check" aria-label="Retry">${icon('refresh')}</button></div></div>${profileNameForm()}${state.health?.error?`<p class="hint" lang="${messageLang(state.health.text)}">${esc(t(state.health.text))}</p>`:''}<label class="service-enabled-row"><span class="service-enabled-copy">${t('Available to assistants')}</span><input class="switch" type="checkbox" name="service_enabled" ${enabled?'checked':''} ${state.busy?'disabled':''}></label><button class="account-row add-account" data-add><span class="plus" aria-hidden="true">+</span><span>${t('Add account')}</span></button><div class="manage-actions"><button class="secondary" data-action="${state.confirmDisconnect?'cancel-disconnect':'edit'}">${state.confirmDisconnect?t('Cancel'):t('Edit sign-in')}</button><button class="danger" data-action="disconnect">${t('Disconnect')}</button></div></div>${notice()}`}
+ function browserProgress(){const p=state.browserLogin?.progress;const labels={preparing:'Preparing the sign-in browser…',downloading:'Downloading Chrome for Testing…',extracting:'Installing the sign-in browser…',opening:'Opening the sign-in window…'};let text=t(labels[p?.phase]||'Finish signing in; this page will update automatically.');if(p?.phase==='downloading'){const mb=n=>(n/1048576).toFixed(1);text+=' '+mb(p.downloaded||0)+(p.total?' / '+mb(p.total):'')+' MB'}return esc(text)}
 function serviceScreen(){const a=selected(),waiting=state.browserLogin?.state==='waiting'&&state.browserLogin.service===state.service;return `${header(state.service)}<section class="form-screen">${state.browserDownload?`<p>${t('No compatible browser found. Download Chrome for Testing from Google (about 200 MB)? Your default browser stays the same.')}</p><button class="full-button primary" data-action="download-browser">Download and continue</button><button class="full-button secondary" data-action="decline-browser">Not now</button>`:waiting?`<p role="status">${browserProgress()}</p><button class="full-button secondary" data-action="cancel">Cancel</button>`:state.verification?verifyScreenContent():a&&!state.editing?manageScreenContent():loginScreenContent()}</section>`}
 function verifyScreenContent(){return `<h2>Identity verification</h2><p class="subtitle" data-server-text lang="${messageLang(state.verification)}">${esc(t(state.verification))}</p><form id="verify-form">${input('code','Security code (6 digits)','000000','text','','one-time-code')}${notice()}<button class="full-button primary" ${state.busy?'disabled':''}>${state.busy?'Verifying…':'Verify and connect'}</button></form><button class="full-button secondary" data-action="resend" ${state.busy?'disabled':''}>Send a new code</button><button class="full-button secondary" data-action="cancel" ${state.busy?'disabled':''}>Cancel verification</button>`}
 function localCard(){const live=state.local&&!!state.localLink;return `<div class="card" data-link-card="local"><div class="status-row">${live?`<span><i class="status-dot"></i>${t('Active')}</span><button class="copy-pill" data-copy="local">${icon('copy')}<span>${t('Copy')}</span></button>`:`<span class="node-state"><i class="node-dot idle"></i>${t('Off')}</span>`}</div>${live?`<div class="link-detail">${esc(state.localLink)}</div>`:''}</div>`}
@@ -1239,7 +1281,7 @@ async function checkSelected(){
  catch(e){if(state.service===service&&state.accountId===id){state.health={text:e.message,error:true};if(state.screen==='service'&&!state.editing)render()}}
 }
 function openService(service){state.service=service;state.screen='service';state.confirmDisconnect=false;state.manualLogin=false;state.otherSchool=false;state.editing=false;state.renaming=false;state.draft={};state.visible={};state.help={};state.notice=null;state.health=null;const a=state.accounts.find(x=>x.service===service);state.accountId=a?.id||'';if(service==='moodle'&&a&&a.url!=='https://moodle.polymtl.ca')state.otherSchool=true;if(a&&state.browserLogin?.state!=='waiting')checkSelected();render()}
-async function send(data){if(state.busy)return;state.busy=true;render();try{const r=await api('/action',data);state.notice=r.message?{text:r.message}:null;if(r.browser_download_required){state.browserDownload={...data};return}if(r.browser_login){state.browserLogin=r.browser_login;state.screen='service'}if(r.verification){state.verification=r.verification;state.screen='service'}else if(['connect','verify','cancel','disconnect'].includes(data.action)){state.verification=null;if(data.action==='verify'){state.screen='home';state.editing=false}else if(data.action==='cancel'){state.browserLogin=null;state.screen='service'}else state.screen='home'}if(data.action==='connect')state.editing=false;if(data.action==='rename_account'){state.renaming=false;delete state.draft.profile_name;$('live').textContent=t('Profile name saved')}if(r.stop)state.notice={text:'student-mcp stopped'};await refresh()}catch(e){if(data.action==='autostart')state.autostart=!data.enabled;state.notice={text:e.message,error:true}}finally{state.busy=false;render();if(data.action==='rename_account'&&!state.renaming)document.querySelector('[data-action="rename"]')?.focus()}}
+async function send(data){if(state.busy)return;state.busy=true;render();try{const r=await api('/action',data);state.notice=r.message?{text:r.message}:null;if(r.browser_download_required){state.browserDownload={...data};return}if(r.browser_login){state.browserLogin=r.browser_login;state.screen='service'}if(r.verification){state.verification=r.verification;state.screen='service'}else if(['connect','verify','cancel','disconnect'].includes(data.action)){state.verification=null;if(data.action==='verify'){state.screen='home';state.editing=false}else if(data.action==='cancel'){state.browserLogin=null;state.screen='service'}else state.screen='home'}if(data.action==='connect')state.editing=false;if(data.action==='rename_account'){state.renaming=false;delete state.draft.profile_name;$('live').textContent=t('Account name saved')}if(r.stop)state.notice={text:'student-mcp stopped'};await refresh()}catch(e){if(data.action==='autostart')state.autostart=!data.enabled;state.notice={text:e.message,error:true}}finally{state.busy=false;render();if(data.action==='rename_account'&&!state.renaming)document.querySelector('[data-action="rename"]')?.focus()}}
 document.addEventListener('click',async e=>{
   const shot=e.target.closest('[data-lightbox]');
   if(shot){
@@ -1271,7 +1313,7 @@ document.addEventListener('click',async e=>{
     if(!matchMedia('(prefers-reduced-motion: reduce)').matches)copy.querySelector('svg').animate([{opacity:0,transform:'scale(.8)'},{opacity:1,transform:'scale(1)'}],{duration:180,easing:'cubic-bezier(0.23, 1, 0.32, 1)'});
     setTimeout(()=>{if(!copy.isConnected)return;copy.innerHTML=original;copy.classList.remove('copy-confirmed');if(aria)copy.setAttribute('aria-label',aria);else copy.removeAttribute('aria-label')},1300);
    }
-  catch{state.notice={text:'Could not copy the link. Open connection settings and select the link to copy it manually.',error:true}}
+  catch{state.notice={text:'Could not copy the link. Open link settings and select the link to copy it manually.',error:true}}
    if(state.notice?.error)render();return;
  }
  const screen=e.target.closest('[data-screen]');

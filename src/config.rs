@@ -310,7 +310,7 @@ impl Settings {
         let name = name.trim();
         if name.chars().count() > 80 || name.chars().any(char::is_control) {
             return Err(
-                "Use a profile name of at most 80 characters, without control characters.".into(),
+                "Use an account name of at most 80 characters, without control characters.".into(),
             );
         }
         let _guard = SAVE_LOCK.lock().unwrap_or_else(|error| error.into_inner());

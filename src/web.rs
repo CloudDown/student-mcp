@@ -309,6 +309,10 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                     include_bytes!("resources/assets/guide-gemini-chat.webp"),
                     "image/webp",
                 )),
+                "/assets/local-claude-code.png" => Some((
+                    include_bytes!("resources/assets/local-claude-code.png"),
+                    "image/png",
+                )),
                 "/assets/local-opencode.png" => Some((
                     include_bytes!("resources/assets/local-opencode.png"),
                     "image/png",
@@ -625,7 +629,7 @@ fn action(
         let name = args
             .get("name")
             .and_then(Value::as_str)
-            .ok_or("Provide a profile name.")?;
+            .ok_or("Provide an account name.")?;
         let updated = Settings::rename_account(service, get("id"), name)?;
         return Ok(json!({"name":updated.account_name(service, get("id"))}));
     }

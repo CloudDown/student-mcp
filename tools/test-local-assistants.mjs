@@ -15,17 +15,18 @@ const apps=[
  {assistant:'omp',name:'Oh My Pi',detected:false,configured:false,reload:'mcp'},
 ];
 let scanError=false,setupError=false,releaseSetup=null;
+const response=(ok,value)=>({ok,text:async()=>JSON.stringify(value)});
 const context=vm.createContext({
  document:{documentElement:{},body:node,getElementById:()=>node,querySelector:()=>null,querySelectorAll:()=>[],addEventListener:(type,fn)=>{if(!listeners.has(type))listeners.set(type,[]);listeners.get(type).push(fn)}},
  window:{addEventListener(){}},location:{hash:'#fixture',pathname:'/'},history:{replaceState(){}},
  sessionStorage:{getItem(){return null},setItem(){}},localStorage:{getItem(){return 'fr'},setItem(){}},navigator:{language:'fr'},
  fetch:async(path,options)=>{
   const body=options.body?JSON.parse(options.body):null;requests.push({path,body});
-  if(path==='/assistants')return {ok:!scanError,json:async()=>scanError?{error:'Fixture scan failed'}:{assistants:structuredClone(apps)}};
+   if(path==='/assistants')return response(!scanError,scanError?{error:'Fixture scan failed'}:{assistants:structuredClone(apps)});
   assert.equal(path,'/action');assert.equal(body.action,'assistant_setup');
   if(releaseSetup)await new Promise(resolve=>{releaseSetup=resolve});
   const app=apps.find(app=>app.assistant===body.assistant);
-  return {ok:!setupError,json:async()=>setupError?{error:'Fixture config refused'}:{...app,configured:true}};
+   return response(!setupError,setupError?{error:'Fixture config refused'}:{...app,configured:true});
  },
 });
 vm.runInContext(source.slice(0,source.lastIndexOf('refresh();const timer='))+`

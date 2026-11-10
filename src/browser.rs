@@ -23,7 +23,7 @@ mod install;
 mod moodle;
 
 const PREFIX: &str = "browser-profile:";
-const RECONNECT: &str = "Browser session needs attention. Open student-mcp and choose Change login → Connect with browser.";
+const RECONNECT: &str = "Browser session needs attention. Open student-mcp and choose Edit sign-in → Connect with browser.";
 const ACCOUNT_CHANGED: &str = "The browser is signed into a different account. Add it as a new account, or disconnect this one before reconnecting.";
 const MOBILE_LOGIN: &str =
     "/intr/Module/Identification/Login/Mobile/LoginMobile.aspx?typeUtilisateur=Etudiant";

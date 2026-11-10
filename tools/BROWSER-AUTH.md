@@ -46,7 +46,7 @@ No password or MFA code is passed through the MCP tools.
   discard session-only cookies on exit. Persistent cookies and local storage
   remain in the browser profile. Cookie rotation/deletion is handled by Chromium.
 - The browser can follow ordinary SSO navigation when resuming the profile. If
-  interaction is required, MCP returns a reconnect message; **Change login →
+  interaction is required, MCP returns a reconnect message; **Edit sign-in →
   Connect with browser** reopens the saved profile. No login window is opened by
   a remote MCP request. No password/MFA fields are automatically filled.
 - Sign-in times out after five minutes. **Cancel** discards the pending result;

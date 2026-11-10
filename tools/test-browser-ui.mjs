@@ -19,7 +19,7 @@ try {
     if(path==='/')return route.fulfill({contentType:'text/html',body:html});
     if(path==='/state')return route.fulfill({json:state});
     if(path==='/update')return route.fulfill({json:{available:false}});
-    if(path==='/assistants')return route.fulfill({json:{assistants:[{assistant:'claude',name:'Claude Desktop',detected:true,configured:false,reload:'restart'},{assistant:'opencode',name:'OpenCode',detected:true,configured:false,reload:'automatic'},{assistant:'gemini',name:'Gemini CLI',detected:false,configured:false,reload:'restart'}]}});
+    if(path==='/assistants')return route.fulfill({json:{assistants:[{assistant:'claude',name:'Claude Desktop',detected:true,configured:false,reload:'restart'},{assistant:'claude-code',name:'Claude Code',detected:true,configured:false,reload:'restart'},{assistant:'opencode',name:'OpenCode',detected:true,configured:false,reload:'automatic'},{assistant:'gemini',name:'Gemini CLI',detected:false,configured:false,reload:'restart'}]}});
     if(path.startsWith('/assistant/')){const id=path.slice('/assistant/'.length);return route.fulfill({json:{assistant:id,local:id!=='chatgpt',detected:id==='claude',configured:false}})}
     if(path==='/action'){
       const action=route.request().postDataJSON();actions.push(action);
@@ -49,8 +49,8 @@ try {
   await page.getByRole('button',{name:'Back to services',exact:true}).click();
   await page.getByRole('combobox').fill('garneau');
   await page.getByRole('option',{name:/Garneau/}).click();
-  await page.getByLabel('College address',{exact:true}).waitFor();
-  assert.equal(await page.getByLabel('College address',{exact:true}).inputValue(),'https://cegepgarneau.omnivox.ca');
+  await page.getByLabel('Omnivox address',{exact:true}).waitFor();
+  assert.equal(await page.getByLabel('Omnivox address',{exact:true}).inputValue(),'https://cegepgarneau.omnivox.ca');
   await page.getByRole('button',{name:'Back to services',exact:true}).click();
   await page.getByRole('combobox').fill('zzz');
   assert.equal(await page.getByText('No school found',{exact:true}).count(),1);
@@ -67,16 +67,16 @@ try {
   await page.getByText('Installing the sign-in browser…',{exact:true}).waitFor();
   state.browser_login.progress={phase:'signin'};
   await page.evaluate(()=>refresh());
-  await page.getByText('Finish signing in in the browser window. This page will update automatically.',{exact:true}).waitFor();
+  await page.getByText('Finish signing in; this page will update automatically.',{exact:true}).waitFor();
   assert.equal(actions.at(-1).action,'browser_connect');
   assert.equal(actions.at(-1).service,'brightspace');
   assert.equal(actions.at(-1).url,'https://school.brightspace.com');
   state.accounts=[{id:'fixture',service:'brightspace',url:'https://school.brightspace.com'}];
   state.browser_login={...state.browser_login,state:'connected'};
   await page.evaluate(()=>refresh());
-  await page.getByRole('button',{name:'Change login',exact:true}).waitFor();
-  await page.getByRole('button',{name:'Rename profile',exact:true}).click();
-  const profileName=page.getByLabel('Profile name',{exact:true});
+  await page.getByRole('button',{name:'Edit sign-in',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Rename account',exact:true}).click();
+  const profileName=page.getByLabel('Account name',{exact:true});
   assert.equal(await profileName.getAttribute('maxlength'),'80');
   await profileName.fill('Léa');
   rejectRename=true;
@@ -93,11 +93,11 @@ try {
   }
   assert.deepEqual(actions.at(-1),{action:'rename_account',service:'brightspace',id:'fixture',name:'Léa'});
   assert.equal(await profileName.count(),0);
-  await page.getByRole('button',{name:'Rename profile',exact:true}).click();
+  await page.getByRole('button',{name:'Rename account',exact:true}).click();
   await profileName.fill('Not saved');
   await page.getByRole('button',{name:'Cancel',exact:true}).click();
   assert.equal(state.accounts[0].name,'Léa');
-  await page.getByRole('button',{name:'Rename profile',exact:true}).click();
+  await page.getByRole('button',{name:'Rename account',exact:true}).click();
   await profileName.fill('Connected <img src=x onerror=alert(1)>');
   await page.getByRole('button',{name:'Save',exact:true}).click();
   await page.locator('.manage-status-text').filter({hasText:'Connected <img src=x onerror=alert(1)>'}).waitFor();
@@ -106,7 +106,7 @@ try {
   state.accounts.push({id:'second',service:'brightspace',url:'https://school.brightspace.com',name:'Alex'});
   await page.evaluate(()=>refresh());
   await page.getByRole('button',{name:'Alex',exact:true}).click();
-  await page.getByRole('button',{name:'Rename profile',exact:true}).click();
+  await page.getByRole('button',{name:'Rename account',exact:true}).click();
   assert.equal(await profileName.inputValue(),'Alex');
   await profileName.fill('');
   await page.getByRole('button',{name:'Save',exact:true}).click();
@@ -114,12 +114,12 @@ try {
   assert.equal(state.accounts[1].name,null);
   state.accounts.splice(1);
   await page.evaluate(async()=>{state.accountId='fixture';await refresh()});
-  await page.getByRole('button',{name:'Change login',exact:true}).click();
+  await page.getByRole('button',{name:'Edit sign-in',exact:true}).click();
   await page.getByRole('button',{name:'Manual sign-in',exact:true}).click();
   await page.getByLabel('Session cookie or access token',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Back to services',exact:true}).click();
   await page.getByRole('button',{name:'Omnivox connect',exact:true}).click();
-  await page.getByLabel('College address',{exact:true}).fill('college.omnivox.ca');
+  await page.getByLabel('Omnivox address',{exact:true}).fill('college.omnivox.ca');
   await page.getByRole('button',{name:'Connect with browser',exact:true}).click();
   assert.equal(actions.at(-1).url,'https://college.omnivox.ca');
   await page.getByRole('button',{name:'Cancel',exact:true}).click();
@@ -187,6 +187,7 @@ try {
   await page.locator('.local-apps').waitFor();
   assert.equal(await page.locator('[data-local-assistant="gemini"]').isDisabled(),true);
   assert.equal(await page.locator('[data-local-assistant="claude"] img.local-app-logo[src="/assets/claude.png"]').count(),1);
+  assert.equal(await page.locator('[data-local-assistant="claude-code"] img.local-app-logo[src="/assets/local-claude-code.png"]').count(),1);
   assert.equal(await page.locator('[data-local-assistant="opencode"] img.local-app-logo[src="/assets/local-opencode.png"]').count(),1);
   assert.equal(await page.locator('[data-local-assistant="gemini"] img.local-app-logo[src="/assets/gemini.png"]').count(),1);
   assert.equal(await page.locator('.local-app-list .local-app-mark').count(),0);

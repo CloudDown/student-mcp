@@ -151,7 +151,7 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         for assistant in ("grok", "claude", "chatgpt", "gemini"):
             status, body = request(f"/assets/{assistant}.png", auth=False)
             assert status == 200 and body.startswith(b"\x89PNG\r\n\x1a\n"), assistant
-        for app in ("opencode", "cursor", "vscode", "windsurf", "qwen", "pi",
+        for app in ("claude-code", "opencode", "cursor", "vscode", "windsurf", "qwen", "pi",
                     "omp", "kiro", "amp", "crush", "devin"):
             status, body = request(f"/assets/local-{app}.png", auth=False)
             assert status == 200 and body.startswith(b"\x89PNG\r\n\x1a\n"), app

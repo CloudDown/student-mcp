@@ -354,6 +354,7 @@ jobs:
             ## Desktop installation
             - **Windows:** download `student-mcp-setup.exe`, double-click it and keep **Open student-mcp** selected. PowerShell installation is also available via `tools/packaging/install.ps1`.
             - **macOS:** download `student-mcp.dmg`, open it and double-click **Install student-mcp**. Confirm **Install and open**.
+            - **macOS security warning:** this build is not Developer ID signed or notarized. If you trust this official download and macOS warns about an unidentified developer or being unable to check the app, dismiss the warning after the first opening attempt. Go to **System Settings → Privacy & Security → Open Anyway** for **Install student-mcp**, then confirm **Open** and continue installation. If the installed **student-mcp** app is blocked by the same warning, repeat for that app. On a French Mac: **Réglages Système → Confidentialité et sécurité → Ouvrir quand même**. If macOS reports malware or damage, stop; do not override that warning. [Apple's instructions](https://support.apple.com/en-us/102445).
             - Windows PowerShell chooses x64 or arm64 binaries automatically; macOS DMG is universal (Intel / Apple Silicon).
             - **Linux:** download `student-mcp-linux-x64` or `student-mcp-linux-arm64` (raw binary), or use `tools/packaging/install.sh`.
             - These builds are not yet publisher-signed/notarized; Windows/macOS may warn or block them. Do not disable system security protections.

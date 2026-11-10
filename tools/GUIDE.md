@@ -12,6 +12,8 @@ Install from the [latest release](https://github.com/CloudDown/student-mcp/relea
   `tools/packaging/install.ps1` downloads and runs the same setup file.
 - **macOS:** open `student-mcp.dmg`, double-click
   **Install student-mcp**, then **Install and open**. Reopen from Applications.
+  If macOS blocks opening, follow the [macOS security steps](#macos-security-warning)
+  below; the authorization is available after the first blocked opening attempt.
   To remove it, stop it from its browser page and move the app to the Trash.
 - Windows and macOS choose Intel/AMD or ARM automatically.
 - Quit any running copy before upgrading. Removing/updating the application
@@ -25,12 +27,33 @@ Linux uses `tools/packaging/install.sh`, as described in the
 application menu. Downloading the raw binary alone does not create a launcher.
 No ZIPs are published.
 
+### macOS security warning
+
+The current download is not signed with an Apple Developer ID or notarized by
+Apple. macOS may therefore block the installer or the installed app. Only proceed
+if you trust the download from the [official GitHub release](https://github.com/CloudDown/student-mcp/releases/latest).
+
+1. Open the DMG and try opening **Install student-mcp**. Dismiss the warning
+   about an unidentified developer or Apple being unable to check the app.
+2. Open **System Settings → Privacy & Security**, scroll to **Security**, and
+   click **Open Anyway** for **Install student-mcp**.
+3. Confirm **Open**, then select **Install and open** in the installer.
+4. If the installed **student-mcp** app is blocked by the same warning, try
+   opening it from Applications and repeat the authorization for that app.
+
+On a French-language Mac, the path is **Réglages Système → Confidentialité et
+sécurité → Ouvrir quand même**. This adds an exception for the selected app;
+it does not require disabling Gatekeeper or removing quarantine attributes.
+If the button is unavailable on a school-managed Mac, contact its administrator.
+If macOS reports malware, damage, or that the app will harm your computer, stop
+rather than override the warning. See [Apple's instructions](https://support.apple.com/en-us/102445).
+
 ## 1. What you see when it opens
 
 Your browser opens a local page with accounts, login, verification, and MCP link
 settings. Its separate loopback listener is never forwarded through the tunnel.
 For Claude web, wait for a public HTTPS link; a localhost link only works locally.
-**Connect an assistant** under **Your link** opens the assistant guides; see
+**Set up an assistant** under **Your link** opens the assistant guides; see
 [Local AI assistant](#3-local-ai-assistant).
 
 ### Close the tab, keep the app running
@@ -46,7 +69,7 @@ automatically when configured. Turn it off to remove the startup entry.
 
 ## 2. Connecting a service
 
-Type your cégep or university in the search field: the matching service opens
+Type your school in the search field: the matching service opens
 with its address already filled in. The four tiles stay available when you
 already know which platform your school uses.
 
@@ -80,7 +103,7 @@ with download progress and cancellation. You can keep Safari or Firefox as your
 default browser; no manual browser installation is needed on supported systems.
 Complete login and MFA in the separate sign-in window. A dedicated per-account
 profile retains the session across restarts. If interaction is needed later,
-choose **Change login → Connect with browser**. The account is saved only after
+choose **Edit sign-in → Connect with browser**. The account is saved only after
 course access is verified. **Manual sign-in** opens the manual
 methods described below. See [browser setup, persistence and test status](BROWSER-AUTH.md).
 
@@ -90,7 +113,7 @@ is saved, never the password. If your school uses Microsoft SSO or 2FA, this
 mode can be refused. New accounts use Polytechnique Montréal's Moodle site;
 existing accounts keep their configured site.
 
-**Omnivox (Léa / Mio).** Enter the college Omnivox address
+**Omnivox (Léa / Mio).** Enter the Omnivox address
 (`https://cegepxxx.omnivox.ca`), your student number and password. The app
 signs in through the **mobile** Omnivox page (the one the official app uses),
 keeps only the session cookies, and reads courses, documents, assignments,
@@ -135,7 +158,7 @@ exactly one of `path` (file on the machine running student-mcp),
 `content_base64` + `filename`, or `text`. Write tools advertise
 `readOnlyHint: false` so MCP clients can require confirmation. Course lists retain `PagingInfo`; supply `bookmark` to request
 the next page. Prefer `brightspace_deadlines` for upcoming work. Sessions expire
-and must be replaced via **Change login**. The connector uses LP API 1.49 and LE
+and must be replaced via **Edit sign-in**. The connector uses LP API 1.49 and LE
 API 1.82.
 
 Saved accounts have check, reconnect and disconnect actions. Connected
@@ -234,7 +257,7 @@ References: [D2L API authentication](https://docs.valence.desire2learn.com/basic
   - Windows: `%LOCALAPPDATA%\student-mcp\student-mcp.exe`
 - Use the main binary, not `student-mcp-desktop`: the desktop launcher always
    opens the browser page, while the main binary starts MCP stdio without arguments.
-- **Connect an assistant** separates **Web** from **On this computer**. The web
+- **Set up an assistant** separates **Web** from **On this computer**. The web
   view retains short guides for Grok, Claude, ChatGPT and Gemini. The local view
   scans known configuration locations, application directories and executable paths
   without running an assistant or modifying files. Choose a detected app, then

@@ -61,10 +61,11 @@ assistants the link can be pasted into, without implying endorsement.
 brand belongs to xAI.
 
 `local-*.png` are the logos shown for locally detected assistants, downloaded
-from each vendor on 2026-11-09 and normalized to 128 × 128 (artwork fitted to
-112 px, transparent margin, metadata stripped). Claude Desktop, Codex and Gemini
-CLI reuse `claude-icon.png`, `chatgpt-icon.png` and `gemini-icon.png`:
+from each vendor and normalized to 128 × 128 (artwork fitted to 112 px,
+transparent margin, metadata stripped). Claude Desktop, Codex and Gemini CLI
+reuse `claude-icon.png`, `chatgpt-icon.png` and `gemini-icon.png`:
 
+- claude-code: https://unpkg.com/@lobehub/icons-static-png@latest/light/claudecode-color.png (Claw'd mark, LobeHub icon set, 2026-11-10)
 - opencode: https://opencode.ai/favicon.svg
 - cursor: https://cursor.com/marketing-static/icon-192x192-light.png
 - vscode: https://code.visualstudio.com/assets/apple-touch-icon.png

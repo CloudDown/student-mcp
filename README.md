@@ -14,6 +14,14 @@ Download **[student-mcp-setup.exe](https://github.com/CloudDown/student-mcp/rele
 
 Download **[student-mcp.dmg](https://github.com/CloudDown/student-mcp/releases/latest/download/student-mcp.dmg)**, open it, double-click **Install student-mcp**, then **Install and open**.
 
+**If macOS blocks opening:** the current app is not signed with an Apple Developer ID or notarized by Apple. If you trust this download from our official GitHub release:
+
+1. Try opening **Install student-mcp** once, then dismiss the warning about an unidentified developer or Apple being unable to check the app.
+2. Open **System Settings → Privacy & Security**, scroll to **Security**, and choose **Open Anyway** for **Install student-mcp**.
+3. Confirm **Open**, then continue with **Install and open**. If the installed **student-mcp** app is also blocked by the same warning, repeat these steps for that app.
+
+This authorizes only the selected app; do not disable Gatekeeper or remove quarantine attributes. If macOS reports malware, damage, or that the app will harm your computer, stop rather than override it. See [Apple's instructions](https://support.apple.com/en-us/102445).
+
 ### Linux
 
 ```sh
