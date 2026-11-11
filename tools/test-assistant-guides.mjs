@@ -179,7 +179,8 @@ try{
  await page.locator('[data-guide-step="1"]').click();
  fixture.public=false;fixture.tunnel='Stopped';fixture.link='';
  await page.evaluate(()=>refresh());
- assert.equal(await page.locator('[data-copy="assistant"]').count(),0);
+ // A polling refresh may already be in flight, so wait for the next render instead of racing it.
+ await page.locator('[data-copy="assistant"]').waitFor({state:'detached'});
  await page.getByRole('button',{name:'Ouvrir les réglages du lien',exact:true}).waitFor();
  await page.locator('#language-button').click();
  await page.getByRole('button',{name:'Español'}).click();

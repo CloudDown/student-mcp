@@ -553,7 +553,8 @@ mod tests {
         dispatch(&client, "brightspace_group_join", &input).unwrap();
         let requests = worker.join().unwrap();
         assert!(requests[1].contains(r#"{"UserId":123}"#));
-        assert!(!requests[1].contains("999"));
+        // The fixture port may itself contain "999"; check the submitted id, not the URL.
+        assert!(!requests[1].contains(r#""UserId":999"#));
         let headers = requests[1].to_lowercase();
         assert!(headers.contains("x-csrf-token: sess"));
         assert!(headers.contains("cookie: d2lsessionval=sess"));
