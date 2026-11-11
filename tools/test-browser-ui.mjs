@@ -80,6 +80,20 @@ try {
   state.browser_login={...state.browser_login,state:'connected'};
   await page.evaluate(()=>refresh());
   await page.getByRole('button',{name:'Edit sign-in',exact:true}).waitFor();
+  state.accounts[0].url='https://school.moodledemo.net';
+  await page.evaluate(()=>refresh());
+  await page.setViewportSize({width:390,height:844});
+  assert.ok(await page.locator('.account-row-title').evaluate(el=>{
+    // Each domain label must stay on one line; breaks between labels are allowed.
+    return [...el.childNodes].filter(node=>node.nodeType===Node.TEXT_NODE).every(node=>{
+      const range=document.createRange();range.selectNodeContents(node);
+      return range.getClientRects().length===1;
+    });
+  }),'Hostname must not split inside a domain label at 390px');
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+  state.accounts[0].url='https://school.brightspace.com';
+  await page.evaluate(()=>refresh());
+  await page.setViewportSize({width:1280,height:900});
    await page.locator('.account-row.active [data-account]').click();
   const profileName=page.getByLabel('Account name',{exact:true});
   assert.equal(await profileName.getAttribute('maxlength'),'80');

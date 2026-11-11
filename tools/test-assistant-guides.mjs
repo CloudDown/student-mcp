@@ -29,7 +29,7 @@ try{
   if(path==='/app.css')return route.fulfill({contentType:'text/css',body:css});
   if(path==='/app.js')return route.fulfill({contentType:'text/javascript',body:js});
   if(path==='/state')return route.fulfill({json:fixture});
-  if(path==='/update')return route.fulfill({json:{available:false,current:'test'}});
+   if(path==='/update')return route.fulfill({json:{available:false,current:'0.8.1'}});
   if(path.startsWith('/assets/')){
    const file=path.split('/').at(-1),name=file.replace(/\.png$/,'');
    if(assetNames[name])return route.fulfill({contentType:'image/png',body:readFileSync(new URL(`../src/resources/assets/${assetNames[name]}.png`,import.meta.url))});
@@ -92,13 +92,23 @@ try{
    assert.equal(await page.locator('[data-assistant-setup]').count(),0,'Local setup belongs in its own view');
    assert.equal(await page.locator('[data-assistant-mode]').count(),2);
    await page.locator('[data-guide-step="1"]').click();
+   if(id==='claude'){
+    assert.match(await page.locator('.journey-fields').innerText(),/Authentification\s+Aucune connexion/);
+    assert.deepEqual(await page.locator('.guide-path li').allTextContents(),['Continuer','Aucune connexion','Ajouter']);
+   }
    await page.getByRole('button',{name:'Copier le lien',exact:true}).click();
    assert.equal(await page.evaluate(()=>window.fixtureCopied),fixture.link);
   for(const width of [1440,768,390,320]){
    await page.setViewportSize({width,height:1000});
    for(let step=0;step<3;step++){
     await page.locator(`[data-guide-step="${step}"]`).click();
-    assert.equal(await page.locator('.journey-node[aria-current="step"]').getAttribute('data-guide-step'),String(step));
+     assert.equal(await page.locator('.journey-node[aria-current="step"]').getAttribute('data-guide-step'),String(step));
+     await page.evaluate(()=>document.querySelector('.screen').scrollTop=0);
+     assert.ok(await page.evaluate(()=>{
+      const back=document.querySelector('.page-nav .back').getBoundingClientRect();
+      const badge=document.querySelector('#update-label').getBoundingClientRect();
+      return !badge.width || back.top>=badge.bottom+4 || back.left>=badge.right+4;
+     }),'Version badge must not overlap the back button');
     await noOverflow();
      assert.ok(await page.locator('.journey-long,.journey-short').evaluateAll(labels=>labels.filter(label=>label.getClientRects().length).every(label=>{const box=label.getBoundingClientRect(),button=label.parentElement.getBoundingClientRect();return box.left>=button.left-1&&box.right<=button.right+1})),'Step labels must not collide on narrow screens');
      assert.ok(await page.locator('.assistant-switcher').evaluate(track=>[...track.querySelectorAll('button')].every(button=>{const a=track.getBoundingClientRect(),b=button.getBoundingClientRect();return b.left>=a.left&&b.right<=a.right})),'Assistant buttons must fit inside their control');

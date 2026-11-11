@@ -26,8 +26,11 @@ fn open_browser(url: &str) {
         .spawn();
     match result {
         Ok(mut child) => {
+            let url = url.to_string();
             std::thread::spawn(move || {
-                let _ = child.wait();
+                if !child.wait().is_ok_and(|status| status.success()) {
+                    eprintln!("Browser could not open. Open {url} in your browser.");
+                }
             });
         }
         Err(_) => eprintln!("Open {url} in your browser."),
@@ -46,6 +49,30 @@ pub fn run_background(port: Option<u16>) {
     }
 }
 
+/// Discover a running local UI without changing configuration or opening a browser.
+pub fn settings_url() -> Result<String, String> {
+    let unavailable = "No running settings page found. Run student-mcp up first.";
+    let bytes = std::fs::read(crate::config::config_path().with_extension("ui.json"))
+        .map_err(|_| unavailable)?;
+    let (port, key): (u16, String) = serde_json::from_slice(&bytes).map_err(|_| unavailable)?;
+    if port == 0 || key.len() != 64 || !key.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(unavailable.into());
+    }
+    let origin = format!("http://127.0.0.1:{port}");
+    let response = ureq::AgentBuilder::new()
+        .redirects(0)
+        .timeout(Duration::from_secs(2))
+        .build()
+        .get(&format!("{origin}/state"))
+        .set("Authorization", &format!("Bearer {key}"))
+        .call()
+        .map_err(|_| unavailable)?;
+    if response.status() != 200 {
+        return Err(unavailable.into());
+    }
+    Ok(format!("{origin}/#{key}"))
+}
+
 fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
     let settings = Settings::load();
     if let Some(error) = settings.config_error {
@@ -56,24 +83,12 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
     let listener = match crate::http::bind(port.unwrap_or(gateway.port)) {
         Ok(listener) => listener,
         Err(error) => {
-            if let Ok(bytes) = std::fs::read(&instance) {
-                if let Ok((admin_port, key)) = serde_json::from_slice::<(u16, String)>(&bytes) {
-                    let origin = format!("http://127.0.0.1:{admin_port}");
-                    if ureq::AgentBuilder::new()
-                        .redirects(0)
-                        .timeout(Duration::from_secs(2))
-                        .build()
-                        .get(&format!("{origin}/state"))
-                        .set("Authorization", &format!("Bearer {key}"))
-                        .call()
-                        .is_ok()
-                    {
-                        if open_window {
-                            open_browser(&format!("{origin}/#{key}"));
-                        }
-                        return Ok(());
-                    }
+            if let Ok(url) = settings_url() {
+                eprintln!("Settings: {url}");
+                if open_window {
+                    open_browser(&url);
                 }
+                return Ok(());
             }
             return Err(format!("Cannot start MCP: {error}"));
         }
@@ -126,6 +141,7 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
     let config_url = format!("{origin}/#{secret}");
+    eprintln!("Settings: {config_url}");
     if open_window {
         open_browser(&config_url);
     }

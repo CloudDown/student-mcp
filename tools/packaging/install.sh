@@ -98,8 +98,22 @@ else
   # Persist the CLI, then open the small window in the background.
   install_dir="$HOME/.student-mcp/bin"
   mkdir -p "$install_dir"
-  cp "$binary" "$install_dir/student-mcp"
-  chmod +x "$install_dir/student-mcp"
+  cp "$binary" "$install_dir/.student-mcp.$$"
+  chmod +x "$install_dir/.student-mcp.$$"
+  mv -f "$install_dir/.student-mcp.$$" "$install_dir/student-mcp"
+  cli_dir="$HOME/.local/bin"
+  mkdir -p "$cli_dir"
+  if [ -e "$cli_dir/student-mcp" ] || [ -L "$cli_dir/student-mcp" ]; then
+    if [ "$(readlink "$cli_dir/student-mcp" 2>/dev/null || true)" != "$install_dir/student-mcp" ]; then
+      printf 'Existing %s was preserved. Use %s directly.\n' "$cli_dir/student-mcp" "$install_dir/student-mcp" >&2
+    fi
+  else
+    ln -s "$install_dir/student-mcp" "$cli_dir/student-mcp"
+  fi
+  case ":$PATH:" in
+    *":$cli_dir:"*) ;;
+    *) printf 'Add ~/.local/bin to PATH in this terminal and your shell profile:\n  export PATH="$HOME/.local/bin:$PATH"\n' >&2 ;;
+  esac
   if [ "$system" = linux ]; then
     # New releases embed the icon; older verified binaries get it from the
     # same commit as this installer (without coupling to the moving main branch).
@@ -145,6 +159,16 @@ EOF
       update-desktop-database "$applications" >/dev/null 2>&1 || true
     fi
   fi
+  # The local settings URL carries a private UI key. Keep its log user-only.
+  (umask 077; touch "$HOME/.student-mcp/window.log"; chmod 600 "$HOME/.student-mcp/window.log")
   nohup "$install_dir/student-mcp" up > "$HOME/.student-mcp/window.log" 2>&1 &
   printf "The student-mcp window is opening. Installed file: %s\n" "$install_dir/student-mcp"
+  for attempt in 1 2 3 4 5; do
+    if settings_url="$("$install_dir/student-mcp" settings-url 2>/dev/null)"; then
+      printf 'Settings: %s\n' "$settings_url"
+      break
+    fi
+    sleep 1
+  done
+  printf 'Find the settings URL again: "%s" settings-url\nLog: %s\n' "$install_dir/student-mcp" "$HOME/.student-mcp/window.log"
 fi

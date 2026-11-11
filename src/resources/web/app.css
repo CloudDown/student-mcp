@@ -344,7 +344,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 .local-apps summary::before{content:"›";width:auto;height:auto;flex:none;border:0;rotate:90deg;transition:rotate 140ms ease-out;margin:0;font-size:1rem;line-height:1}
 .local-apps details[open] summary::before{rotate:-90deg}
 @media(max-width:380px){#update-label{display:none}.global-bar{padding-left:1rem;padding-right:1rem}}
-@media(max-width:40rem){.app.assistant-view{padding-top:max(2.5rem,calc(env(safe-area-inset-top) + 1.5rem))}}
+@media(max-width:40rem){.app.assistant-view{padding-top:max(5rem,calc(env(safe-area-inset-top) + 4rem))}.account-row.active{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.25rem .75rem}.account-row.active .account-row-select{grid-column:1 / -1}.account-row.active .profile-actions{justify-self:start}.account-row.active .account-enabled{justify-self:end}}
+@media(max-width:40rem) and (max-height:900px){.setup-link+.journey-fields{margin-top:.5rem}.guide-shot{max-height:90px}}
 
 /* Minimal local-app list: rows on the page, no nested card stack. */
 .local-apps{padding:0;border:0;border-radius:0;background:transparent}

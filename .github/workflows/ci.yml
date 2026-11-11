@@ -60,6 +60,9 @@ jobs:
         run: cargo test --locked
       - name: Packaging tests
         run: python -m unittest discover -s tools -p 'test_*.py'
+      - name: Settings discovery and configuration preservation
+        if: runner.os == 'Linux'
+        run: python tools/smoke-web.py target/debug/student-mcp
       - name: Install test browser
         shell: bash
         run: |
@@ -71,3 +74,4 @@ jobs:
           cargo test --locked chromium_moodle_sso -- --ignored
           node tools/test-browser.mjs
           node tools/test-browser-ui.mjs
+          node tools/test-assistant-guides.mjs

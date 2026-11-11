@@ -1,5 +1,28 @@
 use super::*;
 
+#[test]
+fn original_note_matches_link_or_inline_resource_delivery() {
+    let _guard = crate::share::LINK_LOCK.lock().unwrap();
+    crate::share::set_origin(None);
+    crate::share::set_port(0);
+    let document =
+        store::Document::new("notes.txt", "text/plain", Arc::new(b"Notes".to_vec()), None);
+    let inline = original_file(&document);
+    assert!(inline.get("links").is_none());
+    assert!(!inline["note"].as_str().unwrap().contains("links.download"));
+    assert!(mcp_content_for_file(inline, "moodle")
+        .iter()
+        .any(|block| block["type"] == "resource"));
+    crate::share::set_port(8420);
+    let linked = original_file(&document);
+    crate::share::set_port(0);
+    assert!(linked["links"]["download"].is_string());
+    assert!(linked["note"]
+        .as_str()
+        .unwrap()
+        .contains("Share links.download"));
+}
+
 /// Self-contained vector/text PDF, no Ghostscript, OCR, or school files.
 fn pdf_fixture(count: u32, blank: bool) -> Vec<u8> {
     let mut objects = vec![

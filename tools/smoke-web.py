@@ -73,7 +73,9 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
     args = [str(binary), "up", f"--port={port}"]
-    process = subprocess.Popen(args, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    startup_log = root / "window.log"
+    log = startup_log.open("wb")
+    process = subprocess.Popen(args, env=env, stdout=log, stderr=log)
     try:
         discovery = config.with_suffix(".ui.json")
         deadline = time.monotonic() + 10
@@ -84,6 +86,9 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         admin_port, key = json.loads(discovery.read_text())
         assert discovery.stat().st_mode & 0o077 == 0
         base = f"http://127.0.0.1:{admin_port}"
+        discovered = subprocess.run([str(binary), "settings-url"], env=env, capture_output=True, check=True, timeout=5)
+        assert discovered.stdout.decode().strip() == f"{base}/#{key}"
+        assert f"Settings: {base}/#{key}" in startup_log.read_text()
 
         def request(path, data=None, auth=True, origin=None, address=base):
             headers = {"Content-Type": "application/json"}
@@ -166,7 +171,7 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
             assert status == 200 and body.startswith(b"\x89PNG\r\n\x1a\n"), app
         assert b"localLogos" in js and b"/assets/local-opencode.png" in js
         assert b'assistantScreen()' in js and b'data-assistant-choose' in js
-        assert b"openAssistant('grok')" in js and b'class="assistant-switcher"' in js
+        assert b"openAssistant('chatgpt')" in js and b'class="assistant-switcher"' in js
         for guide in ("guide-claude-menu", "guide-claude-form", "guide-claude-chat",
                       "guide-gemini-settings", "guide-gemini-form", "guide-gemini-chat",
                       "guide-chatgpt-menu", "guide-chatgpt-form", "guide-chatgpt-chat",

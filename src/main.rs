@@ -17,6 +17,13 @@ fn main() {
         }
         Some("install") => run_web(None, true),
         Some("version" | "--version" | "-V") => println!("student-mcp {VERSION}"),
+        Some("settings-url") => match student_mcp::settings_url() {
+            Ok(url) => println!("{url}"),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        },
         Some("--app-icon") => {
             use std::io::Write;
             if std::io::stdout()
@@ -43,7 +50,7 @@ fn main() {
 
 fn usage() {
     eprintln!(
-        "student-mcp: your local MCP for Moodle, Omnivox and Brightspace.
+        "student-mcp: your local MCP for Moodle, Omnivox, Brightspace and Canvas.
 
 Commands:
   student-mcp (no command)        stdio MCP server for local AI clients
@@ -51,6 +58,7 @@ Commands:
                                   (automatic stable public link through srv.us)
   student-mcp up --background    Start quietly at login (tray only)
   student-mcp install             Opens the local configuration page
+  student-mcp settings-url        Print the running local settings URL
   student-mcp version
   student-mcp --licenses          Bundled licence texts and notices
 

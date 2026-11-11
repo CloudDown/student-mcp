@@ -169,10 +169,15 @@ fn document_result(
                 result
             }
             Prepared::Text(text) => {
+                let html = document.mime.to_ascii_lowercase().contains("html");
                 let extracted = crate::document::Document {
                     unit: "text",
                     parts: vec![text.clone()],
-                    note: "Plain text/CSV; no images or OCR.",
+                    note: if html {
+                        "HTML source in text blocks, including chapter text and markup. Scripts are not executed; images, linked resources and page layout are not rendered or fetched. No OCR."
+                    } else {
+                        "Plain text/CSV; no images or OCR."
+                    },
                 };
                 let mut result = office_document_result(
                     &document.filename,
@@ -189,6 +194,10 @@ fn document_result(
                     .filter_map(|block| block["text"].as_str())
                     .collect::<Vec<_>>()
                     .join("\n"));
+                if html {
+                    result["textSource"] = json!("html-source");
+                    result["visualLimitations"] = json!("HTML source only; no rendered page images or linked resources. Request format=file for the original HTML.");
+                }
                 result
             }
             Prepared::Unsupported => {
@@ -230,7 +239,12 @@ fn original_file(document: &store::Document) -> Value {
         use base64::Engine;
         result["file"] = json!({"filename": filename, "mimeType": mime, "data": base64::engine::general_purpose::STANDARD.encode(bytes.as_slice())});
     }
-    result["note"] = json!("Original file, not a guarantee that the assistant can read its contents. Share links.download when asked for a download; never substitute an internal school URL. localOnly links work only on this computer. Links expire after 3 hours and require the app to stay running. To study, request format=text or images with document_id and page_from/page_to. No local OCR.");
+    let delivery = if result.get("links").is_some() {
+        "Share links.download when asked for a download; never substitute an internal school URL. localOnly links work only on this computer. Links expire after 3 hours and require the app to stay running."
+    } else {
+        "The original file is attached as an MCP resource. No download link is available in this response; do not invent one or substitute an internal school URL."
+    };
+    result["note"] = json!(format!("Original file, not a guarantee that the assistant can read its contents. {delivery} To study, request format=text or images with document_id and page_from/page_to. No local OCR."));
     result
 }
 

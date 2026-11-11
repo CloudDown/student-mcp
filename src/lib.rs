@@ -25,3 +25,4 @@ pub use config::VERSION;
 pub use stdio::run as run_stdio;
 pub use web::run as run_web;
 pub use web::run_background as run_web_background;
+pub use web::settings_url;

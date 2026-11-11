@@ -10,6 +10,8 @@ use url::Url;
 pub(crate) mod catalog;
 pub(crate) mod download;
 mod index;
+#[cfg(test)]
+mod regression;
 mod research;
 
 const MOBILE_SERVICE: &str = "moodle_mobile_app";
@@ -251,12 +253,12 @@ impl MoodleClient {
                     .map_err(|error| scrub_secret(error_for_file_transport(error), &self.token))?;
                 // redirects(0) returns the 3xx response instead of an error.
                 if (300..400).contains(&response.status()) {
-                    return Err(
-                "Moodle redirected this file (login required). Use a fileurl from moodle_course_content."
-                    .into(),
-            );
+                    return Err("Moodle redirected the file request; it was not followed. Check this account's course access or reconnect Moodle.".into());
                 }
-                let mime = response.content_type().to_string();
+                if response.status() != 200 {
+                    return Err(format!("Moodle did not serve the file (HTTP {}). The school may require authentication or a browser challenge; open the resource in Moodle.", response.status()));
+                }
+                let mut mime = response.content_type().to_string();
                 let filename = filename_from(response.header("Content-Disposition"), fileurl);
                 let mut bytes = Vec::new();
                 response
@@ -287,11 +289,24 @@ impl MoodleClient {
                         }
                     }
                 }
-                if looks_like_html(&mime, &bytes) {
-                    return Err(
-                "Moodle returned a login page instead of the file. Use a fileurl from moodle_course_content."
-                    .into(),
-            );
+                let html_file = [".html", ".htm", ".xhtml"]
+                    .iter()
+                    .any(|extension| filename.to_ascii_lowercase().ends_with(extension));
+                if looks_like_html(&mime, &bytes) || html_file {
+                    let html = String::from_utf8_lossy(&bytes);
+                    if crate::session::html_has_password_field(&html)
+                        || html
+                            .to_ascii_lowercase()
+                            .contains("id=\"page-login-index\"")
+                    {
+                        return Err("Moodle returned a sign-in form instead of the requested content. Check this account's course access or reconnect Moodle.".into());
+                    }
+                    if !html_file {
+                        return Err("Moodle returned unexpected HTML instead of the requested file (possibly an access error or school challenge). Check this account's course access or open the resource in Moodle.".into());
+                    }
+                    // mod_book exports index.html through this same token-authenticated
+                    // endpoint. HTML is content, not evidence of a failed login.
+                    mime = "text/html".into();
                 }
                 let file = Arc::new(download::File {
                     filename,
@@ -741,6 +756,43 @@ impl MoodleClient {
         let mut result = research::detail(courseid, &raw, moduleid, sectionid, page)?;
         result["index"] = index;
         Ok(result)
+    }
+
+    pub fn assignments(&self, courseids: Option<&[i64]>) -> Result<Value, String> {
+        let raw = self.call("mod_assign_get_assignments", &courseids_payload(courseids))?;
+        let courses = raw["courses"]
+            .as_array()
+            .ok_or("Moodle did not return an assignment course list.")?;
+        let now = unix_now();
+        let mut assignments = Vec::new();
+        for course in courses {
+            let items = course["assignments"]
+                .as_array()
+                .ok_or("Moodle did not return an assignment list for a course.")?;
+            for item in items {
+                let opens = item["allowsubmissionsfromdate"].as_i64().unwrap_or(0);
+                let closes = item["cutoffdate"].as_i64().unwrap_or(0);
+                let status = if opens > now {
+                    "not-open"
+                } else if closes > 0 && closes <= now {
+                    "closed"
+                } else if item.get("allowsubmissionsfromdate").is_some() {
+                    "open"
+                } else {
+                    "unknown"
+                };
+                assignments.push(json!({"id":item["id"], "cmid":item["cmid"],
+                    "title":plain_text(item["name"].as_str().unwrap_or("")),
+                    "courseid":course["id"], "course":plain_text(course["fullname"].as_str().unwrap_or("")),
+                    "dueDate":item["duedate"].as_i64().filter(|date| *date > 0),
+                    "status":status, "submissionStatus":item.get("submissionstatus"),
+                    "cutoffDate":(closes > 0).then_some(closes)}));
+            }
+        }
+        let warnings = raw["warnings"].as_array().cloned().unwrap_or_default();
+        Ok(json!({"count":assignments.len(),"assignments":assignments,
+            "partial":!warnings.is_empty(),"warnings":warnings,
+            "note":"status describes the scheduled submission window, not whether you submitted. submissionStatus is null when not supplied by Moodle; use moodle_assignment_status with id as assignid for submission and grading details. Full instructions: moodle_course_content detail=full with cmid as moduleid."}))
     }
 
     pub fn assignment_status(&self, assignid: i64) -> Result<Value, String> {
@@ -2039,7 +2091,7 @@ fn error_for_file_transport(error: ureq::Error) -> String {
             "This Moodle token cannot download that file. Check the course access.".into()
         }
         ureq::Error::Status(301 | 302 | 303 | 307 | 308, _) => {
-            "Moodle redirected this file (login required). Use a fileurl from moodle_course_content."
+            "Moodle redirected the file request; it was not followed. Check this account's course access or reconnect Moodle."
                 .into()
         }
         other => error_for_transport(other),

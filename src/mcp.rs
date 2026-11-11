@@ -455,11 +455,8 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
             MoodleClient::new(config).resources(require_integer(args, "courseid")?)
         }),
         "moodle_assignments" => moodle_tool(settings, |config| {
-            let client = MoodleClient::new(config);
-            client.call(
-                "mod_assign_get_assignments",
-                &json!({ "courseids": args.get("courseids").cloned().unwrap_or(Value::Null) }),
-            )
+            let courses = optional_i64_list(args.get("courseids"))?;
+            MoodleClient::new(config).assignments(courses.as_deref())
         }),
         "moodle_assignment_status" => moodle_tool(settings, |config| {
             MoodleClient::new(config).assignment_status(require_integer(args, "assignid")?)
