@@ -214,6 +214,8 @@ fn original_file(document: &store::Document) -> Value {
         &document.mime
     };
     let mut result = json!({"filename": filename, "mimeType": mime, "size": bytes.len()});
+    result["coverage"] = json!({"mode":"original-download", "studyContentDelivered":false,
+        "note":"An original resource/link does not prove the model read its content. Use a study window."});
     if crate::share::enabled() {
         if let Some(id) = crate::share::publish_bytes(filename, mime, Arc::clone(bytes), "", 0) {
             if let Some(links) = crate::share::links_for(&id) {
@@ -293,6 +295,10 @@ fn study_pdf(
         "pageFrom": range.from, "pageTo": range.to, "renderedPages": pages.len(),
         "truncated": truncated, "nextPageFrom": next_page_from, "textTruncated": text_truncated,
     });
+    result["coverage"] = json!({"mode":"page-window", "firstPage":range.from,"lastPage":range.to,
+        "totalPages":total_pages,"allPagesDelivered":range.from == 1 && range.to == total_pages,
+        "textCompleteForWindow":extracted.is_some() && !text_truncated,
+        "note":"Coverage describes this response, not comprehension or pages from other conversations. For exhaustive reading, follow nextPageFrom and resolve textTruncated with smaller windows."});
     let outline = pdf_outline(page_texts);
     if !outline.is_empty() {
         result["outline"] = json!(outline
@@ -408,6 +414,8 @@ fn office_document_result(
         "sourceUnit": document.unit, "totalBlocks": total, "pageFrom": from, "pageTo": to,
         "blocks": selected, "matches": matches, "truncated": to < total,
         "nextPageFrom": if to < total { Some(to + 1) } else { None },
+        "coverage":{"mode":"text-blocks", "firstBlock":from,"lastBlock":to,"totalBlocks":total,
+            "allBlocksDelivered":from == 1 && to == total,"faithfulPageImages":false},
         "note": note});
     Ok(result)
 }

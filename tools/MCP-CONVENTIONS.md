@@ -72,6 +72,7 @@ every `readOnlyHint:false` tool also carries `destructiveHint:true`,
 | Find a TD / file | `moodle_search` or course content + query | Blind full course dumps |
 | Download a document | Existing `*_file` tool with `format=file`; share `links.download` | Generic HTTP fetch of school URLs |
 | Study a PDF/Office doc | Same file tool with `text` or `images` (text + every page image); reuse `document_id` | Treating an original blob/link as proof the model saw its contents |
+| Read all Moodle instructions | `moodle_course_content` with `detail=full`; follow `nextPage`, then read relevant files | Treating an overview/search excerpt as complete instructions |
 | Rare Moodle action | dedicated tool, else `ws_discover` → `ws_call` | `ws_call` for everyday reads |
 | Account routing | Match the person/school in `initialize` instructions or `student_status`, then pass that `account_id` | Guessing which account, mixing course IDs across accounts |
 

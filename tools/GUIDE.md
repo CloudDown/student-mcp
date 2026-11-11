@@ -200,6 +200,43 @@ as `actionEventsNextAfterEventId` for `ws_call` with
 `core_calendar_get_action_events_by_timesort`. The upcoming-calendar source
 remains subject to the school's own calendar window.
 
+### Finding Moodle sources and reading all instructions
+
+`moodle_search` searches course/activity names, filenames, section text and full
+activity descriptions, not just the shortened previews. Matches include their
+course/section/activity IDs, an excerpt and the fields that matched. Without a
+course name or `courseid`, it searches visible courses in windows of 8, with at
+most 2 concurrent school requests. A matching course name no longer substitutes
+for a missing document result: Moodle's own search is tried when needed.
+
+Follow the returned `continuation` arguments to finish the current search. Results
+are capped at 40 per window; `offset` retrieves the rest. `page` selects the next
+course window in the default `source=auto` mode. Use `source=global` to search
+Moodle's upstream index instead; in that mode `page` is the upstream result page.
+`partial`/`errors` report failed sources. No match is not proof of absence when
+coverage is incomplete. This is **not a full-text search inside every PDF**.
+
+`moodle_course_content` defaults to a navigation overview. Description previews
+and section summaries explicitly report truncation. To read all textual
+instructions, use `detail=full`, optionally with `moduleid` or `sectionid`, then
+follow `nextPage` until null. This returns up to 4 blocks of 8,000 characters per
+call. Omit selectors to read the course's available metadata text. Attachments
+still require the appropriate file tool and its page windows. Recognized absolute
+HTML links are listed but not fetched; `richContentOmitted` flags media, layout or
+references that require the school page or source files.
+
+The account's course list and metadata are indexed locally for 15 minutes.
+`refresh=true` on these tools bypasses the index; failed refreshes do not return
+stale data as current. Changing credentials/account changes the index namespace.
+Metadata persists beside the configuration in `~/.student-mcp.index/` (or the
+configuration path with an `.index` extension). It contains course text and file
+references, not downloaded PDF/Office bytes or login credentials. It is private
+to the local user, is not part of git and can be removed while the app is closed.
+
+The index is built as tools are used: no background full-school crawl, external
+LLM, graph viewer or new MCP tool is required. `coverage` describes what a response
+delivered or searched, not what the model understood or saw in another chat.
+
 ### Additional Brightspace workflows
 
 Brightspace now exposes 55 tools. Beyond the original course/file/assignment

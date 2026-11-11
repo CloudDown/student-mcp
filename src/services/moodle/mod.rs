@@ -9,6 +9,8 @@ use std::time::Duration;
 use url::Url;
 pub(crate) mod catalog;
 pub(crate) mod download;
+mod index;
+mod research;
 
 const MOBILE_SERVICE: &str = "moodle_mobile_app";
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -126,6 +128,8 @@ pub struct MoodleClient {
     base_url: String,
     token: String,
     agent: ureq::Agent,
+    index: Option<index::Index>,
+    refresh: bool,
 }
 
 impl MoodleClient {
@@ -134,7 +138,57 @@ impl MoodleClient {
             base_url: config.base_url.clone(),
             token: config.token.clone(),
             agent: agent(),
+            index: None,
+            refresh: false,
         }
+    }
+
+    pub(crate) fn with_index(mut self, account: &str, refresh: bool) -> Self {
+        self.index = index::Index::for_account(&self.base_url, &self.token, account);
+        self.refresh = refresh;
+        self
+    }
+
+    fn indexed(
+        &self,
+        key: &str,
+        fetch: impl FnOnce() -> Result<Value, String>,
+    ) -> Result<(Value, Value), String> {
+        if !self.refresh {
+            if let Some(hit) = self
+                .index
+                .as_ref()
+                .and_then(|index| index.get(key, unix_now()))
+            {
+                return Ok(hit);
+            }
+        }
+        let value = fetch()?;
+        if !value.is_array() {
+            return Err(
+                "Moodle did not return the expected course/content list; coverage is unknown."
+                    .into(),
+            );
+        }
+        let now = unix_now();
+        let stored = self
+            .index
+            .as_ref()
+            .is_some_and(|index| index.put(key, &value, now));
+        Ok((
+            value,
+            json!({"status":"fresh", "fetchedAt":now, "persisted":stored}),
+        ))
+    }
+
+    fn content_snapshot(&self, courseid: i64) -> Result<(Value, Value), String> {
+        if courseid <= 0 {
+            return Err("Provide an integer courseid > 0.".into());
+        }
+        self.indexed(&format!("course:{courseid}"), || {
+            let raw = self.call("core_course_get_contents", &json!({"courseid":courseid}))?;
+            research::snapshot(&raw)
+        })
     }
 
     /// One Web Service call; arrays become courseids[0]= form entries.
@@ -266,10 +320,12 @@ impl MoodleClient {
 
     /// Enrolled courses as a compact list agents can scan. Hidden/past courses stay out unless requested.
     pub fn my_courses(&self, include_hidden: bool) -> Result<Value, String> {
-        let courses = self.call(
-            "core_enrol_get_users_courses",
-            &json!({ "userid": self.userid()? }),
-        )?;
+        let (courses, index) = self.indexed("courses", || {
+            self.call(
+                "core_enrol_get_users_courses",
+                &json!({ "userid": self.userid()? }),
+            )
+        })?;
         let now = unix_now();
         let mut items = Vec::new();
         for course in courses.as_array().cloned().unwrap_or_default() {
@@ -323,6 +379,7 @@ impl MoodleClient {
             "count": items.len(),
             "includeHidden": include_hidden,
             "courses": items
+            ,"index": index
         }))
     }
 
@@ -651,66 +708,39 @@ impl MoodleClient {
 
     /// Search enrolled courses first (so TD5 matches "TD Chapitre 5"), then Moodle's global search.
     pub fn search(&self, query: &str, page: i64, courseid: Option<i64>) -> Result<Value, String> {
-        let query = query.trim();
-        if query.is_empty() {
-            return Err("Provide query.".into());
-        }
-        let page = page.max(0);
-        let courses = self.my_courses(false)?;
-        let course_list = courses
-            .get("courses")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        let targets = resolve_search_courses(&course_list, query, courseid);
-        let leftover = leftover_search_tokens(query, &targets);
-        let mut results = Vec::new();
-        if page == 0 {
-            if leftover.is_empty() {
-                results.extend(targets.iter().filter_map(course_search_hit));
-            } else {
-                for course in &targets {
-                    let Some(id) = course.get("id").and_then(Value::as_i64) else {
-                        continue;
-                    };
-                    let content = self.course_content(id, None)?;
-                    results.extend(search_course_modules(course, &content, query));
-                }
-                if results.is_empty() {
-                    results.extend(targets.iter().filter_map(course_search_hit));
-                }
-            }
-        }
-        if results.is_empty() {
-            let mut payload = json!({ "query": query, "page": page });
-            if !targets.is_empty() {
-                payload["filters"] = json!({
-                    "courseids": targets
-                        .iter()
-                        .filter_map(|course| course.get("id").and_then(Value::as_i64))
-                        .collect::<Vec<_>>()
-                });
-            }
-            let raw = self.call("core_search_get_results", &payload)?;
-            results.extend(map_global_search_results(&raw));
-        }
-        Ok(json!({
-            "query": query,
-            "page": page,
-            "courseids": targets
-                .iter()
-                .filter_map(|course| course.get("id").and_then(Value::as_i64))
-                .collect::<Vec<_>>(),
-            "total": results.len(),
-            "results": results,
-            "fileurlHint": "fileurl is an internal Moodle reference, not a direct download link. For a link the user can open, call moodle_file with fileurl and share its links.download. Never add or reveal a Moodle token."
-        }))
+        self.search_page(query, page, courseid, 0, false)
+    }
+
+    pub(crate) fn search_page(
+        &self,
+        query: &str,
+        page: i64,
+        courseid: Option<i64>,
+        offset: usize,
+        global: bool,
+    ) -> Result<Value, String> {
+        research::run(self, query, page, courseid, offset, global)
     }
 
     /// Compact section tree: names, activities and fileurl values, without Moodle's raw blobs.
     pub fn course_content(&self, courseid: i64, query: Option<&str>) -> Result<Value, String> {
-        let raw = self.call("core_course_get_contents", &json!({ "courseid": courseid }))?;
-        Ok(compact_course_contents(courseid, &raw, query))
+        let (raw, index) = self.content_snapshot(courseid)?;
+        let mut result = research::overview(courseid, &raw, query);
+        result["index"] = index;
+        Ok(result)
+    }
+
+    pub(crate) fn course_detail(
+        &self,
+        courseid: i64,
+        moduleid: Option<i64>,
+        sectionid: Option<i64>,
+        page: usize,
+    ) -> Result<Value, String> {
+        let (raw, index) = self.content_snapshot(courseid)?;
+        let mut result = research::detail(courseid, &raw, moduleid, sectionid, page)?;
+        result["index"] = index;
+        Ok(result)
     }
 
     pub fn assignment_status(&self, assignid: i64) -> Result<Value, String> {
@@ -1365,7 +1395,11 @@ fn compact_course_contents(courseid: i64, raw: &Value, query: Option<&str>) -> V
             .cloned()
             .unwrap_or_default()
         {
-            let name = plain_text(module.get("name").and_then(Value::as_str).unwrap_or(""));
+            let name = if section["normalized"] == true {
+                module["name"].as_str().unwrap_or("").to_string()
+            } else {
+                plain_text(module.get("name").and_then(Value::as_str).unwrap_or(""))
+            };
             let leftover = query.map(|query| leftover_search_tokens(query, &[]));
             let mut files = compact_module_files(&module);
             if let Some(leftover) = leftover.as_deref() {
@@ -1396,9 +1430,17 @@ fn compact_course_contents(courseid: i64, raw: &Value, query: Option<&str>) -> V
         if query.is_some() && modules.is_empty() {
             continue;
         }
-        let name = plain_text(section.get("name").and_then(Value::as_str).unwrap_or(""));
+        let name = if section["normalized"] == true {
+            section["name"].as_str().unwrap_or("").to_string()
+        } else {
+            plain_text(section.get("name").and_then(Value::as_str).unwrap_or(""))
+        };
         let summary = truncate(
-            &plain_text(section.get("summary").and_then(Value::as_str).unwrap_or("")),
+            &if section["normalized"] == true {
+                section["summary"].as_str().unwrap_or("").to_string()
+            } else {
+                plain_text(section.get("summary").and_then(Value::as_str).unwrap_or(""))
+            },
             240,
         );
         let mut item = json!({
@@ -1549,17 +1591,26 @@ fn resolve_search_courses(courses: &[Value], query: &str, courseid: Option<i64>)
     let mut scored = courses
         .iter()
         .filter_map(|course| {
-            let short = course
-                .get("shortname")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_ascii_lowercase();
-            let full = course
-                .get("fullname")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_ascii_lowercase();
+            let short = crate::delivery::pdf::normalize_text(
+                course
+                    .get("shortname")
+                    .and_then(Value::as_str)
+                    .unwrap_or(""),
+            );
+            let full = crate::delivery::pdf::normalize_text(
+                course.get("fullname").and_then(Value::as_str).unwrap_or(""),
+            );
             let short_tokens = normalize_tokens(&short);
+            // "TP5" must not select a course merely because its code ends in 5.
+            let named = tokens.iter().any(|token| {
+                token.chars().any(char::is_alphabetic)
+                    && (short_tokens.contains(token)
+                        || (token.len() >= 3 && short.contains(token))
+                        || (token.len() >= 4 && full.contains(token)))
+            });
+            if !named {
+                return None;
+            }
             let mut score = 0;
             for token in &tokens {
                 if short_tokens.iter().any(|part| part == token) || short == *token {
@@ -1578,7 +1629,6 @@ fn resolve_search_courses(courses: &[Value], query: &str, courseid: Option<i64>)
     scored
         .into_iter()
         .filter(|(score, _)| *score + 10 >= best)
-        .take(3)
         .map(|(_, course)| course.clone())
         .collect()
 }
@@ -1591,12 +1641,18 @@ fn leftover_search_tokens(query: &str, courses: &[Value]) -> Vec<String> {
                 return false;
             }
             !courses.iter().any(|course| {
-                let short = course
-                    .get("shortname")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_ascii_lowercase();
-                short.contains(token) || normalize_tokens(&short).iter().any(|part| part == token)
+                let short = crate::delivery::pdf::normalize_text(
+                    course
+                        .get("shortname")
+                        .and_then(Value::as_str)
+                        .unwrap_or(""),
+                );
+                let short_tokens = normalize_tokens(&short);
+                let course_named = search_tokens(query).iter().any(|part| {
+                    part.chars().any(char::is_alphabetic) && short_tokens.contains(part)
+                });
+                course_named
+                    && (short.contains(token) || short_tokens.iter().any(|part| part == token))
             })
         })
         .collect()
@@ -1619,74 +1675,6 @@ fn course_search_hit(course: &Value) -> Option<Value> {
     }))
 }
 
-fn search_course_modules(course: &Value, content: &Value, query: &str) -> Vec<Value> {
-    let course_name = course
-        .get("fullname")
-        .or_else(|| course.get("shortname"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    let courseid = course.get("id").and_then(Value::as_i64);
-    let leftover = leftover_search_tokens(query, std::slice::from_ref(course));
-    let mut hits = Vec::new();
-    for section in content
-        .get("sections")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default()
-    {
-        let section_name = section.get("name").and_then(Value::as_str).unwrap_or("");
-        for module in section
-            .get("modules")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default()
-        {
-            let name = module.get("name").and_then(Value::as_str).unwrap_or("");
-            let files = module
-                .get("files")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
-            if leftover.is_empty() {
-                continue;
-            }
-            let name_hit = haystack_matches(name, &[], &leftover);
-            let mut file_hits = 0;
-            for file in &files {
-                let filename = file.get("filename").and_then(Value::as_str).unwrap_or("");
-                if !haystack_matches(filename, &[], &leftover) {
-                    continue;
-                }
-                file_hits += 1;
-                hits.push(json!({
-                    "title": name,
-                    "course": course_name,
-                    "courseid": courseid,
-                    "section": section_name,
-                    "area": "file",
-                    "component": module.get("modname"),
-                    "url": module.get("url"),
-                    "filename": file.get("filename"),
-                    "fileurl": file.get("fileurl"),
-                    "content": file.get("filename"),
-                }));
-            }
-            if file_hits == 0 && name_hit {
-                hits.push(json!({
-                    "title": name,
-                    "course": course_name,
-                    "courseid": courseid,
-                    "section": section_name,
-                    "area": "activity",
-                    "component": module.get("modname"),
-                    "url": module.get("url"),
-                }));
-            }
-        }
-    }
-    hits
-}
-
 fn map_global_search_results(raw: &Value) -> Vec<Value> {
     raw.get("results")
         .and_then(Value::as_array)
@@ -1705,6 +1693,9 @@ fn map_global_search_results(raw: &Value) -> Vec<Value> {
                     &plain_text(item.get("content").and_then(Value::as_str).unwrap_or("")),
                     500,
                 ),
+                "courseid": item.get("courseid"),
+                "contentTruncated": plain_text(item.get("content").and_then(Value::as_str).unwrap_or("")).chars().count() > 500,
+                "fileContentsRead": false,
             })
         })
         .collect()
@@ -1794,8 +1785,8 @@ fn normalize_tokens(text: &str) -> Vec<String> {
             tokens.push(piece);
         }
     };
-    for ch in text.chars() {
-        if ch.is_ascii_alphanumeric() || ch == 'é' || ch == 'è' || ch == 'ê' || ch == 'à' {
+    for ch in crate::delivery::pdf::normalize_text(text).chars() {
+        if ch.is_alphanumeric() {
             current.extend(ch.to_lowercase());
         } else {
             flush(&mut current, &mut tokens);
@@ -1842,20 +1833,7 @@ fn is_stopword(token: &str) -> bool {
 }
 
 fn is_filler_token(token: &str) -> bool {
-    matches!(
-        token,
-        "exo"
-            | "exos"
-            | "exercice"
-            | "exercices"
-            | "devoir"
-            | "devoirs"
-            | "fichier"
-            | "file"
-            | "cours"
-            | "course"
-            | "moodle"
-    )
+    matches!(token, "fichier" | "file" | "cours" | "course" | "moodle")
 }
 
 fn unix_now() -> i64 {
@@ -1875,17 +1853,54 @@ fn courseids_payload(courseids: Option<&[i64]>) -> Value {
 fn plain_text(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let mut in_tag = false;
+    let mut tag = String::new();
     let mut chars = input.chars().peekable();
     while let Some(ch) = chars.next() {
         match ch {
-            '<' => in_tag = true,
-            '>' if in_tag => in_tag = false,
-            _ if in_tag => {}
+            '<' => {
+                in_tag = true;
+                tag.clear();
+            }
+            '>' if in_tag => {
+                in_tag = false;
+                let name = tag
+                    .trim_start_matches('/')
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .trim_end_matches('/')
+                    .to_ascii_lowercase();
+                if matches!(
+                    name.as_str(),
+                    "p" | "br"
+                        | "div"
+                        | "li"
+                        | "ul"
+                        | "ol"
+                        | "tr"
+                        | "td"
+                        | "th"
+                        | "h1"
+                        | "h2"
+                        | "h3"
+                        | "h4"
+                        | "section"
+                ) {
+                    out.push(' ');
+                }
+            }
+            _ if in_tag => {
+                if tag.len() < 64 {
+                    tag.push(ch);
+                }
+            }
             '&' => {
                 let mut entity = String::new();
+                let mut terminated = false;
                 while let Some(&next) = chars.peek() {
                     if next == ';' {
                         chars.next();
+                        terminated = true;
                         break;
                     }
                     if entity.len() >= 10 || (!next.is_ascii_alphanumeric() && next != '#') {
@@ -1902,18 +1917,30 @@ fn plain_text(input: &str) -> String {
                     "quot" => out.push('"'),
                     "apos" | "#39" => out.push('\''),
                     other if other.starts_with('#') => {
-                        if let Some(decoded) = other
-                            .trim_start_matches('#')
-                            .parse::<u32>()
-                            .ok()
-                            .and_then(char::from_u32)
+                        let code = other.trim_start_matches('#');
+                        let decoded = if let Some(hex) =
+                            code.strip_prefix('x').or_else(|| code.strip_prefix('X'))
                         {
+                            u32::from_str_radix(hex, 16).ok()
+                        } else {
+                            code.parse::<u32>().ok()
+                        };
+                        if let Some(decoded) = decoded.and_then(char::from_u32) {
                             out.push(decoded);
+                        } else {
+                            out.push('&');
+                            out.push_str(other);
+                            if terminated {
+                                out.push(';');
+                            }
                         }
                     }
                     _ => {
                         out.push('&');
                         out.push_str(&entity);
+                        if terminated {
+                            out.push(';');
+                        }
                     }
                 }
             }
@@ -3068,8 +3095,12 @@ pub(crate) mod tests {
             .unwrap()
             .contains("TD_Chapitre_5.doc"));
         let dumped = all.to_string();
-        assert!(!dumped.contains("description"));
-        assert!(!dumped.contains("xxxx"));
+        assert_eq!(all["coverage"]["mode"], "overview");
+        assert_eq!(
+            all["sections"][0]["modules"][0]["descriptionTruncated"],
+            true
+        );
+        assert!(!dumped.contains(&"x".repeat(501)));
         let filtered = client.course_content(5476, Some("TD5")).unwrap();
         assert_eq!(
             filtered["sections"][0]["modules"].as_array().unwrap().len(),

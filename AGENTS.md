@@ -146,6 +146,11 @@ Installation et exemples : `tools/GUIDE.md`, section « Local code graph ».
 - `src/services/{moodle,omnivox,brightspace}/mod.rs` — connecteurs par service
 - `src/services/canvas.rs` — Canvas / ZoneCours, session navigateur, lecture seule
 - `src/services/moodle/download.rs` — cache de téléchargements Moodle
+- `src/services/moodle/research.rs` / `index.rs` — recherche de métadonnées Moodle,
+  consignes paginées et index privé par compte (`~/.student-mcp.index/`, hors git).
+  L’index ne contient pas les octets des fichiers ; ne pas présenter ses extraits
+  comme une lecture complète. `refresh=true` ne doit pas masquer une panne avec
+  une ancienne réponse. Les lectures ne doivent jamais accuser réception d’un document.
 - `src/services/moodle/catalog.rs` / `catalog/` — catalogue des fonctions Moodle et licences
 - `src/session.rs` — cookies, formulaires HTML, `BROWSER_UA`
 - `src/mcp.rs` / `http.rs` / `stdio.rs` — MCP

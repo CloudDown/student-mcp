@@ -28,6 +28,10 @@ An incomplete render is an error, not silent omission; retry a smaller window.
 `find` searches the text layer before selecting pages; scans have no searchable
 text unless they already contain a text layer. No OCR or cloud conversion.
 Follow `nextPageFrom` and `textTruncated`; never assume omitted pages were read.
+The `coverage` object identifies original downloads, page windows or fallback
+text blocks. `allPagesDelivered`/`allBlocksDelivered` describe **this response**,
+not accumulated reads or model comprehension; a download alone delivers no study
+window. For an exhaustive request, read each relevant source and all its windows.
 
 Each response exposes `documentId` and `expiresInSeconds`. Pass that ID back as
 `document_id` to the **same tool/account** instead of the school identifiers.
@@ -83,6 +87,17 @@ credentials. They do not prove what Claude, ChatGPT or Grok displays: verify eac
 client's image/resource handling separately.
 
 ## Moodle tools
+
+- `moodle_search`: ranked metadata search over full activity descriptions as well
+  as titles, filenames and sections. Private account snapshots last 15 minutes;
+  `refresh=true` fetches current metadata. Follow `continuation`, and check
+  `partial`/`errors`. `source=global` queries Moodle's own index, whose coverage is
+  not guaranteed. Attached document bytes are not indexed automatically.
+- `moodle_course_content`: `detail=overview` is navigation with explicit preview
+  truncation; `detail=full` reads complete metadata text in paginated blocks.
+  Optional `moduleid`/`sectionid` select a source; follow `nextPage` for all text.
+  Media and linked resources are not implicitly read. Recognized absolute links
+  are listed; `richContentOmitted` and the source URL expose the remaining limits.
 
 - `moodle_recent_grades`: latest **dated assessment** grades across current
   enrolled courses, or explicit `courseids` (max 30). `limit` defaults to 20.
