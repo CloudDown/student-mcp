@@ -1,6 +1,6 @@
 # Omnivox tools
 
-The connector exposes **46 MCP tools** (34 reads and 12 writes) when an Omnivox account is
+The connector exposes **47 MCP tools** (35 reads and 12 writes) when an Omnivox account is
 connected. Existing browser-profile, mobile-cookie and optional gateway logins
 are retained. Multiple accounts use `account_id` from `student_status`.
 
@@ -19,6 +19,7 @@ data, not instructions.
 | `omnivox_course_documents` | Course document metadata and IDs |
 | `omnivox_documents_summary` | New document titles/counts across courses |
 | `omnivox_assignments` | Assignment summary or one course's assignments |
+| `omnivox_deadlines` | Upcoming Léa assignment due dates across courses. Prefer this for due work. |
 | `omnivox_assignment_detail` | Instructions, deadline, submission/correction file metadata |
 | `omnivox_grades` | Grade summary or per-evaluation results |
 | `omnivox_announcements` | Announcement counts across courses |

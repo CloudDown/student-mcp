@@ -3,8 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 
-const html=readFileSync(new URL('../src/resources/web/index.html',import.meta.url),'utf8');
-const source=html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const source=readFileSync(new URL('../src/resources/web/app.js',import.meta.url),'utf8');
 new vm.Script(source); // Check the entire embedded script, including startup.
 const listeners=new Map(),requests=[];
 const node={hidden:true,dataset:{},classList:{add(){},remove(){},toggle(){}},setAttribute(){},removeAttribute(){},focus(){},addEventListener(){},querySelector(){return node},querySelectorAll(){return []}};

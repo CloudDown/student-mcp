@@ -3,6 +3,8 @@ import {readFileSync, mkdirSync, existsSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : 'playwright');
 const html=readFileSync(new URL('../src/resources/web/index.html',import.meta.url),'utf8');
+const css=readFileSync(new URL('../src/resources/web/app.css',import.meta.url),'utf8');
+const js=readFileSync(new URL('../src/resources/web/app.js',import.meta.url),'utf8');
 const out=new URL('./screens/',import.meta.url);
 mkdirSync(out,{recursive:true});
 const state={
@@ -24,8 +26,10 @@ await page.addInitScript(()=>localStorage.setItem('student-mcp.language','en'));
 await page.route('http://student.test/**',async route=>{
   const path=new URL(route.request().url()).pathname;
   if(path==='/')return route.fulfill({contentType:'text/html',body:html});
+  if(path==='/app.css')return route.fulfill({contentType:'text/css',body:css});
+  if(path==='/app.js')return route.fulfill({contentType:'text/javascript',body:js});
   if(path==='/state')return route.fulfill({json:state});
-  if(path==='/update')return route.fulfill({json:{available:false,current:'0.7.0',latest:'v0.7.0',checking:false,checked:true}});
+  if(path==='/update')return route.fulfill({json:{available:false,current:'0.8.0',latest:'v0.8.0',checking:false,checked:true}});
   if(path==='/assistants')return route.fulfill({json:{assistants:[
     {assistant:'claude',name:'Claude Desktop',detected:true,configured:true,reload:'restart'},
     {assistant:'opencode',name:'OpenCode',detected:true,configured:false,reload:'automatic'},
@@ -71,7 +75,7 @@ await page.getByRole('button',{name:'Back to services',exact:true}).click();
 state.accounts=[{id:'moodle',service:'moodle',url:'https://studium.umontreal.ca',name:'Léa',enabled:true}];
 await page.evaluate(()=>refresh());
 await page.getByRole('button',{name:'Moodle manage connection',exact:true}).click();
-await page.locator('.manage-status-text').filter({hasText:'Léa'}).waitFor();
+await page.locator('.account-row-title').filter({hasText:'Léa'}).waitFor();
 await shot('profile.png');
 await page.getByRole('button',{name:'Back to services',exact:true}).click();
 await page.locator('[data-assistant-choose]').click();

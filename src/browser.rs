@@ -714,6 +714,11 @@ impl Browser {
             }
         }
         let home = if let Some(sso) = &browser.moodle_sso {
+            // Un Moodle sans service mobile renvoie 404 sur launch.php : la
+            // fenêtre s'ouvrirait sur une page d'erreur. Mieux vaut le dire.
+            if visible && sso.unavailable() {
+                return Err(moodle::UNAVAILABLE.into());
+            }
             let home = sso.launch_url();
             browser.call("Fetch.enable", json!({"patterns":[{"urlPattern":format!("{origin}/admin/tool/mobile/launch.php*"),"requestStage":"Response"}]}))?;
             home

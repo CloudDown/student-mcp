@@ -28,7 +28,7 @@ fn routes() -> Vec<Route> {
         Route { name: "discussion_replies", description: "Replies to a discussion entry. Use entryid from canvas_discussion_entries. Canvas enforces initial-post and course access restrictions.", path: "/api/v1/courses/{courseid}/discussion_topics/{topicid}/entries/{entryid}/replies", list_key: Some("replies"), query: &[] },
         Route { name: "conversations", description: "Own Canvas inbox conversations (read and unread by default). Optional scope selects unread, starred, archived or sent.", path: "/api/v1/conversations", list_key: Some("conversations"), query: &[] },
         Route { name: "conversation", description: "Read a Canvas conversation and its messages without marking it read. conversationid comes from canvas_conversations.", path: "/api/v1/conversations/{conversationid}", list_key: None, query: &[("auto_mark_as_read", "false")] },
-        Route { name: "todo", description: "Canvas's current to-do feed for the connected user. This is a dashboard feed, not a complete historical list of assignments.", path: "/api/v1/users/self/todo", list_key: Some("todo"), query: &[] },
+        Route { name: "todo", description: "Canvas's current to-do feed for the connected user. This is a dashboard feed, not a complete historical list of assignments. Prefer canvas_deadlines for due work.", path: "/api/v1/users/self/todo", list_key: Some("todo"), query: &[] },
     ]
 }
 

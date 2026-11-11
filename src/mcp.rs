@@ -71,26 +71,14 @@ pub fn header_mismatch(id: &Value, message: &str) -> Value {
 
 /// Tool list for the current settings: always student_status, plus enabled services.
 pub fn tool_definitions(settings: &Settings) -> Vec<Value> {
-    let mut available = settings.clone();
-    for service in ["moodle", "omnivox", "brightspace", "canvas"] {
-        if let Some((id, _)) = settings.account_list(service).first() {
-            let selected = settings.for_account(service, id);
-            match service {
-                "moodle" => available.moodle = selected.moodle,
-                "omnivox" => available.omnivox = selected.omnivox,
-                "brightspace" => available.brightspace = selected.brightspace,
-                "canvas" => available.canvas = selected.canvas,
-                _ => {}
-            }
-        }
-    }
-    let settings = &available;
-    definitions_for_services(
-        settings.service_enabled("moodle") && settings.moodle().is_some(),
-        settings.service_enabled("omnivox") && settings.omnivox().is_some(),
-        settings.service_enabled("brightspace") && settings.brightspace().is_some(),
-        settings.service_enabled("canvas") && settings.canvas().is_some(),
-    )
+    let mut tools = definitions_for_services(
+        !settings.enabled_account_list("moodle").is_empty(),
+        !settings.enabled_account_list("omnivox").is_empty(),
+        !settings.enabled_account_list("brightspace").is_empty(),
+        !settings.enabled_account_list("canvas").is_empty(),
+    );
+    apply_account_id_schema(&mut tools, settings);
+    tools
 }
 
 fn tool_service(name: &str) -> Option<&'static str> {
@@ -132,7 +120,7 @@ fn definitions_for_services(
 ) -> Vec<Value> {
     let mut tools = vec![json!({
         "name": "student_status",
-        "description": "List connected accounts with their user-chosen name, service and account_id. Look up the person or account named by the user here before choosing platform tools.",
+        "description": "List enabled accounts with their user-chosen name, service and account_id. Look up the person or account named by the user here before choosing platform tools.",
         "annotations": { "readOnlyHint": true }
     })];
     if moodle {
@@ -213,11 +201,98 @@ fn definitions_for_services(
         if tool["name"] != "student_status" {
             tool["inputSchema"]["properties"]["account_id"] = json!({
                 "type": "string",
-                "description": "Account ID from student_status for the person/account named by the user. Required when this platform has multiple connected accounts."
+                "description": "Account ID from student_status for the person/account named by the user. Required when this platform has multiple enabled accounts."
             });
         }
     }
     tools
+}
+
+fn account_host(url: &str) -> String {
+    url::Url::parse(url)
+        .ok()
+        .and_then(|parsed| parsed.host_str().map(str::to_string))
+        .unwrap_or_else(|| url.to_string())
+}
+
+fn account_label(settings: &Settings, service: &str, id: &str, url: &str) -> String {
+    let host = account_host(url);
+    match settings.account_name(service, id) {
+        Some(name) if !name.is_empty() => format!("{name} — {host}"),
+        _ => host,
+    }
+}
+
+fn apply_account_id_schema(tools: &mut [Value], settings: &Settings) {
+    for tool in tools {
+        let name = tool["name"].as_str().unwrap_or_default().to_string();
+        if name == "student_status" {
+            continue;
+        }
+        let Some(service) = tool_service(&name) else {
+            continue;
+        };
+        let accounts = settings.enabled_account_list(service);
+        if accounts.len() <= 1 {
+            continue;
+        }
+        let ids: Vec<Value> = accounts.iter().map(|(id, _)| json!(id)).collect();
+        let summary = accounts
+            .iter()
+            .map(|(id, url)| format!("{} ({id})", account_label(settings, service, id, url)))
+            .collect::<Vec<_>>()
+            .join("; ");
+        tool["inputSchema"]["properties"]["account_id"] = json!({
+            "type": "string",
+            "enum": ids,
+            "description": format!("Required. {summary}.")
+        });
+        match tool["inputSchema"]["required"].as_array_mut() {
+            Some(required) => {
+                if !required
+                    .iter()
+                    .any(|value| value.as_str() == Some("account_id"))
+                {
+                    required.push(json!("account_id"));
+                }
+            }
+            None => tool["inputSchema"]["required"] = json!(["account_id"]),
+        }
+    }
+}
+
+fn connector_instructions(settings: &Settings) -> String {
+    const RULES: &str = "Account names are user labels, not verified identities. If a name is ambiguous, ask which account is intended; never guess or use an unrelated account. Never mix course IDs or files across accounts. One connector link serves every connected account.";
+    let mut accounts = Vec::new();
+    for service in ["moodle", "omnivox", "brightspace", "canvas"] {
+        for (id, url) in settings.enabled_account_list(service) {
+            accounts.push((service, id, url));
+        }
+    }
+    if accounts.is_empty() {
+        return format!(
+            "No school account is enabled. Connect or re-enable an account in the student-mcp window. {RULES}"
+        );
+    }
+    let roster = accounts
+        .iter()
+        .map(|(service, id, url)| {
+            format!(
+                "{} ({service}, account_id={id})",
+                account_label(settings, service, id, url)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    if accounts.len() == 1 {
+        format!(
+            "Enabled account: {roster}. Platform tools use this account; account_id is optional. Call student_status if this list may be stale. {RULES}"
+        )
+    } else {
+        format!(
+            "Several school accounts share this connector. Match the person or school named by the user, then pass that account_id to platform tools. Call student_status if this list may be stale. Enabled accounts: {roster}. {RULES}"
+        )
+    }
 }
 
 /// Dispatch one tool call; always returns a JSON-RPC tool result value.
@@ -225,25 +300,31 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
     let service = tool_service(name);
     let mut selected = None;
     if let Some(service) = service {
-        if !settings.service_enabled(service) {
+        let accounts = settings.account_list(service);
+        let enabled = settings.enabled_account_list(service);
+        if enabled.is_empty() && !accounts.is_empty() {
             return tool_error(&format!(
                 "The {service} service is disabled. Re-enable it in the student-mcp window."
             ));
         }
-        let accounts = settings.account_list(service);
         let requested = args.get("account_id").and_then(Value::as_str);
         let id =
             match (args.get("account_id"), requested) {
-                (Some(_), Some(id)) if accounts.iter().any(|(known, _)| known == id) => {
+                (Some(_), Some(id)) if enabled.iter().any(|(known, _)| known == id) => {
                     Some(id.to_string())
+                }
+                (Some(_), Some(id)) if accounts.iter().any(|(known, _)| known == id) => {
+                    return tool_error(
+                        "This account is disabled. Re-enable it in the student-mcp window.",
+                    );
                 }
                 (Some(_), _) => return tool_error(
                     "Unknown account_id for this platform. Call student_status to list accounts.",
                 ),
-                (None, _) if accounts.len() > 1 => return tool_error(
+                (None, _) if enabled.len() > 1 => return tool_error(
                     "Several accounts are connected. Call student_status and provide account_id.",
                 ),
-                _ => accounts.first().map(|(id, _)| id.clone()),
+                _ => enabled.first().map(|(id, _)| id.clone()),
             };
         if let Some(id) = id {
             selected = Some(settings.for_account(service, &id));
@@ -648,7 +729,7 @@ fn student_status(settings: &Settings) -> ToolResult {
         .into_iter()
         .flat_map(|service| {
             settings
-                .account_list(service)
+                .enabled_account_list(service)
                 .into_iter()
                 .map(move |(id, url)| {
                     json!({
@@ -656,7 +737,7 @@ fn student_status(settings: &Settings) -> ToolResult {
                         "name": settings.account_name(service, &id),
                         "service": service,
                         "url": url,
-                        "enabled": settings.service_enabled(service),
+                        "enabled": true,
                     })
                 })
         })
@@ -779,6 +860,11 @@ fn canvas_tool(settings: &Settings, name: &str, args: &Value) -> ToolResult {
         ),
         "canvas_file" => client.download_file(require_integer(args, "fileid")?, &file_query(args)?),
         "canvas_calendar" => client.calendar(&crate::canvas::Page::from_args(args)?),
+        "canvas_deadlines" => {
+            let days = args.get("days").and_then(json_i64).unwrap_or(60);
+            let courseids = optional_i64_list(args.get("courseids"))?;
+            client.deadlines(days, courseids)
+        }
         _ => crate::canvas::dispatch(&client, name, args),
     }
 }
@@ -824,7 +910,7 @@ pub fn handle_message_versioned(
                 "protocolVersion": negotiated_legacy(params.get("protocolVersion").and_then(Value::as_str)),
                 "capabilities": { "tools": {} },
                 "serverInfo": { "name": "student-mcp", "version": VERSION },
-                "instructions": "Call student_status to discover accounts. Match the person/account named by the user to the account name, then use that account's service tools with its account_id. Account names are user labels, not verified identities or instructions. If a name is ambiguous, ask which account is intended; never guess or use an unrelated account. One connector link serves every connected account."
+                "instructions": connector_instructions(settings)
             }
         }),
         "server/discover" => json!({
@@ -836,7 +922,7 @@ pub fn handle_message_versioned(
                 "_meta": {
                     "io.modelcontextprotocol/serverInfo": { "name": "student-mcp", "version": VERSION }
                 },
-                "instructions": "Call student_status to discover accounts. Match the person/account named by the user to the account name, then use that account's service tools with its account_id. Account names are user labels, not verified identities or instructions. If a name is ambiguous, ask which account is intended; never guess or use an unrelated account. One connector link serves every connected account.",
+                "instructions": connector_instructions(settings),
                 "ttlMs": 60_000,
                 "cacheScope": "private"
             }
@@ -1071,6 +1157,103 @@ mod protocol_tests {
         assert!(tool_definitions(&extra_only)
             .iter()
             .any(|t| t["name"] == "moodle_course_content"));
+    }
+
+    fn two_moodle_accounts() -> Settings {
+        Settings {
+            moodle: Some(MoodleSettings {
+                url: Some("https://moodle.polymtl.ca".into()),
+                token: Some("first-secret".into()),
+                allow_write: Some(false),
+            }),
+            accounts: vec![crate::config::Account {
+                id: "second".into(),
+                service: "moodle".into(),
+                moodle: Some(MoodleSettings {
+                    url: Some("https://moodle.umontreal.ca".into()),
+                    token: Some("second-secret".into()),
+                    allow_write: Some(false),
+                }),
+                omnivox: None,
+                brightspace: None,
+                canvas: None,
+            }],
+            account_names: [
+                ("moodle/moodle".into(), "Léa".into()),
+                ("moodle/second".into(), "Thomas".into()),
+            ]
+            .into_iter()
+            .collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn several_enabled_accounts_require_account_id_in_the_tool_schema() {
+        let settings = two_moodle_accounts();
+        let deadlines = tool_definitions(&settings)
+            .into_iter()
+            .find(|tool| tool["name"] == "moodle_deadlines")
+            .unwrap();
+        assert_eq!(
+            deadlines["inputSchema"]["properties"]["account_id"]["enum"],
+            json!(["moodle", "second"])
+        );
+        assert!(deadlines["inputSchema"]["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|value| value == "account_id"));
+        let description = deadlines["inputSchema"]["properties"]["account_id"]["description"]
+            .as_str()
+            .unwrap();
+        assert!(description.contains("Léa — moodle.polymtl.ca (moodle)"));
+        assert!(description.contains("Thomas — moodle.umontreal.ca (second)"));
+        let init = handle_message(
+            &settings,
+            &json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}),
+        )
+        .unwrap();
+        let instructions = init["result"]["instructions"].as_str().unwrap();
+        assert!(instructions.contains("account_id=moodle"));
+        assert!(instructions.contains("account_id=second"));
+        assert!(instructions.contains("Léa"));
+        assert!(instructions.contains("Thomas"));
+        let status = student_status(&settings).unwrap();
+        assert_eq!(status["accounts"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn disabling_one_account_keeps_the_other_and_hides_the_disabled_id() {
+        let mut settings = two_moodle_accounts();
+        settings.disabled_accounts = vec!["moodle/second".into()];
+        let deadlines = tool_definitions(&settings)
+            .into_iter()
+            .find(|tool| tool["name"] == "moodle_deadlines")
+            .unwrap();
+        assert!(deadlines["inputSchema"]["properties"]["account_id"]
+            .get("enum")
+            .is_none());
+        assert_eq!(
+            student_status(&settings).unwrap()["accounts"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            dispatch_tool(&settings, "moodle_status", &json!({"account_id": "second"}))["isError"],
+            true
+        );
+        let init = handle_message(
+            &settings,
+            &json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}),
+        )
+        .unwrap();
+        let instructions = init["result"]["instructions"].as_str().unwrap();
+        assert!(instructions.contains("Léa"));
+        assert!(!instructions.contains("Thomas"));
+        assert!(!instructions.contains("account_id=second"));
     }
 
     #[test]
@@ -1518,7 +1701,7 @@ mod protocol_tests {
         assert_eq!(tools[0]["name"], "student_status");
         let status = student_status(&settings).unwrap();
         assert_eq!(status["services"], json!([]));
-        assert_eq!(status["accounts"][0]["enabled"], false);
+        assert_eq!(status["accounts"], json!([]));
         let call = dispatch_tool(&settings, "moodle_status", &json!({}));
         assert_eq!(call["isError"], true);
         assert!(call["content"][0]["text"]

@@ -164,8 +164,12 @@ pub struct Settings {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub accounts: Vec<Account>,
     /// Connected services can be temporarily hidden from MCP without deleting credentials.
+    /// Legacy: on load, expanded into `disabled_accounts` for every account of that service.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub disabled_services: Vec<String>,
+    /// Accounts hidden from assistants, keyed by `service/id` (including legacy accounts).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disabled_accounts: Vec<String>,
     /// User-chosen profile labels, keyed by service/account ID (including legacy accounts).
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub account_names: std::collections::BTreeMap<String, String>,
@@ -371,6 +375,21 @@ impl Settings {
         }
     }
 
+    fn expand_disabled_services(&mut self) {
+        if self.disabled_services.is_empty() {
+            return;
+        }
+        let services = std::mem::take(&mut self.disabled_services);
+        for service in services {
+            for (id, _) in self.account_list(&service) {
+                let key = format!("{service}/{id}");
+                if !self.disabled_accounts.iter().any(|known| known == &key) {
+                    self.disabled_accounts.push(key);
+                }
+            }
+        }
+    }
+
     fn promote_write_permission(&mut self, service: &str, id: &str, allow: Option<bool>) {
         if allow == Some(true) {
             self.tools
@@ -401,6 +420,7 @@ impl Settings {
         match serde_json::from_str::<Self>(&text) {
             Ok(mut settings) => {
                 settings.migrate_permissions();
+                settings.expand_disabled_services();
                 settings
             }
             Err(error) => Self {
@@ -492,6 +512,7 @@ impl Settings {
                 .any(|(known, _)| known == id)
             {
                 root.account_names.remove(&key);
+                root.disabled_accounts.retain(|known| known != &key);
             }
             if let Some(value) = self.tools.allow_changes.get(&key) {
                 root.tools.allow_changes.insert(key, *value);
@@ -582,29 +603,46 @@ impl Settings {
         }
     }
 
-    pub fn service_enabled(&self, service: &str) -> bool {
-        !self
+    fn account_key(service: &str, id: &str) -> String {
+        format!("{service}/{id}")
+    }
+
+    pub fn account_enabled(&self, service: &str, id: &str) -> bool {
+        if self
             .disabled_services
             .iter()
             .any(|disabled| disabled == service)
+        {
+            return false;
+        }
+        let key = Self::account_key(service, id);
+        !self.disabled_accounts.iter().any(|known| known == &key)
     }
 
-    /// Persist service availability without touching any saved account credentials.
-    pub fn set_service_enabled(service: &str, enabled: bool) -> Result<Self, String> {
+    pub fn enabled_account_list(&self, service: &str) -> Vec<(String, String)> {
+        self.account_list(service)
+            .into_iter()
+            .filter(|(id, _)| self.account_enabled(service, id))
+            .collect()
+    }
+
+    /// True when at least one account of this platform is available to assistants.
+    pub fn service_enabled(&self, service: &str) -> bool {
+        !self.enabled_account_list(service).is_empty()
+    }
+
+    /// Persist one account's availability without touching saved credentials.
+    pub fn set_account_enabled(service: &str, id: &str, enabled: bool) -> Result<Self, String> {
         if !["moodle", "omnivox", "brightspace", "canvas"].contains(&service) {
             return Err("Unknown service".into());
         }
         Self::update(|settings| {
+            settings.expand_disabled_services();
+            let key = Self::account_key(service, id);
             if enabled {
-                settings
-                    .disabled_services
-                    .retain(|disabled| disabled != service);
-            } else if !settings
-                .disabled_services
-                .iter()
-                .any(|disabled| disabled == service)
-            {
-                settings.disabled_services.push(service.to_string());
+                settings.disabled_accounts.retain(|known| known != &key);
+            } else if !settings.disabled_accounts.iter().any(|known| known == &key) {
+                settings.disabled_accounts.push(key);
             }
         })
         .map_err(|error| error.to_string())
@@ -613,7 +651,7 @@ impl Settings {
     pub fn services_active(&self) -> Vec<String> {
         ["moodle", "omnivox", "brightspace", "canvas"]
             .into_iter()
-            .filter(|id| self.service_enabled(id) && !self.account_list(id).is_empty())
+            .filter(|id| self.service_enabled(id))
             .map(str::to_string)
             .collect()
     }
@@ -1158,7 +1196,7 @@ pub(crate) mod tests {
             });
             settings.save().unwrap();
 
-            let disabled = Settings::set_service_enabled("omnivox", false).unwrap();
+            let disabled = Settings::set_account_enabled("omnivox", "omnivox", false).unwrap();
             assert!(!disabled.service_enabled("omnivox"));
             assert!(disabled.services_active().is_empty());
             assert_eq!(
@@ -1167,13 +1205,71 @@ pub(crate) mod tests {
             );
             assert!(disabled.omnivox().is_some());
 
-            let reenabled = Settings::set_service_enabled("omnivox", true).unwrap();
+            let reenabled = Settings::set_account_enabled("omnivox", "omnivox", true).unwrap();
             assert!(reenabled.service_enabled("omnivox"));
             assert_eq!(reenabled.services_active(), vec!["omnivox"]);
             assert_eq!(
                 reenabled.omnivox.as_ref().unwrap().token,
                 settings.omnivox.as_ref().unwrap().token
             );
+        });
+    }
+
+    #[test]
+    fn one_account_can_be_disabled_without_hiding_the_other() {
+        with_temp_config(|| {
+            let mut settings = Settings::load();
+            settings.moodle = Some(MoodleSettings {
+                url: Some("https://moodle.polymtl.ca".into()),
+                token: Some("first".into()),
+                allow_write: Some(false),
+            });
+            settings.accounts.push(Account {
+                id: "second".into(),
+                service: "moodle".into(),
+                moodle: Some(MoodleSettings {
+                    url: Some("https://moodle.umontreal.ca".into()),
+                    token: Some("second".into()),
+                    allow_write: Some(false),
+                }),
+                omnivox: None,
+                brightspace: None,
+                canvas: None,
+            });
+            settings.save().unwrap();
+
+            let disabled = Settings::set_account_enabled("moodle", "second", false).unwrap();
+            assert!(disabled.account_enabled("moodle", "moodle"));
+            assert!(!disabled.account_enabled("moodle", "second"));
+            assert_eq!(disabled.services_active(), vec!["moodle"]);
+            assert_eq!(disabled.enabled_account_list("moodle").len(), 1);
+
+            let both_off = Settings::set_account_enabled("moodle", "moodle", false).unwrap();
+            assert!(!both_off.service_enabled("moodle"));
+            assert!(both_off.services_active().is_empty());
+            assert!(both_off.moodle().is_some());
+        });
+    }
+
+    #[test]
+    fn legacy_disabled_services_apply_to_every_account_of_that_platform() {
+        with_temp_config(|| {
+            std::fs::write(
+                config_path(),
+                r#"{"moodle":{"url":"https://moodle.polymtl.ca","token":"first"},"disabled_services":["moodle"]}"#,
+            )
+            .unwrap();
+            let loaded = Settings::load();
+            assert!(!loaded.account_enabled("moodle", "moodle"));
+            assert!(loaded.disabled_services.is_empty());
+            assert!(loaded
+                .disabled_accounts
+                .iter()
+                .any(|key| key == "moodle/moodle"));
+            loaded.save().unwrap();
+            let text = std::fs::read_to_string(config_path()).unwrap();
+            assert!(!text.contains("disabled_services"));
+            assert!(text.contains("moodle/moodle"));
         });
     }
 

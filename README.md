@@ -34,7 +34,7 @@ The installer adds student-mcp to the application menu. Windows or macOS may war
 
 Launch it from the Start menu, Applications, or your app launcher. A local page opens. Closing the tab leaves a tray icon; quit from there when you are done.
 
-<p align="center"><img src="tools/screens/home.png" width="100%" alt="student-mcp 0.7.0 home screen with school search, four learning platforms, link settings and assistant setup" /></p>
+<p align="center"><img src="tools/screens/home.png" width="100%" alt="student-mcp 0.8.0 home screen with school search, four learning platforms, link settings and assistant setup" /></p>
 
 ## 2. Connect your school
 
@@ -48,7 +48,9 @@ When the page says you are connected, go back to the home screen.
 
 Use the pencil on a connected account to give it a name, such as **Léa** or **Alex**. Your assistant can use that label to select the right platform and account when you ask “What are Léa’s deadlines?” Names are labels you choose, not verified identities; if one is ambiguous, the assistant should ask you to clarify.
 
-<p align="center"><img src="tools/screens/profile.png" width="100%" alt="Connected Moodle account named Léa, with its school address and account controls" /></p>
+You can keep several accounts on the same platform — another school, or a child’s account. The switch beside each name is what assistants may use; turning it off hides that account without deleting the login. A green, amber or red dot is the connection status. One MCP link serves every enabled account.
+
+<p align="center"><img src="tools/screens/profile.png" width="100%" alt="Moodle account named Léa, with assistant access switch and account controls" /></p>
 
 <p align="center"><img src="tools/screens/omnivox.png" width="100%" alt="Omnivox sign-in with Connect with browser" /></p>
 
@@ -62,7 +64,7 @@ Your link appears under your school. Press the copy button. Keep this computer a
 
 Paste the **complete** `https://…/mcp/…` link into the assistant’s MCP connector settings, not into a chat message.
 
-Click **Set up an assistant** under **Your link**, then choose **Web** or **On this computer**. **Web** has three-step guides for **Grok**, **Claude**, **ChatGPT** and **Gemini**, with illustrative interface renders and a copy button where you need the public link. **On this computer** shows supported local apps: select a detected app, review the change, then confirm. No terminal or public link is needed. Automatic setup supports Claude Desktop, Claude Code, Codex / ChatGPT Desktop, Gemini CLI, OpenCode, Cursor, Grok Build, Oh My Pi, GitHub Copilot / VS Code, Windsurf, Pi, Qwen Code, Kiro, Amp, Crush and Devin CLI. Other settings and MCP servers are preserved, and an existing configuration is backed up first. Detection checks known locations, not every app on the disk; **Scan again** refreshes the list.
+Click **Set up an assistant** under **Your link**, then choose **Web** or **On this computer**. **Web** has three-step guides for **Grok**, **Claude**, **ChatGPT** and **Gemini**, with illustrative interface renders and a copy button where you need the public link. **On this computer** shows supported local apps: select a detected app, review the change, then confirm. No terminal or public link is needed. Automatic setup supports Claude Desktop, Claude Code, Codex / ChatGPT Desktop, Gemini CLI, OpenCode, Cursor, Grok Build, Oh My Pi, GitHub Copilot / VS Code, Windsurf, Pi, Qwen Code, Kiro, Amp, Crush and Devin CLI. Other settings and MCP servers are preserved, and an existing configuration is backed up first. A configured app can be reset with **Remove setup**, which deletes only the student-mcp entry. Detection checks known locations, not every app on the disk; **Scan again** refreshes the list.
 
 <p align="center"><img src="tools/screens/assistant.png" width="100%" alt="On this computer assistant setup with detected local apps, app logos, and a separate not-detected section" /></p>
 

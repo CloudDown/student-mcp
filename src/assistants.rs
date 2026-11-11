@@ -253,6 +253,119 @@ fn merge_toml(text: &str, executable: &Path) -> Result<String, String> {
     Ok(root.to_string())
 }
 
+fn remove_json(text: &str, assistant: &Assistant) -> Result<Option<String>, String> {
+    if matches!(assistant.format, Format::OpenCode | Format::Jsonc) {
+        use jsonc_parser::cst::CstRootNode;
+        let tree = CstRootNode::parse(text, &Default::default())
+            .map_err(|_| "Invalid JSONC; the configuration was left unchanged.")?;
+        let object = tree
+            .object_value()
+            .ok_or("Invalid JSONC object; the configuration was left unchanged.")?;
+        let servers = if assistant.format == Format::OpenCode {
+            object
+                .object_value("mcp")
+                .and_then(|mcp| mcp.object_value("servers"))
+        } else {
+            object.object_value(assistant.servers_key())
+        };
+        let Some(servers) = servers else {
+            return Ok(None);
+        };
+        let Some(property) = servers.get("student-mcp") else {
+            return Ok(None);
+        };
+        property.remove();
+        return Ok(Some(tree.to_string()));
+    }
+    let mut root = parse_json(text, assistant.format)?;
+    let Some(servers) = root
+        .get_mut(assistant.servers_key())
+        .and_then(Value::as_object_mut)
+    else {
+        return Ok(None);
+    };
+    if servers.remove("student-mcp").is_none() {
+        return Ok(None);
+    }
+    if assistant.id == "omp" {
+        if let Some(items) = root
+            .get_mut("disabledServers")
+            .and_then(Value::as_array_mut)
+        {
+            items.retain(|item| item != "student-mcp");
+        }
+    }
+    serde_json::to_string_pretty(&root)
+        .map(|text| Some(text + "\n"))
+        .map_err(|error| error.to_string())
+}
+
+fn remove_toml(text: &str) -> Result<Option<String>, String> {
+    let mut root = text
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|_| "Invalid TOML; the configuration was left unchanged.")?;
+    let Some(servers) = root
+        .get_mut("mcp_servers")
+        .and_then(toml_edit::Item::as_table_like_mut)
+    else {
+        return Ok(None);
+    };
+    if servers.remove("student-mcp").is_none() {
+        return Ok(None);
+    }
+    Ok(Some(root.to_string()))
+}
+
+fn remove_config(path: &Path, assistant: &Assistant) -> Result<(), String> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.to_string()),
+    };
+    if !metadata.file_type().is_file() {
+        return Err(format!(
+            "{} is not a regular file; it was left unchanged.",
+            path.display()
+        ));
+    }
+    let lock_path = path.with_file_name(".student-mcp-assistant.lock");
+    let lock = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(lock_path)
+        .map_err(|error| error.to_string())?;
+    fs2::FileExt::lock_exclusive(&lock).map_err(|error| error.to_string())?;
+
+    let text = read_config(path)?;
+    let next = if assistant.format == Format::Toml {
+        remove_toml(&text)?
+    } else {
+        remove_json(&text, assistant)?
+    };
+    let Some(text) = next else {
+        return Ok(());
+    };
+    let backup = backup_path(path)?;
+    std::fs::copy(path, backup).map_err(|error| error.to_string())?;
+    crate::config::write_private_with_permissions(
+        path,
+        text.as_bytes(),
+        Some(metadata.permissions()),
+    )
+    .map_err(|error| error.to_string())
+}
+
+pub fn deconfigure(assistant: &str) -> Result<Value, String> {
+    let assistant = find(assistant)?;
+    let computer = Computer::current()?;
+    let path = computer.path(assistant);
+    remove_config(&path, assistant)?;
+    let executable = executable()?;
+    Ok(local_status(&computer, &executable, assistant))
+}
+
 fn merge_config(path: &Path, executable: &Path, assistant: &Assistant) -> Result<(), String> {
     let parent = path
         .parent()
@@ -363,6 +476,32 @@ mod tests {
     }
 
     #[test]
+    fn remove_preserves_other_settings_and_is_idempotent() {
+        let root = workspace("remove");
+        let path = root.join("settings.json");
+        std::fs::write(
+            &path,
+            r#"{"theme":"dark","mcpServers":{"other":{"command":"other-server"},"student-mcp":{"command":"old","args":[]}}}"#,
+        )
+        .unwrap();
+        let assistant = find("claude").unwrap();
+        remove_config(&path, assistant).unwrap();
+        let value: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(value["theme"], "dark");
+        assert_eq!(value["mcpServers"]["other"]["command"], "other-server");
+        assert!(value["mcpServers"]["student-mcp"].is_null());
+        assert!(!configured(
+            &path,
+            Path::new("/opt/student-mcp/student-mcp"),
+            assistant
+        ));
+        let count = std::fs::read_dir(&root).unwrap().count();
+        remove_config(&path, assistant).unwrap();
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), count);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn invalid_json_is_left_untouched() {
         let root = workspace("invalid");
         let path = root.join("settings.json");
@@ -397,6 +536,13 @@ mod tests {
                 "{}",
                 assistant.id
             );
+            remove_config(&path, assistant).unwrap();
+            assert!(
+                !configured(&path, executable, assistant),
+                "{} remove",
+                assistant.id
+            );
+            remove_config(&path, assistant).unwrap();
         }
         assert!(configure("t3code").is_err());
         std::fs::remove_dir_all(root).unwrap();

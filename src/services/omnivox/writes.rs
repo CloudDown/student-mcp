@@ -323,7 +323,7 @@ mod tests {
             }
         }
         assert_eq!(names.len(), 12);
-        assert_eq!(super::super::tools().len(), 46);
+        assert_eq!(super::super::tools().len(), 47);
     }
 
     #[test]

@@ -118,7 +118,8 @@ seulement après **Set up on this computer** puis **Confirm setup** dans l’UI.
   `mcpServers` invalide ; ne jamais l’écraser.
 - Ne jamais écrire d’identifiant scolaire, de cookie ni de jeton MCP. Le local
   passe par stdio ; le web utilise le lien public.
-- `status()` est en lecture seule ; seul `configure()` écrit.
+- `status()` est en lecture seule ; `configure()` ajoute `student-mcp`, `deconfigure()`
+  le retire. Les deux sauvegardent le fichier et ne touchent pas aux autres serveurs.
 - ChatGPT n’a pas de configuration locale : son écran explique le lien HTTPS
   public et ouvre les réglages officiels.
 
@@ -138,7 +139,7 @@ Installation et exemples : `tools/GUIDE.md`, section « Local code graph ».
 
 ## Layout
 
-- `src/web.rs` / `src/resources/web/index.html` — configuration web locale (hors tunnel)
+- `src/web.rs` / `src/resources/web/` — configuration web locale (hors tunnel) : `index.html` (coquille), `app.css`, `app.js`
 - `src/assistants.rs` — configuration opt-in de Claude Desktop / Gemini CLI (fusion JSON, sauvegarde)
 - `src/browser.rs` — profils Chromium par compte, CDP, login interactif
 - `src/resources/browser/` — pont mobile Omnivox et requête navigateur

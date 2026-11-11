@@ -24,7 +24,7 @@ clients over cosmetic renames.
 | Rule | Detail |
 |------|--------|
 | Case | `snake_case` only |
-| Multi-account | Every platform tool accepts optional `account_id` (injected centrally). Required only when several accounts exist for that platform. |
+| Multi-account | Every platform tool accepts `account_id` (injected centrally). Optional when that platform has one enabled account. Required, with an `enum` of ids and names in the description, when several accounts are enabled. Disabled accounts are omitted from `tools/list`, `initialize` instructions and `student_status`. |
 | Course filter | Singular `courseid` / `course_id` for one course; plural `courseids` for lists |
 | IDs | Positive integers when the platform uses numeric IDs; strings when the platform does (Omnivox `course_id` like `2434K5EM.1011`) |
 | Limits | Always bound (`minimum` / `maximum`); clamp server-side too |
@@ -68,11 +68,11 @@ every `readOnlyHint:false` tool also carries `destructiveHint:true`,
 
 | Job | Prefer | Avoid as first choice |
 |-----|--------|------------------------|
-| “What is due?” | `*_deadlines` | Combining calendar + assignments + quizzes by hand |
+| “What is due?” | `moodle_deadlines`, `brightspace_deadlines`, `omnivox_deadlines`, `canvas_deadlines` | Combining calendar + assignments + quizzes by hand |
 | Find a TD / file | `moodle_search` or course content + query | Blind full course dumps |
 | Read a PDF/Office doc | `moodle_file` / `brightspace_file` / `omnivox_file` | Generic HTTP fetch of school URLs |
 | Rare Moodle action | dedicated tool, else `ws_discover` → `ws_call` | `ws_call` for everyday reads |
-| Account routing | `student_status` then `account_id` | Guessing which account |
+| Account routing | Match the person/school in `initialize` instructions or `student_status`, then pass that `account_id` | Guessing which account, mixing course IDs across accounts |
 
 ## Results
 

@@ -100,6 +100,12 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
 
         status, page = request("/", auth=False)
         assert status == 200
+        assert b'<link rel="stylesheet" href="/app.css">' in page
+        assert b'<script src="/app.js"></script>' in page
+        css_status, css = request("/app.css", auth=False)
+        js_status, js = request("/app.js", auth=False)
+        assert css_status == 200 and b':root' in css
+        assert js_status == 200 and b'function home()' in js
         rename = {"action": "rename_account", "service": "moodle", "id": "moodle", "name": "Léa"}
         assert request('/action', rename, auth=False)[0] == 401
         assert request('/action', {**rename, "id": "missing"})[0] == 400
@@ -120,30 +126,33 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         assert json.loads(config.read_text())["moodle"]["token"] == "fixture"
         assert request('/action', {**rename, "name": ""})[0] == 200
         assert json.loads(request('/state')[1])["accounts"][0]["name"] is None
-        assert b"Allow assistant changes" not in page
-        assert b'data-action="permissions"' not in page
-        assert b'L\xc3\xa9a / Mio \xc2\xb7 Read only' not in page
-        assert b'Experimental' not in page
-        assert b'myCourses \xc2\xb7 Read only' not in page
-        home = page.split(b'function home(){', 1)[1].split(b'function header(', 1)[0]
-        manage = page.split(b'function manageScreenContent(){', 1)[1].split(b'function serviceScreen(){', 1)[0]
-        links = page.split(b'function linkScreen(){', 1)[1].split(b'function publicMessage(', 1)[0]
+        assert b"Allow assistant changes" not in js
+        assert b'data-action="permissions"' not in js
+        assert b'L\xc3\xa9a / Mio \xc2\xb7 Read only' not in js
+        assert b'Experimental' not in js
+        assert b'myCourses \xc2\xb7 Read only' not in js
+        home = js.split(b'function home(){', 1)[1].split(b'function header(', 1)[0]
+        manage = js.split(b'function manageScreenContent(){', 1)[1].split(b'function serviceScreen(){', 1)[0]
+        links = js.split(b'function linkScreen(){', 1)[1].split(b'function publicMessage(', 1)[0]
         assert b'name="autostart"' not in home
         assert b'name="autostart"' not in links
         assert b'mapLines()' in home and b'class="mind-map"' in home and b'class="ais"' in home and b'link-open' in home
-        assert b'findField()' in home and b'id="school-find"' in page and b'schoolMatches' in page and b'const schools=[' in page
+        assert b'findField()' in home and b'id="school-find"' in js and b'schoolMatches' in js and b'const schools=[' in js
         assert b'name="advanced"' not in home and b'Allow changes' not in manage
-        assert b"Mail transfer" not in page and b"/assets/outlook.png" not in page
+        assert b"Mail transfer" not in js and b"/assets/outlook.png" not in js
         assert b'id="app-startup"' in page and b'name="autostart"' in page
-        assert b'sizeLanguageMenu' in page and b"window.addEventListener('resize',sizeLanguageMenu)" in page
-        assert manage.index(b'class="status-row"') < manage.index(b'data-add') < manage.index(b'class="manage-actions"')
+        assert b'sizeLanguageMenu' in js and b"window.addEventListener('resize',sizeLanguageMenu)" in js
+        assert manage.index(b'accountChoices()') < manage.index(b'data-add') < manage.index(b'class="manage-actions"')
         assert b'accountChoices()' in manage and b'account-list' not in manage
-        assert b'.startup-row .switch:checked{background:var(--blue)' in page
-        translations = page.split(b'const toolDescriptions={', 1)[1].split(b'\n};', 1)[0]
+        assert b'service-enabled-row' not in manage
+        assert b'class="status-row"' not in manage
+        assert b"Available to assistants" in js and b'data-account-id' in js
+        assert b'.switch:checked,.startup-row .switch:checked{background:var(--green)' in css
+        translations = js.split(b'const toolDescriptions={', 1)[1].split(b'\n};', 1)[0]
         translated_tool_names = set(re.findall(
             rb"^ (\w+):\['[^']{20,}','[^']{20,}'\]", translations, re.M
         ))
-        assert b"canvas" in home and b"zonecours2.hec.ca" in page
+        assert b"canvas" in home and b"zonecours2.hec.ca" in js
         logo_status, logo = request("/assets/moodle.png", auth=False)
         assert logo_status == 200 and logo.startswith(b"\x89PNG\r\n\x1a\n")
         canvas_status, canvas = request("/assets/canvas.png", auth=False)
@@ -155,9 +164,9 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
                     "omp", "kiro", "amp", "crush", "devin"):
             status, body = request(f"/assets/local-{app}.png", auth=False)
             assert status == 200 and body.startswith(b"\x89PNG\r\n\x1a\n"), app
-        assert b"localLogos" in page and b"/assets/local-opencode.png" in page
-        assert b'assistantScreen()' in page and b'data-assistant-choose' in page
-        assert b"openAssistant('grok')" in page and b'class="assistant-switcher"' in page
+        assert b"localLogos" in js and b"/assets/local-opencode.png" in js
+        assert b'assistantScreen()' in js and b'data-assistant-choose' in js
+        assert b"openAssistant('grok')" in js and b'class="assistant-switcher"' in js
         for guide in ("guide-claude-menu", "guide-claude-form", "guide-claude-chat",
                       "guide-gemini-settings", "guide-gemini-form", "guide-gemini-chat",
                       "guide-chatgpt-menu", "guide-chatgpt-form", "guide-chatgpt-chat",
@@ -170,6 +179,7 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         assert assistant_status == 200 and json.loads(assistant_body)["local"] is False
         assert request("/assistant/unknown")[0] == 400
         assert request("/action", {"action": "assistant_setup", "assistant": "chatgpt"})[0] == 400
+        assert request("/action", {"action": "assistant_remove", "assistant": "chatgpt"})[0] == 400
         assert request('/assistants', auth=False)[0] == 401
         assert request('/assistants', origin='https://untrusted.invalid')[0] == 401
         scan_status, scan_body = request('/assistants')
@@ -269,12 +279,12 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         assert request("/action", {"action": "permissions", "service": "moodle", "id": "moodle", "allow_write": True})[0] == 400
         assert "allow_write" not in json.loads(request("/state")[1])["accounts"][0]
         assert request("/action", {"action": "verify", "code": "123456"})[0] == 400
-        assert b'id="browser-connect-form"' in page
-        assert b'Connect with browser' in page
-        assert b'Manual sign-in' in page
-        assert b'Advanced options' not in page
-        assert b'function advancedFields' not in page
-        assert b'gateway_url' not in page
+        assert b'id="browser-connect-form"' in js
+        assert b'Connect with browser' in js
+        assert b'Manual sign-in' in js
+        assert b'Advanced options' not in js
+        assert b'function advancedFields' not in js
+        assert b'gateway_url' not in js
         assert request("/action", {"action": "browser_connect", "service": "brightspace", "url": "https://school.example"}, auth=False)[0] == 401
         assert request("/action", {"action": "browser_connect", "service": "moodle", "url": "https://school.example"})[0] == 400
         assert request("/action", {"action": "browser_connect", "service": "omnivox", "url": "https://other.example"})[0] == 400

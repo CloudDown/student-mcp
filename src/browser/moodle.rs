@@ -13,6 +13,11 @@ const INVALID: &str =
     "Moodle returned an invalid or unrelated sign-in response. Start browser sign-in again.";
 pub(super) const UNAVAILABLE: &str = "Moodle browser sign-in did not finish. Check that your school allows the Moodle mobile app, or choose Manual sign-in to try your password.";
 
+/// 404/410 : ce Moodle n'expose pas le point d'entrée de l'application mobile.
+fn missing_endpoint(status: u16) -> bool {
+    matches!(status, 404 | 410)
+}
+
 impl Sso {
     pub fn new(site: &str) -> Self {
         Self {
@@ -30,6 +35,21 @@ impl Sso {
             .append_pair("passport", &self.passport)
             .append_pair("urlscheme", "moodlemobile");
         url.into()
+    }
+
+    /// Le site refuse-t-il le point d'entrée de l'application mobile ? Un Moodle
+    /// dont le service mobile est désactivé répond 404/410 : ouvrir `launch.php`
+    /// dans le navigateur ne montrerait qu'une page d'erreur, sans jeton.
+    pub fn unavailable(&self) -> bool {
+        let agent = ureq::AgentBuilder::new()
+            .timeout(std::time::Duration::from_secs(6))
+            .redirects(0)
+            .user_agent(crate::session::BROWSER_UA)
+            .build();
+        match agent.get(&self.launch_url()).call() {
+            Err(ureq::Error::Status(code, _)) => missing_endpoint(code),
+            _ => false,
+        }
     }
 
     pub fn accept(&mut self, callback: &str) -> Result<(), String> {
@@ -73,6 +93,23 @@ mod tests {
                 if private { ":::private-secret" } else { "" }
             ))
         )
+    }
+
+    #[test]
+    fn missing_endpoint_is_only_404_and_410() {
+        assert!(missing_endpoint(404));
+        assert!(missing_endpoint(410));
+        for status in [200, 301, 302, 303, 403, 500] {
+            assert!(!missing_endpoint(status), "{status} ne prouve rien");
+        }
+    }
+
+    #[test]
+    #[ignore = "réseau réel : dépend de deux Moodle scolaires"]
+    fn launch_endpoint_detection_on_real_sites() {
+        // Lille a désactivé le service mobile ; Polytechnique le sert.
+        assert!(Sso::new("https://moodle.univ-lille.fr").unavailable());
+        assert!(!Sso::new("https://moodle.polymtl.ca").unavailable());
     }
 
     #[test]

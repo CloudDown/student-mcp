@@ -345,6 +345,290 @@ impl CanvasClient {
         result["scope"] = json!("Canvas upcoming-events window, not the full calendar history.");
         Ok(result)
     }
+
+    /// Upcoming assignment and quiz due dates, sorted by time. Prefer this for due work.
+    pub fn deadlines(&self, days: i64, courseids: Option<Vec<i64>>) -> Result<Value, String> {
+        let days = days.clamp(1, 365);
+        let now = unix_now();
+        let until = now + days * 86_400;
+        let mut errors = Vec::new();
+        let mut names = std::collections::BTreeMap::new();
+        let mut course_ids = Vec::new();
+        let mut courses_page = Page::default();
+        let mut seen_pages = std::collections::HashSet::new();
+        loop {
+            if !seen_pages.insert(courses_page.page.clone()) || seen_pages.len() > 20 {
+                errors.push(json!({
+                    "source": "courses",
+                    "error": "Canvas course pagination did not finish. Pass courseids to limit the scan."
+                }));
+                break;
+            }
+            match self.courses_page(&courses_page) {
+                Ok(page) => {
+                    for course in as_list(&page["courses"]) {
+                        if let Some(id) = course.get("id").and_then(Value::as_i64) {
+                            if courseids.as_ref().is_none_or(|filter| filter.contains(&id)) {
+                                names.insert(
+                                    id,
+                                    course
+                                        .get("code")
+                                        .or_else(|| course.get("name"))
+                                        .cloned()
+                                        .unwrap_or(Value::Null),
+                                );
+                                course_ids.push(id);
+                            }
+                        }
+                    }
+                    match page["next_page"].as_str() {
+                        Some(next) => courses_page.page = next.into(),
+                        None => break,
+                    }
+                }
+                Err(error) => {
+                    errors.push(json!({"source": "courses", "error": error}));
+                    break;
+                }
+            }
+        }
+        if let Some(filter) = courseids.as_ref() {
+            for id in filter {
+                if !course_ids.contains(id) {
+                    course_ids.push(*id);
+                }
+            }
+        }
+        if course_ids.len() > 40 {
+            errors.push(json!({
+                "source": "courses",
+                "error": "More than 40 courses. Pass courseids to limit the scan."
+            }));
+            course_ids.truncate(40);
+        }
+        let mut items = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        let mut failed = 0usize;
+        for courseid in &course_ids {
+            let course = names.get(courseid).cloned().unwrap_or(Value::Null);
+            match self.collect_due_assignments(*courseid, now, until) {
+                Ok(due) => {
+                    for item in due {
+                        let key = format!(
+                            "{}:{}",
+                            item.get("kind").and_then(Value::as_str).unwrap_or(""),
+                            item.get("id").map(|v| v.to_string()).unwrap_or_default()
+                        );
+                        if seen.insert(key) {
+                            let mut item = item;
+                            item["courseid"] = json!(courseid);
+                            item["course"] = course.clone();
+                            items.push(item);
+                        }
+                    }
+                }
+                Err(error) => {
+                    failed += 1;
+                    errors.push(json!({"source": courseid, "error": error}));
+                }
+            }
+        }
+        match self.calendar(&Page::default()) {
+            Ok(cal) => {
+                for event in as_list(&cal["events"]) {
+                    let due = unix_from_value(
+                        event
+                            .pointer("/assignment/due_at")
+                            .or_else(|| event.get("start")),
+                    );
+                    let Some(time) = due else { continue };
+                    if time < now || time > until {
+                        continue;
+                    }
+                    let assignment_id = event.pointer("/assignment/id");
+                    let key = if let Some(id) = assignment_id {
+                        format!("assignment:{id}")
+                    } else {
+                        format!(
+                            "calendar:{}",
+                            event.get("id").map(|v| v.to_string()).unwrap_or_default()
+                        )
+                    };
+                    if !seen.insert(key) {
+                        continue;
+                    }
+                    items.push(json!({
+                        "kind": if assignment_id.is_some() { "assignment" } else { "calendar" },
+                        "id": assignment_id.cloned().or_else(|| event.get("id").cloned()),
+                        "name": event.get("title"),
+                        "courseid": canvas_context_course(event.get("context_code")),
+                        "time": time,
+                        "due": event.pointer("/assignment/due_at").or_else(|| event.get("start")),
+                    }));
+                }
+            }
+            Err(error) => errors.push(json!({"source": "calendar", "error": error})),
+        }
+        if items.is_empty() && failed > 0 && failed == course_ids.len() {
+            return Err(format!("All deadline sources failed: {}", json!(errors)));
+        }
+        items.sort_by(|left, right| {
+            let left_time = left.get("time").and_then(Value::as_i64).unwrap_or(0);
+            let right_time = right.get("time").and_then(Value::as_i64).unwrap_or(0);
+            left_time.cmp(&right_time)
+        });
+        Ok(json!({
+            "from": now,
+            "until": until,
+            "days": days,
+            "partial": !errors.is_empty(),
+            "errors": errors,
+            "coverage": "Active-course assignments and Classic Quizzes with due dates in the window, plus Canvas upcoming-events. New Quizzes appear as assignments. canvas_todo is a dashboard feed, not this list.",
+            "count": items.len(),
+            "deadlines": items
+        }))
+    }
+
+    fn collect_due_assignments(
+        &self,
+        courseid: i64,
+        now: i64,
+        until: i64,
+    ) -> Result<Vec<Value>, String> {
+        let mut items = Vec::new();
+        let mut page = Page::default();
+        let mut seen = std::collections::HashSet::new();
+        loop {
+            if !seen.insert(page.page.clone()) || seen.len() > 5 {
+                break;
+            }
+            let result = self.assignments(courseid, &page)?;
+            for assignment in as_list(&result["assignments"]) {
+                let Some(time) = unix_from_value(assignment.get("due")) else {
+                    continue;
+                };
+                if time < now || time > until {
+                    continue;
+                }
+                items.push(json!({
+                    "kind": if assignment.get("is_quiz_assignment").and_then(Value::as_bool) == Some(true) {
+                        "quiz"
+                    } else {
+                        "assignment"
+                    },
+                    "id": assignment.get("id"),
+                    "name": assignment.get("name"),
+                    "time": time,
+                    "due": assignment.get("due"),
+                }));
+            }
+            match result["next_page"].as_str() {
+                Some(next) => page.page = next.into(),
+                None => break,
+            }
+        }
+        page = Page::default();
+        seen.clear();
+        loop {
+            if !seen.insert(page.page.clone()) || seen.len() > 5 {
+                break;
+            }
+            let result = self.list(
+                &format!("/api/v1/courses/{courseid}/quizzes"),
+                &[],
+                &page,
+                "quizzes",
+            )?;
+            for quiz in as_list(&result["quizzes"]) {
+                let Some(time) = unix_from_value(quiz.get("due_at").or_else(|| quiz.get("due")))
+                else {
+                    continue;
+                };
+                if time < now || time > until {
+                    continue;
+                }
+                items.push(json!({
+                    "kind": "quiz",
+                    "id": quiz.get("id"),
+                    "name": quiz.get("title").or_else(|| quiz.get("name")),
+                    "time": time,
+                    "due": quiz.get("due_at").or_else(|| quiz.get("due")),
+                }));
+            }
+            match result["next_page"].as_str() {
+                Some(next) => page.page = next.into(),
+                None => break,
+            }
+        }
+        Ok(items)
+    }
+}
+
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+}
+
+fn unix_from_value(value: Option<&Value>) -> Option<i64> {
+    let value = value?;
+    if let Some(n) = value.as_i64().or_else(|| value.as_u64().map(|n| n as i64)) {
+        return Some(if n > 10_000_000_000 { n / 1000 } else { n });
+    }
+    unix_from_iso(value.as_str()?)
+}
+
+fn unix_from_iso(raw: &str) -> Option<i64> {
+    let s = raw.trim();
+    if s.len() < 10 || s.as_bytes().get(4) != Some(&b'-') || s.as_bytes().get(7) != Some(&b'-') {
+        return None;
+    }
+    let year: i64 = s.get(0..4)?.parse().ok()?;
+    let month: i64 = s.get(5..7)?.parse().ok()?;
+    let day: i64 = s.get(8..10)?.parse().ok()?;
+    let (hour, min, sec, rest) =
+        if s.len() >= 19 && matches!(s.as_bytes().get(10), Some(b'T' | b' ')) {
+            (
+                s.get(11..13)?.parse().ok()?,
+                s.get(14..16)?.parse().ok()?,
+                s.get(17..19)?.parse().ok()?,
+                s.get(19..).unwrap_or(""),
+            )
+        } else {
+            (23, 59, 59, "")
+        };
+    let days = days_from_civil(year, month, day)?;
+    let mut unix = days * 86_400 + hour * 3600 + min * 60 + sec;
+    let rest = rest.trim_start_matches(|c: char| c == '.' || c.is_ascii_digit());
+    if rest.starts_with('+') || rest.starts_with('-') {
+        let sign = if rest.starts_with('+') { 1 } else { -1 };
+        let hh: i64 = rest.get(1..3)?.parse().ok()?;
+        let mm: i64 = rest.get(4..6).and_then(|v| v.parse().ok()).unwrap_or(0);
+        unix -= sign * (hh * 3600 + mm * 60);
+    }
+    Some(unix)
+}
+
+fn days_from_civil(year: i64, month: i64, day: i64) -> Option<i64> {
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = year.div_euclid(400);
+    let yoe = year.rem_euclid(400) as u64;
+    let mp = if month > 2 { month - 3 } else { month + 9 };
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy as u64;
+    Some(era * 146_097 + doe as i64 - 719_468)
+}
+
+fn canvas_context_course(code: Option<&Value>) -> Value {
+    code.and_then(Value::as_str)
+        .and_then(|code| code.strip_prefix("course_"))
+        .and_then(|id| id.parse::<i64>().ok())
+        .map(Value::from)
+        .unwrap_or(Value::Null)
 }
 
 fn next_page(origin: &str, path: &str, link: &str) -> Result<Option<String>, String> {
@@ -509,11 +793,12 @@ pub fn tools() -> Vec<Value> {
         json!({"name":"canvas_status","description":"Check the connected Canvas account.","annotations":{"readOnlyHint":true}}),
         json!({"name":"canvas_my_courses","description":"List the student's active Canvas courses.","annotations":{"readOnlyHint":true}}),
         json!({"name":"canvas_announcements","description":"Recent course announcements with full message HTML (Canvas defaults to the last two weeks). Pass courseid to limit to one course. Older announcements can be read by topicid with canvas_discussion.","inputSchema":{"type":"object","properties":{"courseid":course}},"annotations":{"readOnlyHint":true}}),
-        json!({"name":"canvas_assignments","description":"Assignments, full instructions, own submission summary and due dates for a Canvas course. Use canvas_assignment for the rubric and canvas_assignment_status for feedback/history.","inputSchema":{"type":"object","properties":{"courseid":course},"required":["courseid"]},"annotations":{"readOnlyHint":true}}),
+        json!({"name":"canvas_assignments","description":"Assignments, full instructions, own submission summary and due dates for a Canvas course. Use canvas_assignment for the rubric and canvas_assignment_status for feedback/history. Prefer canvas_deadlines for a cross-course due list.","inputSchema":{"type":"object","properties":{"courseid":course},"required":["courseid"]},"annotations":{"readOnlyHint":true}}),
         json!({"name":"canvas_grades","description":"Visible grades for the connected student in a Canvas course.","inputSchema":{"type":"object","properties":{"courseid":course},"required":["courseid"]},"annotations":{"readOnlyHint":true}}),
         json!({"name":"canvas_files","description":"Files in a Canvas course. Pass file id to canvas_file to read a document or obtain a user-openable PDF link in links.download; do not share internal file URLs.","inputSchema":{"type":"object","properties":{"courseid":course},"required":["courseid"]},"annotations":{"readOnlyHint":true}}),
         json!({"name":"canvas_file","description":"Read a Canvas file using fileid from canvas_files. For a user-openable PDF link, use format=file and share links.download; if no link is returned, say so. PDF: original file by default. If Canvas stores the file off-site, open it on the school site instead.","inputSchema":{"type":"object","properties":{"fileid":{"type":"integer","minimum":1},"format":{"type":"string","enum":["file","text","images"]},"find":{"type":"string"},"page_from":{"type":"integer","minimum":1},"page_to":{"type":"integer","minimum":1}},"required":["fileid"]},"annotations":{"readOnlyHint":true}}),
-        json!({"name":"canvas_calendar","description":"Upcoming Canvas calendar events for the student.","annotations":{"readOnlyHint":true}}),
+        json!({"name":"canvas_calendar","description":"Upcoming Canvas calendar events for the student. Prefer canvas_deadlines for due work.","annotations":{"readOnlyHint":true}}),
+        json!({"name":"canvas_deadlines","description":"Upcoming due work from assignments, Classic Quizzes and the Canvas upcoming-events feed, sorted by date. Prefer this for due work.","inputSchema":{"type":"object","properties":{"days":{"type":"integer","minimum":1,"maximum":365,"description":"How many days ahead to look (default 60)."},"courseids":{"type":"array","items":{"type":"integer","minimum":1}}}},"annotations":{"readOnlyHint":true}}),
     ];
     for tool in &mut tools {
         if matches!(
@@ -610,6 +895,7 @@ mod tests {
             "canvas_files",
             "canvas_file",
             "canvas_calendar",
+            "canvas_deadlines",
             "canvas_course",
             "canvas_modules",
             "canvas_module_items",
@@ -679,6 +965,13 @@ mod tests {
             "Exam"
         );
         worker.join().unwrap();
+    }
+
+    #[test]
+    fn iso_due_dates_convert_to_unix() {
+        assert_eq!(unix_from_iso("1970-01-01T00:00:00Z"), Some(0));
+        assert_eq!(unix_from_iso("1970-01-01T00:00:00+00:00"), Some(0));
+        assert!(unix_from_iso("2026-02-01T12:00:00Z").unwrap() > 1_700_000_000);
     }
 
     #[test]

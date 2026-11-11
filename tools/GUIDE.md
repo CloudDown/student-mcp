@@ -161,12 +161,18 @@ the next page. Prefer `brightspace_deadlines` for upcoming work. Sessions expire
 and must be replaced via **Edit sign-in**. The connector uses LP API 1.49 and LE
 API 1.82.
 
-Saved accounts have check, reconnect and disconnect actions. Connected
-services expose their full tool list. Write tools keep `readOnlyHint: false`
-and `destructiveHint: true` so Claude or ChatGPT can ask before changing
-school data. Older `tools.advanced` / `tools.allow_changes` / `allow_write`
-fields are ignored on load and omitted on the next save. Credentials and the
-public link stay in place.
+Saved accounts have check, reconnect and disconnect actions. The switch beside
+each name enables that account for assistants without deleting the login; a
+disabled account is omitted from `student_status` and from platform tools.
+Several accounts may share one platform and one MCP link. When more than one
+account of a platform is enabled, those tools require `account_id` (`enum` of
+the live ids). `initialize` instructions list the enabled accounts (name,
+platform, host, id). Connected services expose their full tool list. Write
+tools keep `readOnlyHint: false` and `destructiveHint: true` so Claude or
+ChatGPT can ask before changing school data. Older `tools.advanced` /
+`tools.allow_changes` / `allow_write` fields are ignored on load and omitted on
+the next save. Credentials and the public link stay in place. An older
+`disabled_services` entry is expanded on load into per-account disables.
 
 Connection checks and manual sign-ins run in a background worker. The local
 status page, link settings and Quit remain available while the school responds.
@@ -180,6 +186,13 @@ browser sign-in also interrupts its lock wait.
 Document links last up to three hours while the app is running. The shared
 store is bounded to 128 links and 24 MiB; when full, new PDFs are attached
 inline rather than evicting links that were already issued.
+
+`omnivox_deadlines` and `canvas_deadlines` match the Moodle/Brightspace due-work
+tools: a sorted window (default 60 days), `partial`/`errors` when a course
+source fails, and no mixing of course IDs across accounts. Omnivox fetches each
+course's assignment list because the summary has titles only; college-calendar
+holidays stay on `omnivox_calendar`. Canvas merges assignments, Classic Quizzes
+and upcoming-events, and de-duplicates assignment calendar rows.
 
 `moodle_deadlines` reports `partial` and per-source `errors` when some sources
 fail. Action events are paged (up to 500 per call); a remaining cursor is returned
@@ -261,7 +274,9 @@ References: [D2L API authentication](https://docs.valence.desire2learn.com/basic
   view retains short guides for Grok, Claude, ChatGPT and Gemini. The local view
   scans known configuration locations, application directories and executable paths
   without running an assistant or modifying files. Choose a detected app, then
-  **Confirm setup**: no command or JSON needs to be copied.
+  **Confirm setup**: no command or JSON needs to be copied. A configured app
+  shows **Remove setup**, which deletes only `student-mcp` and keeps the other
+  servers and settings, after creating a backup.
 - Automatic local setup supports Claude Desktop, Claude Code, Codex / ChatGPT
   Desktop, Gemini CLI, OpenCode (V2), Cursor, Grok Build, Oh My Pi, GitHub Copilot /
   VS Code, Windsurf, Pi, Qwen Code, Kiro, Amp, Crush and Devin CLI.

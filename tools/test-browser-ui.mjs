@@ -10,6 +10,8 @@ try {
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.addInitScript(()=>localStorage.setItem('student-mcp.language','en'));
   const html=readFileSync(new URL('../src/resources/web/index.html',import.meta.url),'utf8');
+  const css=readFileSync(new URL('../src/resources/web/app.css',import.meta.url),'utf8');
+  const js=readFileSync(new URL('../src/resources/web/app.js',import.meta.url),'utf8');
   const state={accounts:[],browser_login:null,verification:null,tunnel:'Idle',local:true,public:false,autostart:false,link:'',local_link:''};
   const actions=[];
   let needsBrowser=false;
@@ -17,6 +19,8 @@ try {
   await page.route('http://student.test/**',async route=>{
     const path=new URL(route.request().url()).pathname;
     if(path==='/')return route.fulfill({contentType:'text/html',body:html});
+    if(path==='/app.css')return route.fulfill({contentType:'text/css',body:css});
+    if(path==='/app.js')return route.fulfill({contentType:'text/javascript',body:js});
     if(path==='/state')return route.fulfill({json:state});
     if(path==='/update')return route.fulfill({json:{available:false}});
     if(path==='/assistants')return route.fulfill({json:{assistants:[{assistant:'claude',name:'Claude Desktop',detected:true,configured:false,reload:'restart'},{assistant:'claude-code',name:'Claude Code',detected:true,configured:false,reload:'restart'},{assistant:'opencode',name:'OpenCode',detected:true,configured:false,reload:'automatic'},{assistant:'gemini',name:'Gemini CLI',detected:false,configured:false,reload:'restart'}]}});
@@ -29,7 +33,8 @@ try {
         account.name=action.name.trim()||null;
         return route.fulfill({json:{name:account.name}});
       }
-      if(action.action==='assistant_setup')return route.fulfill({json:{assistant:action.assistant,local:true,detected:true,configured:true}});
+      if(action.action==='assistant_setup')return route.fulfill({json:{assistant:action.assistant,local:true,detected:true,configured:true,reload:'restart'}});
+      if(action.action==='assistant_remove')return route.fulfill({json:{assistant:action.assistant,local:true,detected:true,configured:false,reload:'restart'}});
       if(action.action==='browser_connect'){
         if(needsBrowser&&!action.allow_browser_download)return route.fulfill({json:{browser_download_required:true}});
         state.browser_login={service:action.service,id:'fixture',state:'waiting',error:null,progress:{phase:'preparing'}};
@@ -85,7 +90,7 @@ try {
   assert.equal(await profileName.inputValue(),'Léa');
   rejectRename=false;
   await page.getByRole('button',{name:'Save',exact:true}).click();
-  await page.locator('.manage-status-text').filter({hasText:'Léa'}).waitFor();
+  await page.locator('.account-row-title').filter({hasText:'Léa'}).waitFor();
   const cardBounds=await page.locator('.manage-card').boundingBox();
   for(const action of ['rename','check']){
     const bounds=await page.locator(`[data-action="${action}"]`).boundingBox();
@@ -100,8 +105,8 @@ try {
   await page.getByRole('button',{name:'Rename account',exact:true}).click();
   await profileName.fill('Connected <img src=x onerror=alert(1)>');
   await page.getByRole('button',{name:'Save',exact:true}).click();
-  await page.locator('.manage-status-text').filter({hasText:'Connected <img src=x onerror=alert(1)>'}).waitFor();
-  assert.equal(await page.locator('.manage-status-text img').count(),0);
+  await page.locator('.account-row-title').filter({hasText:'Connected <img src=x onerror=alert(1)>'}).waitFor();
+  assert.equal(await page.locator('.account-row-title img').count(),0);
   // A second profile on the same platform is chosen by its label, not just its host.
   state.accounts.push({id:'second',service:'brightspace',url:'https://school.brightspace.com',name:'Alex'});
   await page.evaluate(()=>refresh());
@@ -165,15 +170,39 @@ try {
   assert.equal(await page.getByRole('checkbox',{name:'Allow changes'}).count(),0);
   await page.getByRole('button',{name:'Back to services',exact:true}).click();
   needsBrowser=false;
+  // A second school on the same service must start a new account, not edit the first.
+  await page.getByRole('combobox',{name:'Search your school'}).fill('studium');
+  await page.locator('[data-school]').first().click();
+  await page.locator('#browser-connect-form').waitFor({timeout:3000});
+  assert.equal(await page.getByLabel('Site address',{exact:true}).inputValue(),'https://studium.umontreal.ca');
+  assert.equal(await page.evaluate(()=>state.accountId),'');
+  await page.evaluate(()=>refresh());
+  assert.equal(await page.getByLabel('Site address',{exact:true}).inputValue(),'https://studium.umontreal.ca');
+  await page.getByRole('button',{name:'Connect with browser',exact:true}).click();
+  assert.equal(actions.at(-1).url,'https://studium.umontreal.ca');
+  assert.ok(!actions.at(-1).id);
+  assert.equal(state.accounts[0].url,'https://moodle.polymtl.ca');
+  await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  await page.getByRole('button',{name:'Back to services',exact:true}).click();
+  await page.getByRole('combobox',{name:'Search your school'}).fill('polytechnique');
+  await page.locator('[data-school]').first().click();
+  await page.locator('[data-add]').waitFor();
+  assert.equal(await page.evaluate(()=>state.accountId),'moodle');
+  await page.getByRole('button',{name:'Back to services',exact:true}).click();
   await page.locator('[data-assistant-choose]').click();
   await page.getByRole('button',{name:'Set up Claude',exact:true}).click();
   await page.locator('[data-assistant-mode="local"]').click();
   await page.locator('[data-local-assistant="claude"]').click();
   await page.getByText(/This updates the assistant’s MCP settings/).waitFor();
   await page.getByRole('button',{name:'Confirm setup',exact:true}).click();
-  await page.getByText('Claude Desktop · Settings saved',{exact:true}).waitFor();
+  await page.getByText('Claude Desktop · Configured',{exact:true}).waitFor();
   assert.equal(actions.at(-1).action,'assistant_setup');
   assert.equal(actions.at(-1).assistant,'claude');
+  await page.getByRole('button',{name:'Remove setup',exact:true}).click();
+  await page.locator('[data-assistant-remove-confirm]').click();
+  assert.equal(actions.at(-1).action,'assistant_remove');
+  assert.equal(actions.at(-1).assistant,'claude');
+  await page.getByRole('button',{name:'Confirm setup',exact:true}).waitFor();
   await page.getByRole('button',{name:'Back to services',exact:true}).click();
   await page.locator('[data-assistant-choose]').click();
   await page.getByRole('button',{name:'Set up ChatGPT',exact:true}).click();

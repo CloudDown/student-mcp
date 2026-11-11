@@ -1,5 +1,6 @@
 use super::*;
 use crate::config::{Account, CanvasSettings, Settings};
+use std::time::SystemTime;
 use tiny_http::{Header, Response, Server};
 
 // Exact endpoint/query fixtures exercise the public MCP dispatcher, including
@@ -70,6 +71,25 @@ fn call(settings: &Settings, name: &str, args: Value) -> Value {
     let response = crate::mcp::dispatch_tool(settings, name, &args);
     assert_eq!(response["isError"], false, "{name}: {response}");
     response["structuredContent"].clone()
+}
+
+fn iso_in(days: i64) -> String {
+    let secs = SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
+        + days * 86_400;
+    let z = secs.div_euclid(86_400) + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}-{d:02}T12:00:00Z")
 }
 
 #[test]
@@ -342,15 +362,28 @@ fn new_tools_use_shared_account_selection_and_catalogue() {
         .into_iter()
         .filter(|t| t["name"] != "student_status")
         .collect();
-    assert_eq!(catalogue, published);
-    assert_eq!(catalogue.len(), 24);
-    for tool in catalogue {
+    let names = |tools: &[Value]| {
+        tools
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(names(&catalogue), names(&published));
+    assert_eq!(catalogue.len(), 25);
+    for tool in &catalogue {
         assert_eq!(
             tool["inputSchema"]["properties"]["account_id"]["type"],
             "string"
         );
+        assert!(tool["inputSchema"]["properties"]["account_id"]
+            .get("enum")
+            .is_none());
         assert_eq!(tool["annotations"]["readOnlyHint"], true);
     }
+    assert_eq!(
+        published[0]["inputSchema"]["properties"]["account_id"]["enum"],
+        json!(["canvas", "second"])
+    );
     worker.join().unwrap();
 }
 
@@ -436,5 +469,58 @@ fn denied_access_and_invalid_list_payloads_are_not_empty_successes() {
             "{result}"
         );
     }
+    worker.join().unwrap();
+}
+
+#[test]
+fn deadlines_merge_assignments_and_quizzes_and_skip_duplicates() {
+    let due = iso_in(7);
+    let (settings, worker) = fixture(vec![
+        (
+            "/api/v1/courses?enrollment_state=active&page=1&per_page=50",
+            200,
+            json!([{"id":1,"name":"Algo","course_code":"INF100"}]),
+            None,
+        ),
+        (
+            "/api/v1/courses/1/assignments?order_by=due_at&include[]=submission&page=1&per_page=50",
+            200,
+            json!([
+                {"id":3,"name":"TP1","due_at":due,"is_quiz_assignment":false},
+                {"id":4,"name":"Old","due_at":"2020-01-01T00:00:00Z"}
+            ]),
+            None,
+        ),
+        (
+            "/api/v1/courses/1/quizzes?page=1&per_page=50",
+            200,
+            json!([{"id":9,"title":"Quiz 1","due_at":due}]),
+            None,
+        ),
+        (
+            "/api/v1/users/self/upcoming_events?page=1&per_page=50",
+            200,
+            json!([{
+                "id":30,
+                "title":"TP1",
+                "type":"assignment",
+                "assignment":{"id":3,"due_at":due},
+                "context_code":"course_1",
+                "start_at":due
+            }]),
+            None,
+        ),
+    ]);
+    let result = call(&settings, "canvas_deadlines", json!({"days": 60}));
+    assert_eq!(result["count"], 2);
+    let names: Vec<_> = result["deadlines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["name"].as_str().unwrap().to_string())
+        .collect();
+    assert!(names.contains(&"TP1".into()));
+    assert!(names.contains(&"Quiz 1".into()));
+    assert!(!names.iter().any(|name| name == "Old"));
     worker.join().unwrap();
 }

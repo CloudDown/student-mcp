@@ -363,6 +363,20 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
             } else {
                 (404, "text/plain", Vec::new(), false)
             }
+        } else if request.method() == &Method::Get && path == "/app.css" {
+            (
+                200,
+                "text/css; charset=utf-8",
+                include_str!("resources/web/app.css").as_bytes().to_vec(),
+                false,
+            )
+        } else if request.method() == &Method::Get && path == "/app.js" {
+            (
+                200,
+                "text/javascript; charset=utf-8",
+                include_str!("resources/web/app.js").as_bytes().to_vec(),
+                false,
+            )
         } else if !authorized {
             (
                 401,
@@ -384,7 +398,7 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
             let mut accounts = Vec::new();
             for service in ["moodle", "omnivox", "brightspace", "canvas"] {
                 for (id, url) in current.account_list(service) {
-                    accounts.push(json!({"service":service,"id":id,"name":current.account_name(service, &id),"url":url,"enabled":current.service_enabled(service)}));
+                    accounts.push(json!({"service":service,"id":id,"name":current.account_name(service, &id),"url":url,"enabled":current.account_enabled(service, &id)}));
                 }
             }
             (200, "application/json", json!({"accounts":accounts,"verification":pending.as_ref().map(|(_,p)| &p.prompt),"browser_login":browser_login.as_ref().map(crate::browser::Login::status),"link":mcp_endpoint(tunnel.origin().unwrap_or(&format!("http://127.0.0.1:{port}")), &gateway.token),"local_link":mcp_endpoint(&format!("http://127.0.0.1:{port}"), &gateway.token),"tunnel":format!("{:?}",tunnel.state),"public":current.gateway.public_enabled(),"local":enabled.load(Ordering::SeqCst),"autostart":crate::autostart::enabled().unwrap_or(false)}).to_string().into_bytes(),false)
@@ -518,7 +532,7 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
             (404, "application/json", b"{}".to_vec(), false)
         };
         let mut response = Response::from_data(body).with_status_code(status);
-        for (name,value) in [("Content-Type",mime),("Cache-Control","no-store"),("Referrer-Policy","no-referrer"),("X-Content-Type-Options","nosniff"),("Content-Security-Policy","default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")] {
+        for (name,value) in [("Content-Type",mime),("Cache-Control","no-store"),("Referrer-Policy","no-referrer"),("X-Content-Type-Options","nosniff"),("Content-Security-Policy","default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")] {
             response.add_header(Header::from_bytes(name,value).unwrap());
         }
         let _ = request.respond(response);
@@ -577,6 +591,7 @@ fn action(
     let get = |key| args.get(key).and_then(Value::as_str).unwrap_or("");
     match get("action") {
         "assistant_setup" => return crate::assistants::configure(get("assistant")),
+        "assistant_remove" => return crate::assistants::deconfigure(get("assistant")),
         "stop" => return Ok(json!({"stop":true})),
         "autostart" => {
             crate::autostart::set(args["enabled"] == true)?;
@@ -619,11 +634,16 @@ fn action(
         return Err("Unknown service".into());
     }
     if get("action") == "service_enabled" {
-        if Settings::load().account_list(service).is_empty() {
+        let id = get("id");
+        if !Settings::load()
+            .account_list(service)
+            .iter()
+            .any(|(known, _)| known == id)
+        {
             return Err("Connect this service before changing its enabled state.".into());
         }
-        let updated = Settings::set_service_enabled(service, args["enabled"] == true)?;
-        return Ok(json!({"enabled":updated.service_enabled(service)}));
+        let updated = Settings::set_account_enabled(service, id, args["enabled"] == true)?;
+        return Ok(json!({"enabled":updated.account_enabled(service, id)}));
     }
     if get("action") == "rename_account" {
         let name = args

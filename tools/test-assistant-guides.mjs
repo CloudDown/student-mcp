@@ -11,6 +11,8 @@ const browser=await chromium.launch({headless:true,executablePath:process.env.ST
 const shots=process.env.STUDENT_MCP_GUIDE_SCREENS;
 if(shots)mkdirSync(shots,{recursive:true});
 const html=readFileSync(new URL('../src/resources/web/index.html',import.meta.url),'utf8');
+const css=readFileSync(new URL('../src/resources/web/app.css',import.meta.url),'utf8');
+const js=readFileSync(new URL('../src/resources/web/app.js',import.meta.url),'utf8');
 const assetNames={moodle:'moodle-icon',omnivox:'omnivox-icon',brightspace:'brightspace-icon',canvas:'canvas-icon',grok:'grok-icon',claude:'claude-icon',chatgpt:'chatgpt-icon',gemini:'gemini-icon','app-icon':'app-icon-64'};
 const fixture={accounts:[{id:'fixture',service:'moodle',url:'https://school.example',enabled:true}],tunnel:'Ready(fixture)',local:true,public:true,autostart:false,link:'https://student.example/mcp/EXAMPLE-NOT-A-REAL-SECRET',local_link:'http://127.0.0.1:3000/mcp/EXAMPLE'};
 try{
@@ -24,6 +26,8 @@ try{
  await page.route('http://student.test/**',async route=>{
   const path=new URL(route.request().url()).pathname;requests.push(path);
   if(path==='/')return route.fulfill({contentType:'text/html',body:html});
+  if(path==='/app.css')return route.fulfill({contentType:'text/css',body:css});
+  if(path==='/app.js')return route.fulfill({contentType:'text/javascript',body:js});
   if(path==='/state')return route.fulfill({json:fixture});
   if(path==='/update')return route.fulfill({json:{available:false,current:'test'}});
   if(path.startsWith('/assets/')){
@@ -149,7 +153,7 @@ try{
  assert.equal(actions.length,0);
   await page.locator('[data-local-assistant="claude"]').click();
  await page.getByRole('button',{name:'Confirmer la configuration',exact:true}).click();
-  await page.getByText('Claude Desktop · Réglages enregistrés',{exact:true}).waitFor();
+  await page.getByText('Claude Desktop · Configuré',{exact:true}).waitFor();
  assert.ok((await page.locator('.assistant-local .local-close').boundingBox()).height<64,'Configured status must remain a compact button');
   assert.equal(await page.locator('.assistant-local svg').count(),0,'No oversized status illustration');
  assert.deepEqual(actions,[{action:'assistant_setup',assistant:'claude'}]);

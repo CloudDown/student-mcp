@@ -371,6 +371,181 @@ impl OmnivoxClient {
         }
         self.call("get-calendar", body)
     }
+
+    /// Upcoming Léa assignment due dates, sorted by time. Prefer this for due work.
+    pub fn deadlines(&self, days: i64, course_ids: Option<Vec<String>>) -> Result<Value, String> {
+        let days = days.clamp(1, 365);
+        let now_ms = epoch_ms_now();
+        let until_ms = now_ms.saturating_add(days.saturating_mul(86_400_000));
+        let courses = match self.courses() {
+            Ok(value) => value,
+            Err(error) => {
+                return Err(format!(
+                    "Cannot list Omnivox courses for deadlines: {error}"
+                ));
+            }
+        };
+        let mut wanted = course_ids;
+        let mut rows = omnivox_course_rows(&courses);
+        if let Some(filter) = wanted.as_ref() {
+            rows.retain(|row| {
+                omnivox_class_id(row).is_some_and(|id| filter.iter().any(|known| known == &id))
+            });
+        } else {
+            wanted = Some(rows.iter().filter_map(omnivox_class_id).take(40).collect());
+        }
+        let ids = wanted.unwrap_or_default();
+        let mut errors = Vec::new();
+        let mut items = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        if ids.len() > 40 {
+            errors.push(json!({
+                "source": "courses",
+                "error": "More than 40 courses. Pass course_ids to limit the scan."
+            }));
+        }
+        let mut fetched = 0usize;
+        let mut failed = 0usize;
+        for id in ids.into_iter().take(40) {
+            let course_name = rows
+                .iter()
+                .find(|row| omnivox_class_id(row).as_deref() == Some(id.as_str()))
+                .map(omnivox_course_name)
+                .unwrap_or(Value::Null);
+            fetched += 1;
+            match self.assignments(Some(&id)) {
+                Ok(list) => {
+                    for work in omnivox_travaux(&list) {
+                        let Some(due) = omnivox_due_ms(&work) else {
+                            continue;
+                        };
+                        if due < now_ms || due > until_ms {
+                            continue;
+                        }
+                        let assignment_id = work
+                            .get("IDTravail")
+                            .or_else(|| work.get("id"))
+                            .cloned()
+                            .unwrap_or(Value::Null);
+                        let key = format!("{id}:{assignment_id}");
+                        if !seen.insert(key) {
+                            continue;
+                        }
+                        items.push(json!({
+                            "kind": "assignment",
+                            "id": assignment_id,
+                            "name": work.get("Titre").or_else(|| work.get("name")).cloned().unwrap_or(Value::Null),
+                            "course_id": id,
+                            "course": course_name,
+                            "time": due / 1000,
+                            "due_ms": due,
+                            "submitted": work.get("EstRemis"),
+                        }));
+                    }
+                }
+                Err(error) => {
+                    failed += 1;
+                    errors.push(json!({"source": id, "error": error}));
+                }
+            }
+        }
+        if items.is_empty() && failed > 0 && failed == fetched {
+            return Err(format!("All deadline sources failed: {}", json!(errors)));
+        }
+        items.sort_by(|left, right| {
+            let left_time = left.get("time").and_then(Value::as_i64).unwrap_or(0);
+            let right_time = right.get("time").and_then(Value::as_i64).unwrap_or(0);
+            left_time.cmp(&right_time)
+        });
+        Ok(json!({
+            "from": now_ms / 1000,
+            "until": until_ms / 1000,
+            "days": days,
+            "partial": !errors.is_empty(),
+            "errors": errors,
+            "coverage": "Léa assignments with DateHeureRemise in the window. Each course list is fetched because the summary has titles only. College-calendar holidays are omitted; use omnivox_calendar for those.",
+            "count": items.len(),
+            "deadlines": items
+        }))
+    }
+}
+
+fn epoch_ms_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .min(i64::MAX as u128) as i64
+}
+
+fn omnivox_course_rows(value: &Value) -> Vec<Value> {
+    value
+        .get("ListeCours")
+        .or_else(|| value.get("courses"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|row| {
+            row.get("IdCoursGroupe")
+                .and_then(Value::as_i64)
+                .unwrap_or(1)
+                != 0
+                || omnivox_class_id(row).is_some()
+        })
+        .collect()
+}
+
+fn omnivox_class_id(row: &Value) -> Option<String> {
+    if let Some(id) = row
+        .get("id")
+        .or_else(|| row.get("course_id"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|id| !id.is_empty() && id.contains('.'))
+    {
+        return Some(id.to_string());
+    }
+    let course = row.get("NoCours").and_then(Value::as_str)?.trim();
+    let group = row.get("NoGroupe").and_then(Value::as_str)?.trim();
+    if course.is_empty() || group.is_empty() {
+        return None;
+    }
+    Some(format!("{course}.{group}"))
+}
+
+fn omnivox_course_name(row: &Value) -> Value {
+    row.get("NomCours")
+        .or_else(|| row.get("Titre"))
+        .or_else(|| row.get("name"))
+        .cloned()
+        .unwrap_or(Value::Null)
+}
+
+fn omnivox_travaux(value: &Value) -> Vec<Value> {
+    value
+        .get("ListeTravaux")
+        .or_else(|| value.get("assignments"))
+        .or_else(|| value.get("Travaux"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn omnivox_due_ms(item: &Value) -> Option<i64> {
+    item.get("DateHeureRemise")
+        .or_else(|| item.get("TimeStampDateHeureRemise"))
+        .or_else(|| item.get("due"))
+        .or_else(|| item.get("due_at"))
+        .and_then(|value| {
+            value
+                .as_i64()
+                .or_else(|| value.as_u64().map(|n| n as i64))
+                .or_else(|| value.as_f64().map(|n| n as i64))
+                .or_else(|| value.as_str().and_then(|s| s.parse().ok()))
+        })
+        .filter(|n| *n > 1_000_000_000)
+        .map(|n| if n < 10_000_000_000 { n * 1000 } else { n })
 }
 
 fn gateway_message(response: ureq::Response, token: &str) -> Option<String> {
@@ -423,6 +598,34 @@ fn optional_course_id(args: &Value) -> Result<Option<String>, String> {
         return Err("Provide a valid Omnivox course_id.".into());
     }
     Ok(Some(id.to_string()))
+}
+
+fn optional_course_ids(args: &Value) -> Result<Option<Vec<String>>, String> {
+    let Some(value) = args.get("course_ids") else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let Some(items) = value.as_array() else {
+        return Err("Provide course_ids as an array of course_id strings.".into());
+    };
+    if items.is_empty() {
+        return Ok(None);
+    }
+    let mut ids = Vec::with_capacity(items.len());
+    for item in items {
+        let id = item
+            .as_str()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| "Provide course_ids as an array of course_id strings.".to_string())?;
+        if id.len() > 64 || id.contains(['/', '\\', ' ', '?', '#', '&', ':']) || id.contains("..") {
+            return Err("Provide a valid Omnivox course_id.".into());
+        }
+        ids.push(id.to_string());
+    }
+    Ok(Some(ids))
 }
 
 fn optional_range(args: &Value) -> Result<Option<String>, String> {
@@ -1226,9 +1429,10 @@ pub fn tools() -> Vec<Value> {
         json!({"name":"omnivox_my_courses","description":"List the connected student's Omnivox / Léa courses for the current term. course_id values are strings (e.g. 2434K5EM.1011), not integers."}),
         json!({"name":"omnivox_schedule","description":"Get the connected student's static weekly Omnivox timetable."}),
         json!({"name":"omnivox_course_documents","description":"List Léa documents for one Omnivox course. Use IdDocCoursDocument as file_id with omnivox_file to read a document or obtain a user-openable PDF link in links.download; do not share internal file URLs.","inputSchema":{"type":"object","properties":{"course_id":{"type":"string","description":"String course id from omnivox_my_courses, e.g. 2434K5EM.1011."}},"required":["course_id"]}}),
-        json!({"name":"omnivox_assignments","description":"List Omnivox assignments. Omit course_id for a summary of every course.","inputSchema":{"type":"object","properties":{"course_id":{"type":"string","description":"String course id from omnivox_my_courses."}}}}),
+        json!({"name":"omnivox_assignments","description":"List Omnivox assignments. Omit course_id for a summary of every course. Prefer omnivox_deadlines for due work.","inputSchema":{"type":"object","properties":{"course_id":{"type":"string","description":"String course id from omnivox_my_courses."}}}}),
         json!({"name":"omnivox_grades","description":"Get Omnivox grades. Omit course_id for a summary of every course. Direct mobile per-evaluation numeric grades, points and weights use fixed-point x100 (8840 = 88.40); null and 2147483647/-2147483648 mean no value, not a grade.","inputSchema":{"type":"object","properties":{"course_id":{"type":"string","description":"String course id from omnivox_my_courses."}}}}),
-        json!({"name":"omnivox_calendar","description":"College calendar page: holidays and posted deadlines. Optional range is supported only via the MCP gateway; omit it for a direct college login. Prefer this for posted dates; there is no omnivox_deadlines aggregator yet.","inputSchema":{"type":"object","properties":{"range":{"type":"string","enum":["today","week","month","all"]}}}}),
+        json!({"name":"omnivox_calendar","description":"College calendar page: holidays and posted dates. Optional range is supported only via the MCP gateway; omit it for a direct college login. Prefer omnivox_deadlines for assignment due work.","inputSchema":{"type":"object","properties":{"range":{"type":"string","enum":["today","week","month","all"]}}}}),
+        json!({"name":"omnivox_deadlines","description":"Upcoming Léa assignment due dates, sorted by time. Prefer this for due work. Pass course_ids to limit the scan.","inputSchema":{"type":"object","properties":{"days":{"type":"integer","minimum":1,"maximum":365,"description":"How many days ahead to look (default 60)."},"course_ids":{"type":"array","items":{"type":"string","description":"String course id from omnivox_my_courses, e.g. 2434K5EM.1011."}}}}}),
     ];
     for tool in &mut tools {
         let name = tool["name"].as_str().unwrap_or("");
@@ -1289,6 +1493,10 @@ pub fn dispatch(client: &OmnivoxClient, name: &str, args: &Value) -> Result<Valu
         "omnivox_grades" => client.grades(optional_course_id(args)?.as_deref()),
         "omnivox_schedule" => client.schedule(),
         "omnivox_calendar" => client.calendar(optional_range(args)?.as_deref()),
+        "omnivox_deadlines" => {
+            let days = args.get("days").and_then(Value::as_i64).unwrap_or(60);
+            client.deadlines(days, optional_course_ids(args)?)
+        }
         _ => Err("Unknown Omnivox tool.".into()),
     }
 }
@@ -2028,6 +2236,49 @@ pub(crate) mod tests {
                 true
             );
         }
+    }
+
+    #[test]
+    fn deadlines_keep_assignments_inside_the_due_window() {
+        let due = epoch_ms_now() + 3 * 86_400_000;
+        let past = epoch_ms_now() - 86_400_000;
+        let (config, worker) = server(vec![
+            (
+                200,
+                json!({
+                    "ListeCours": [
+                        {"IdCoursGroupe": 0},
+                        {"IdCoursGroupe": 1, "NoCours": "2434K5EM", "NoGroupe": "1011", "Titre": "Algo"},
+                        {"IdCoursGroupe": 2, "NoCours": "2434K6EM", "NoGroupe": "1011", "NomCours": "Web"}
+                    ]
+                })
+                .to_string(),
+            ),
+            (
+                200,
+                json!({
+                    "ListeTravaux": [
+                        {"IDTravail": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "Titre": "TP1", "DateHeureRemise": due, "EstRemis": false},
+                        {"IDTravail": "bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee", "Titre": "Old", "DateHeureRemise": past, "EstRemis": true}
+                    ]
+                })
+                .to_string(),
+            ),
+            (200, json!({"ListeTravaux": []}).to_string()),
+        ]);
+        let client = OmnivoxClient::new(OmnivoxConfig {
+            base_url: config.base_url,
+            token: "SidLea=abc; Mobile=tok".into(),
+            device_id: None,
+            auth_hash: None,
+        });
+        let result = client.deadlines(60, None).unwrap();
+        assert_eq!(result["count"], 1);
+        assert_eq!(result["deadlines"][0]["name"], "TP1");
+        assert_eq!(result["deadlines"][0]["course_id"], "2434K5EM.1011");
+        assert_eq!(result["deadlines"][0]["kind"], "assignment");
+        assert_eq!(result["partial"], false);
+        worker.join().unwrap();
     }
 
     #[test]
