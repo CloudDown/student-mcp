@@ -324,3 +324,42 @@ ou cette sauvegarde documentaire. Revérifier `git status` avant de poursuivre.
 Pour la suite, partir d’un coût observé ou d’un exemple de recherche manquée.
 Conserver les frontières de comportement et exécuter la preuve ciblée avant/après,
 plutôt que d’élargir automatiquement vers une refonte, un graphe ou un nouvel outil.
+
+## 11. Correctifs de la v0.8.1 (installation propre, Linux)
+
+Huit défauts reproduits sur une installation propre de la v0.8.0 :
+
+1. **Chapitres de livre Moodle** : `pluginfile.php/<ctx>/mod_book/chapter/<id>/index.html`
+   est du HTML légitime. Il était rejeté comme « page de connexion ». Il est
+   maintenant téléchargé par le même endpoint authentifié, puis livré en original
+   ou en blocs texte. Seuls un vrai formulaire de mot de passe, un HTML inattendu,
+   un statut HTTP non 200 ou une redirection produisent une erreur distincte.
+   Aucun appel API séparé, donc aucun risque de marquer le chapitre comme vu.
+2. **PATH Linux** : `install.sh` crée `~/.local/bin/student-mcp` en lien vers
+   `~/.student-mcp/bin/student-mcp`, préserve une commande étrangère existante et
+   affiche la ligne `PATH` à ajouter si le dossier n’y est pas déjà.
+3. **URL des réglages** : `up` l’écrit dans le terminal et dans
+   `~/.student-mcp/window.log` (permissions 0600), y compris si le navigateur
+   échoue. `student-mcp settings-url` retrouve l’URL d’une instance en cours en
+   lisant le fichier de découverte et en vérifiant `/state` ; lecture seule.
+4. **Guide Claude en français** : « Continue », « No sign in », « Add » et les
+   champs d’authentification sont traduits ; les noms exacts peuvent rester entre
+   guillemets ou dans le texte source, jamais comme seule interface française.
+5. **390 px** : le badge de version ne chevauche plus le bouton retour de
+   « Configurer un assistant » (marge haute restaurée). Le nom d’hôte de la fiche
+   compte ne se coupe plus à l’intérieur d’un label de domaine (`<wbr>` après les
+   points) ; au pire il passe à la ligne entre deux labels.
+6. **moodle_assignments** : résumé borné (id, cmid, titre, cours, échéance,
+   fenêtre de remise, avertissements) au lieu de ~137 Ko de JSON brut. Utilise le
+   même identifiant avec `moodle_assignment_status` pour la remise et la note.
+7. **Note de moodle_file** : elle ne mentionne `links.download` que si le champ
+   `links` existe réellement ; sinon elle décrit la ressource MCP jointe.
+8. **`--help`** cite Canvas.
+
+Preuves ajoutées : fixtures HTTP locales pour HTML de chapitre, logins/challenges,
+redirections, résumé de devoirs et réponse malformée ; test d’installation pour
+symlink, PATH, conflit, mise à jour et conservation de la configuration ; test CLI
+de découverte d’URL et de non-modification ; tests Playwright 320/390 px, badge,
+hôte et traduction ; CI Linux exécute aussi le smoke web et le guide assistants.
+
+Version : **0.8.1**, une seule release. Commit, PR, CI, fusion puis tag unique.

@@ -409,8 +409,16 @@ student-mcp            # MCP stdio (local AI assistant)
 student-mcp up         # browser page + local HTTP server
 student-mcp up --port=9000
 student-mcp install    # reopens the page (used by the installer)
+student-mcp settings-url  # prints the running settings URL
 student-mcp version
 ```
+
+`up` prints the settings URL on startup and in `~/.student-mcp/window.log`
+(user-only permissions) even when the browser cannot open. `settings-url` reads
+that discovery file and checks the running instance; it changes no settings.
+The Linux installer also links the command into `~/.local/bin` and says what to
+add to `PATH` when that directory is missing from it. An unrelated existing
+command there is preserved.
 
 ## 6. Troubleshooting
 
@@ -441,7 +449,15 @@ student-mcp version
   To **study** a PDF, use `format=text` or `format=images`: both send the
   extracted text labeled by page **and a full image of every page in the window**,
   including vector diagrams on text-heavy pages. Default: 4 pages; maximum: 8;
-  text: 20,000 characters per call. If any image cannot be delivered, the call
+  text: 20,000 characters per call.
+
+  Moodle book chapters (`pluginfile.php/…/mod_book/chapter/…/index.html`) are
+  supported: the HTML source is returned as the original file or as text blocks
+  for `format=text`. This is the same authenticated download as other files, not
+  a login failure. Images and links inside the chapter are not rendered or
+  fetched; open the Moodle page for its visual layout.
+
+  If any image cannot be delivered, the call
   fails explicitly: request a smaller window or the original. No local OCR.
   `find` searches the text layer and selects a matching window. Page/search
   arguments without a format imply study mode. Follow `nextPageFrom` when

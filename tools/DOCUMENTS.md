@@ -13,6 +13,7 @@ No university-specific filename or course-code convention is required.
 | Legacy Word `.doc` | Isolated PDF conversion; text fallback requires local `antiword` |
 | Legacy PowerPoint `.ppt` | Isolated PDF conversion; text fallback requires local `catppt` |
 | Plain text / CSV | Existing text extraction, depending on the supplied MIME type |
+| HTML (Moodle book chapters) | Original `index.html`, or HTML source in text blocks; links/images are not rendered or fetched |
 
 ## Download vs study
 
@@ -99,6 +100,16 @@ client's image/resource handling separately.
   Media and linked resources are not implicitly read. Recognized absolute links
   are listed; `richContentOmitted` and the source URL expose the remaining limits.
 
+- `moodle_assignments`: bounded summary of visible assignments (title, course,
+  due/cutoff dates, scheduled submission window). It does not fetch each
+  submission; use the returned `id` with `moodle_assignment_status` for
+  submission and grading details. Full instructions need
+  `moodle_course_content` with `detail=full` and `cmid` as `moduleid`.
+- `moodle_file`: `fileurl` from course content may point to a Moodle book
+  chapter `index.html`. HTML is returned as the original or as text blocks; it is
+  not misreported as a login page. A real sign-in form, an unexpected HTML error,
+  an HTTP challenge or a redirect produces a distinct message and is never
+  followed or treated as content.
 - `moodle_recent_grades`: latest **dated assessment** grades across current
   enrolled courses, or explicit `courseids` (max 30). `limit` defaults to 20.
   Reports per-course failures and counts grades without dates. Zero is a valid

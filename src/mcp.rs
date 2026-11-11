@@ -2051,17 +2051,9 @@ mod live_moodle_poly {
         }
 
         let assigns = dispatch_tool(&settings, "moodle_assignments", &json!({}));
-        let assignid = serde_json::from_str::<serde_json::Value>(&text(&assigns))
-            .ok()
-            .and_then(|value| {
-                value["courses"].as_array()?.iter().find_map(|course| {
-                    course["assignments"]
-                        .as_array()?
-                        .first()?
-                        .get("id")?
-                        .as_i64()
-                })
-            });
+        let summary = serde_json::from_str::<serde_json::Value>(&text(&assigns)).unwrap();
+        assert!(summary["assignments"].is_array(), "{summary}");
+        let assignid = summary["assignments"][0]["id"].as_i64();
         if let Some(assignid) = assignid {
             let result = dispatch_tool(
                 &settings,
