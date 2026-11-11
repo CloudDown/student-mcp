@@ -34,7 +34,7 @@ The installer adds student-mcp to the application menu. Windows or macOS may war
 
 Launch it from the Start menu, Applications, or your app launcher. A local page opens. Closing the tab leaves a tray icon; quit from there when you are done.
 
-<p align="center"><img src="tools/screens/home.png" width="100%" alt="student-mcp 0.8.0 home screen with school search, four learning platforms, link settings and assistant setup" /></p>
+<p align="center"><img src="tools/screens/home.png" width="100%" alt="student-mcp 1.2.0 home screen with school search, four learning platforms, link settings and assistant setup" /></p>
 
 ## 2. Connect your school
 
@@ -110,6 +110,16 @@ School passwords are not stored. The public link is a secret: anyone who has it 
 Moodle course names, descriptions and file references are cached privately on this computer to avoid repeated school requests. The index is account-specific, is reused for up to 15 minutes and contains no downloaded PDF/Office files. It can persist across app restarts; see [search and reading](tools/GUIDE.md#finding-moodle-sources-and-reading-all-instructions) for refresh, retention and removal. Search excerpts are not a complete reading of your instructions or files.
 
 Incoming MCP requests are logged locally in `~/.student-mcp.mcp.log` with the method, redacted path, status and user-agent. Connector tokens, headers and message bodies are never logged.
+
+## What's new in 1.2.0
+
+- **Bounded course navigation.** `moodle_course_content` returns at most 6 sections per page, 8 activities per section and 6 files per activity, with `nextPage`, `moduleCount`/`fileCount` and explicit `truncated` flags instead of silent omissions.
+- **Groups and section links.** Course views expose a direct Moodle `url` per section, your groups and the course groups, plus `group`/`yourGroup` labels; `group_only=true` hides sections marked for another group.
+- **Grade weights.** `moodle_grades` reports each item's `weightraw`/`weightformatted` and Moodle's own course total. When Moodle returns no weights, the response says the weighted total is unavailable instead of estimating one.
+- **Local request log.** Incoming MCP calls are appended to `~/.student-mcp.mcp.log` (mode 0600, rotated at 1 MiB) with time, method, redacted path, status and user-agent.
+- **30-minute file links.** Original-file share links now expire after 30 minutes instead of three hours; the 128-file / 24 MiB bounds are unchanged.
+
+See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 Technical maintenance, packaging and signing: [tools/GUIDE.md](tools/GUIDE.md).
 

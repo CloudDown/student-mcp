@@ -391,3 +391,12 @@ Cours, liens, échéances, notes et PDF fonctionnaient. Corrections ajoutées :
 Tests ajoutés : pagination/groupes/URLs/dates, taille bornée d'une grosse vue,
 poids de notes et absence de poids, journal (rédaction, permissions, rotation),
 validation de `group_only`.
+
+## 13. Version 1.2.0
+
+Les fonctionnalités du commit `f3fec5b` étaient publiées sous le tag `v0.8.1`
+déjà existant. Nouvelle version : **1.2.0**, sans réécrire ni supprimer aucun
+tag ou release. `Cargo.toml`/`Cargo.lock`, `README.md`, `CHANGELOG.md` et les
+captures README portent la version 1.2.0 ; le reste (UI, installeurs, DMG,
+`setup.exe`) lit `CARGO_PKG_VERSION`. Tag unique `v1.2.0` : la CI construit et
+publie `setup.exe`, `dmg`, Linux x64/arm64 et `SHA256SUMS.txt`.
