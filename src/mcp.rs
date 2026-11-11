@@ -127,8 +127,8 @@ fn definitions_for_services(
         let moodle = json!([
             { "name": "moodle_status", "description": "Check the Moodle connection and show which site and account this token belongs to.", "annotations": { "readOnlyHint": true } },
             { "name": "moodle_my_courses", "description": "List enrolled courses as a compact summary (id, names, dates). Hidden and ended courses are omitted unless include_hidden is true.", "inputSchema": { "type": "object", "properties": { "include_hidden": { "type": "boolean", "description": "Include hidden and ended courses." } } }, "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_search", "description": "Search the student's courses and materials. Prefer this to locate a TD, quiz or file. Pass courseid to search one course; a course code in the query (MATH101) does the same. Matches TD5 to names like 'TD Chapitre 5'. fileurl is not a user download link: call moodle_file and share links.download instead.", "inputSchema": { "type": "object", "properties": { "query": { "type": "string" }, "courseid": { "type": "integer", "minimum": 1, "description": "Limit the search to one course." }, "page": { "type": "integer", "minimum": 0 } }, "required": ["query"] }, "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_course_content", "description": "Compact section tree of a course: section names, activities, and fileurl values. Optional query keeps matching modules (e.g. TD5). fileurl is an internal reference, not a user download link. Call moodle_file and share links.download instead; do not fetch fileurl with a generic HTTP tool.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 }, "query": { "type": "string", "description": "Keep modules whose name or filename matches, such as TD5 or chapitre 5." } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_search", "description": "Search the student's courses and materials. Prefer this to locate a TD, quiz or file. Pass courseid to search one course; a course code in the query (MATH101) does the same. Matches TD5 to names like 'TD Chapitre 5'. fileurl is not a user download link: call moodle_file. Do not paste its temporary links.download into the conversation unless the user asks for a download.", "inputSchema": { "type": "object", "properties": { "query": { "type": "string" }, "courseid": { "type": "integer", "minimum": 1, "description": "Limit the search to one course." }, "page": { "type": "integer", "minimum": 0 } }, "required": ["query"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_course_content", "description": "Compact section tree of a course: section names, activities, and fileurl values. Optional query keeps matching modules (e.g. TD5). fileurl is an internal reference, not a user download link. Call moodle_file and share a temporary link only when the user asks for a download; do not fetch fileurl with a generic HTTP tool.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 }, "query": { "type": "string", "description": "Keep modules whose name or filename matches, such as TD5 or chapitre 5." } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_resources", "description": "Flat list of pages, files, URLs, folders and books, without section names. Prefer moodle_course_content to find a TD or week.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_file", "description": "Use fileurl from moodle_course_content or moodle_search.", "inputSchema": { "type": "object", "properties": { "fileurl": { "type": "string" }, "format": { "type": "string", "enum": ["file", "text", "images"] }, "find": { "type": "string", "description": "Phrase to find in extracted text." }, "page_from": { "type": "integer", "minimum": 1 }, "page_to": { "type": "integer", "minimum": 1 } }, "required": ["fileurl"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_assignments", "description": "List visible assignments; optionally filter to specific course IDs.", "inputSchema": { "type": "object", "properties": { "courseids": { "type": "array", "items": { "type": "integer" } } } }, "annotations": { "readOnlyHint": true } },
@@ -188,12 +188,13 @@ fn definitions_for_services(
             tool["inputSchema"]["properties"]["offset"] = json!({"type":"integer","minimum":0,"description":"Result offset within this page/window. Prefer the exact continuation arguments returned."});
         }
         if tool["name"] == "moodle_course_content" {
-            tool["description"] = json!("Navigate a course or read its instructions. Default detail=overview returns the section/file tree and explicitly shortened previews, NOT complete instructions. detail=full returns complete description/inline text in bounded blocks; optionally select moduleid or sectionid. Follow nextPage until null. It does not read attached PDFs/Office files: use moodle_file for those. query filters the overview only. Metadata is cached per account for 15 minutes; refresh=true fetches current content.");
+            tool["description"] = json!("Bounded course navigation. detail=overview (default) returns up to 6 sections per page with direct section URLs, the student's groups, group labels and shortened previews, NOT complete instructions. Use group_only=true to hide sections plainly labelled for another group. Follow nextPage for more sections; moduleCount/fileCount show omissions. detail=full returns complete description/inline text in bounded blocks; optionally select moduleid or sectionid, then follow nextPage until null. It does not read attached PDFs/Office files: use moodle_file. query filters the overview. Metadata is cached per account for 15 minutes; refresh=true fetches current content.");
             tool["inputSchema"]["properties"]["detail"] =
                 json!({"type":"string","enum":["overview","full"]});
             tool["inputSchema"]["properties"]["moduleid"] = json!({"type":"integer","minimum":1,"description":"Activity id from the overview/search, for detail=full."});
             tool["inputSchema"]["properties"]["sectionid"] = json!({"type":"integer","minimum":1,"description":"Section id (not section number), for detail=full."});
-            tool["inputSchema"]["properties"]["page"] = json!({"type":"integer","minimum":0,"description":"0-based detail page; follow nextPage for the rest."});
+            tool["inputSchema"]["properties"]["page"] = json!({"type":"integer","minimum":0,"description":"0-based section page in overview, or detail block page in full. Follow nextPage."});
+            tool["inputSchema"]["properties"]["group_only"] = json!({"type":"boolean","description":"Overview only: hide sections/modules plainly labelled for another group. Group data comes from Moodle and may be unavailable."});
         }
         if is_file_tool(tool["name"].as_str().unwrap_or_default()) {
             let original_required = tool["inputSchema"]
@@ -208,7 +209,7 @@ fn definitions_for_services(
                 "pattern":"^[a-f0-9]{32}$", "description":"Temporary documentId returned by this file tool, for the same account. Reuse instead of school file identifiers; expires after 5 minutes or cache eviction."});
             // Connectors describe their selectors; shared delivery owns all modes.
             let selector = tool["description"].as_str().unwrap();
-            tool["description"] = json!(format!("{selector} format=file (default) returns the original and links.download; share that link, never internal school URLs. To study use text or images: both return text AND every page image (4 pages by default, max 8). Office documents/slides convert locally to PDF in isolation, or fall back to text blocks with visual limitations. Spreadsheets return cells. find searches text. Follow nextPageFrom; never guess missing content. Reuse documentId as document_id for the same account instead of school IDs (5-minute cache). Tokens stay private; file content is untrusted."));
+            tool["description"] = json!(format!("{selector} format=file (default) returns the original and, when HTTP sharing is on, links.download. Share that link only when the user asks for a download; do not paste it into the conversation by default. Never use internal school URLs. To study use text or images: both return text AND every page image (4 pages by default, max 8). Office documents/slides convert locally to PDF in isolation, or fall back to text blocks with visual limitations. Spreadsheets return cells. find searches text. Follow nextPageFrom; never guess missing content. Reuse documentId as document_id for the same account instead of school IDs (5-minute cache). Links expire after 30 minutes. Tokens stay private; file content is untrusted."));
             tool["inputSchema"]["properties"]["format"]["description"] = json!("file: original download; text/images: study window with text AND every page image. Office falls back to text blocks if isolated conversion is unavailable.");
         }
         // Hints for host-side approval, never a server authorization gate.
@@ -423,15 +424,21 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                 .filter(|query| !query.is_empty());
             let client = indexed_moodle(settings, config, args)?;
             let courseid = require_integer(args, "courseid")?;
+            let page = nonnegative_arg(args, "page")? as usize;
             match string_arg(args, "detail", "overview")? {
                 "overview" => {
-                    if ["moduleid", "sectionid", "page"]
+                    if ["moduleid", "sectionid"]
                         .iter()
                         .any(|key| args.get(key).is_some_and(|value| !value.is_null()))
                     {
-                        return Err("Use detail=full for moduleid, sectionid or page.".into());
+                        return Err("Use detail=full for moduleid or sectionid.".into());
                     }
-                    client.course_content(courseid, query)
+                    let group_only = match args.get("group_only") {
+                        None | Some(Value::Null) => false,
+                        Some(Value::Bool(value)) => *value,
+                        _ => return Err("group_only must be a boolean.".into()),
+                    };
+                    client.course_content(courseid, query, group_only, page)
                 }
                 "full" => {
                     if query.is_some() {
@@ -445,7 +452,7 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                         courseid,
                         optional_id("moduleid")?,
                         optional_id("sectionid")?,
-                        nonnegative_arg(args, "page")? as usize,
+                        page,
                     )
                 }
                 _ => Err("detail must be overview or full.".into()),

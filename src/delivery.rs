@@ -229,7 +229,7 @@ fn original_file(document: &store::Document) -> Value {
         if let Some(id) = crate::share::publish_bytes(filename, mime, Arc::clone(bytes), "", 0) {
             if let Some(links) = crate::share::links_for(&id) {
                 let local_only = links.download.contains("://127.0.0.1");
-                result["links"] = json!({"download": links.download, "text":links.text, "expiresInHours": 3, "localOnly": local_only});
+                result["links"] = json!({"download": links.download, "text":links.text, "expiresInMinutes": 30, "localOnly": local_only});
             }
         } else {
             result["linkNote"] = json!("The temporary link store is full. The original file is attached instead; existing links remain valid until expiry or app shutdown.");
@@ -240,7 +240,7 @@ fn original_file(document: &store::Document) -> Value {
         result["file"] = json!({"filename": filename, "mimeType": mime, "data": base64::engine::general_purpose::STANDARD.encode(bytes.as_slice())});
     }
     let delivery = if result.get("links").is_some() {
-        "Share links.download when asked for a download; never substitute an internal school URL. localOnly links work only on this computer. Links expire after 3 hours and require the app to stay running."
+        "Share links.download only when the user asks for a downloadable link; do not paste it into a chat by default. Never substitute an internal school URL. localOnly links work only on this computer. Links expire after 30 minutes and require the app to stay running."
     } else {
         "The original file is attached as an MCP resource. No download link is available in this response; do not invent one or substitute an internal school URL."
     };

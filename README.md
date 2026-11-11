@@ -109,6 +109,8 @@ School passwords are not stored. The public link is a secret: anyone who has it 
 
 Moodle course names, descriptions and file references are cached privately on this computer to avoid repeated school requests. The index is account-specific, is reused for up to 15 minutes and contains no downloaded PDF/Office files. It can persist across app restarts; see [search and reading](tools/GUIDE.md#finding-moodle-sources-and-reading-all-instructions) for refresh, retention and removal. Search excerpts are not a complete reading of your instructions or files.
 
+Incoming MCP requests are logged locally in `~/.student-mcp.mcp.log` with the method, redacted path, status and user-agent. Connector tokens, headers and message bodies are never logged.
+
 Technical maintenance, packaging and signing: [tools/GUIDE.md](tools/GUIDE.md).
 
 MIT code; [GPL-3.0+ Moodle catalogue](src/services/moodle/catalog/LICENSE.md).

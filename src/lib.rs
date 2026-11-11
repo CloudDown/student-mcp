@@ -9,6 +9,7 @@ mod http;
 mod mcp;
 mod pdf;
 mod redact;
+mod request_log;
 mod services;
 mod session;
 mod share;

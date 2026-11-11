@@ -1,7 +1,12 @@
-//! Compatibility fingerprints captured before the internal performance refactor.
-//! These cover the complete JSON, including order, scores, snippets and coverage.
+//! Compatibility fingerprints covering the complete JSON: order, scores, snippets,
+//! coverage and error precedence. The detail fingerprint was deliberately updated
+//! once to include the student groups and direct section URLs (v0.8.1).
 use super::*;
 use sha2::{Digest, Sha256};
+
+fn groups() -> Value {
+    json!({"userGroups":[{"id":7,"name":"Groupe 1"}],"courseGroups":[{"id":7,"name":"Groupe 1"},{"id":8,"name":"Groupe 2"}]})
+}
 
 fn course() -> Value {
     json!({"id":42,"shortname":"ABC105","fullname":"Cours de démonstration"})
@@ -92,14 +97,30 @@ fn detail_complete_outputs_and_errors_match_pre_optimization_fingerprint() {
     for section in [None, Some(1), Some(2), Some(99)] {
         for module in [None, Some(1), Some(5), Some(8), Some(99)] {
             for page in [0, 1, 2, 5, 999, usize::MAX] {
-                results.push(detail(42, &raw, module, section, page));
+                results.push(detail(
+                    42,
+                    &raw,
+                    module,
+                    section,
+                    page,
+                    &groups(),
+                    "https://school.test",
+                ));
             }
         }
     }
-    results.push(detail(42, &json!([]), None, None, 0));
+    results.push(detail(
+        42,
+        &json!([]),
+        None,
+        None,
+        0,
+        &groups(),
+        "https://school.test",
+    ));
     assert_eq!(
         fingerprint(&results),
-        "9d78e04dcf56bf08e1edadf4e90ef1af810aa50da56c8801e2e7e1e72f37871b"
+        "f348967993cdc9a3f5acecefd23c2ef5242baf30da4efa3c9ce7c222deaad841"
     );
 }
 
@@ -145,9 +166,31 @@ fn benchmark_metadata_cpu() {
     });
     let raw = workload(120, 16);
     measure("detail_first_window", || {
-        black_box(detail(42, black_box(&raw), None, None, 0).unwrap());
+        black_box(
+            detail(
+                42,
+                black_box(&raw),
+                None,
+                None,
+                0,
+                &groups(),
+                "https://school.test",
+            )
+            .unwrap(),
+        );
     });
     measure("detail_late_window", || {
-        black_box(detail(42, black_box(&raw), None, None, 70).unwrap());
+        black_box(
+            detail(
+                42,
+                black_box(&raw),
+                None,
+                None,
+                70,
+                &groups(),
+                "https://school.test",
+            )
+            .unwrap(),
+        );
     });
 }

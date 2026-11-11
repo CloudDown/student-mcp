@@ -183,7 +183,7 @@ close it afterwards. Concurrent calls for the same profile wait up to two
 minutes for its OS lock, without launching competing browsers. Cancelling a
 browser sign-in also interrupts its lock wait.
 
-Document links last up to three hours while the app is running. The shared
+Document links last up to 30 minutes while the app is running. The shared
 store is bounded to 128 links and 24 MiB; when full, new files are attached
 inline rather than evicting links that were already issued.
 
@@ -216,10 +216,22 @@ Moodle's upstream index instead; in that mode `page` is the upstream result page
 `partial`/`errors` report failed sources. No match is not proof of absence when
 coverage is incomplete. This is **not a full-text search inside every PDF**.
 
-`moodle_course_content` defaults to a navigation overview. Description previews
-and section summaries explicitly report truncation. To read all textual
-instructions, use `detail=full`, optionally with `moduleid` or `sectionid`, then
-follow `nextPage` until null. This returns up to 4 blocks of 8,000 characters per
+`moodle_course_content` defaults to a bounded navigation overview: at most six
+sections per page, eight activities per section and six files per activity, with
+`moduleCount`/`fileCount` and `truncated` flags when anything is omitted. Follow
+`nextPage` for the other sections. Each section has a direct `url`
+(`course/view.php?id=…&section=…`). Each file carries `timemodified` when Moodle
+reports it.
+
+The response also includes the student's **groups** (`core_group_get_course_user_groups`)
+and the course groups. Sections/activities whose names plainly contain a group
+label are marked with `group` and `yourGroup`. `group_only=true` hides sections
+marked for another group; unmarked sections stay visible. Group data can be
+unavailable or partial: labels are navigation hints, never proof of an access
+restriction. Description previews and section summaries explicitly report
+truncation. To read all textual instructions, use `detail=full`, optionally with
+`moduleid` or `sectionid`, then follow `nextPage` until null. This returns up to 4
+blocks of 8,000 characters per
 call. Omit selectors to read the course's available metadata text. Attachments
 still require the appropriate file tool and its page windows. Recognized absolute
 HTML links are listed but not fetched; `richContentOmitted` flags media, layout or
@@ -413,6 +425,11 @@ student-mcp settings-url  # prints the running settings URL
 student-mcp version
 ```
 
+Incoming MCP requests are appended to `~/.student-mcp.mcp.log` (mode 0600,
+rotated at 1 MiB). Each line has the time, method, **redacted** path, status and
+user-agent; headers, bodies and connector tokens are never written. Set
+`STUDENT_MCP_TEST_LOG` only in tests to redirect unit-test writes.
+
 `up` prints the settings URL on startup and in `~/.student-mcp/window.log`
 (user-only permissions) even when the browser cannot open. `settings-url` reads
 that discovery file and checks the running instance; it changes no settings.
@@ -481,9 +498,14 @@ command there is preserved.
   For an original download link request `format=file`. Localhost links cannot be opened by a remote
   browser AI; use inline resources or enable the public link.
 - **The shared file link says it expired**: links are capability URLs valid for
-  up to three hours (128 files / 24 MiB maximum). Call `moodle_file` again to mint a fresh one. Anyone with the
+  up to 30 minutes (128 files / 24 MiB maximum). Call `moodle_file` again to mint a fresh one. Anyone with the
   link can read that one file until it expires; the Moodle token is never in
   the link.
+- **Gemini web says the MCP server could not be reached**: Gemini's custom
+  connectors are currently limited to eligible US accounts/regions. The same link
+  keeps working in Claude, ChatGPT and Grok. Confirm the failure in
+  `~/.student-mcp.mcp.log` (method, path, status, user-agent; tokens are redacted)
+  before changing the connector URL.
 - **Claude cannot register with the sign-in service** (`ofid_…` reference):
   Claude started an OAuth flow, but this server deliberately has no OAuth. All
   `/.well-known/oauth-*` paths return 404. Delete the connector, re-add it with

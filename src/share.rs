@@ -2,7 +2,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-const TTL: Duration = Duration::from_secs(3 * 60 * 60);
+const TTL: Duration = Duration::from_secs(30 * 60);
 const MAX_BYTES: usize = 24 * 1024 * 1024;
 const MAX_FILES: usize = 128;
 static ADDRESS: Mutex<(u16, Option<String>)> = Mutex::new((0, None));

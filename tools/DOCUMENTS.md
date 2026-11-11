@@ -19,7 +19,7 @@ No university-specific filename or course-code convention is required.
 
 `format=file` (default) always returns the **original**, with no extraction or
 conversion, including Office files. Share `links.download` if present, never a
-school-internal URL. Links last 3 hours while the app runs; a link/resource does
+school-internal URL. Links last 30 minutes while the app runs; a link/resource does
 not guarantee that a client passes the file contents to its model.
 
 `format=text` and `format=images` both study a PDF window: 4 pages by default,
@@ -94,11 +94,20 @@ client's image/resource handling separately.
   `refresh=true` fetches current metadata. Follow `continuation`, and check
   `partial`/`errors`. `source=global` queries Moodle's own index, whose coverage is
   not guaranteed. Attached document bytes are not indexed automatically.
-- `moodle_course_content`: `detail=overview` is navigation with explicit preview
-  truncation; `detail=full` reads complete metadata text in paginated blocks.
-  Optional `moduleid`/`sectionid` select a source; follow `nextPage` for all text.
-  Media and linked resources are not implicitly read. Recognized absolute links
-  are listed; `richContentOmitted` and the source URL expose the remaining limits.
+- `moodle_course_content`: `detail=overview` is a bounded navigation view (6
+  sections per page, 8 activities and 6 files per source) with `nextPage`,
+  `moduleCount`/`fileCount` and truncation flags. Sections include a direct
+  Moodle `url` and, when available, the student's groups plus `group`/`yourGroup`
+  labels; `group_only=true` hides sections plainly labelled for another group.
+  Files include `timemodified` when Moodle reports it. `detail=full` reads
+  complete metadata text in paginated blocks. Optional `moduleid`/`sectionid`
+  select a source; follow `nextPage` for all text. Media and linked resources are
+  not implicitly read. Recognized absolute links are listed;
+  `richContentOmitted` and the source URL expose the remaining limits.
+- `moodle_grades`: with `courseid`, reports each item's Moodle weight
+  (`weightraw`/`weightformatted`) and Moodle's own course total. If the gradebook
+  API returns no weights, `weightsAvailable=false` and the response says the
+  weighted total is unavailable instead of inventing one.
 
 - `moodle_assignments`: bounded summary of visible assignments (title, course,
   due/cutoff dates, scheduled submission window). It does not fetch each

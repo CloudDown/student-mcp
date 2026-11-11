@@ -246,7 +246,7 @@ pub(super) fn run(
             "firstCandidate":start,"endCandidate":end,"moreCourses":more_courses,
             "fileContentsSearched":false,"globalSearch":global},
         "note":"Matches are navigation leads, not proof that all instructions/files were read. For exhaustive instructions use moodle_course_content detail=full and follow nextPage; read files separately. Follow continuation to finish metadata search. No results is not proof of absence when partial or global coverage is unknown.",
-        "fileurlHint":"fileurl is an internal Moodle reference. Use moodle_file and share links.download, never a Moodle token."}),
+        "fileurlHint":"fileurl is an internal Moodle reference. Use moodle_file, never a Moodle token. Share its temporary link only if the user asks for a download."}),
     )
 }
 
@@ -283,12 +283,22 @@ fn clean_link(item: &mut Value, key: &str) {
     }
 }
 
-pub(super) fn overview(courseid: i64, raw: &Value, query: Option<&str>) -> Value {
+pub(super) fn overview(
+    courseid: i64,
+    raw: &Value,
+    query: Option<&str>,
+    groups: &Value,
+    group_only: bool,
+    page: usize,
+    base_url: &str,
+) -> Result<Value, String> {
+    const PAGE_SECTIONS: usize = 6;
+    const MAX_MODULES: usize = 8;
+    const MAX_FILES: usize = 6;
     let mut result = compact_course_contents(courseid, raw, None);
+    let raw_sections = raw.as_array().cloned().unwrap_or_default();
     for section in result["sections"].as_array_mut().unwrap() {
-        let source = raw
-            .as_array()
-            .unwrap()
+        let source = raw_sections
             .iter()
             .find(|item| item["id"] == section["id"])
             .unwrap();
@@ -296,6 +306,12 @@ pub(super) fn overview(courseid: i64, raw: &Value, query: Option<&str>) -> Value
         section["summaryTruncated"] = json!(summary.chars().count() > 240);
         section["richContentOmitted"] = source["richContentOmitted"].clone();
         section["links"] = source["links"].clone();
+        section["url"] = json!(section_link(
+            base_url,
+            courseid,
+            section["section"].as_i64().unwrap_or(0)
+        ));
+        let mut latest = 0;
         for module in section["modules"].as_array_mut().unwrap() {
             let source = source["modules"]
                 .as_array()
@@ -304,20 +320,46 @@ pub(super) fn overview(courseid: i64, raw: &Value, query: Option<&str>) -> Value
                 .find(|item| item["id"] == module["id"])
                 .unwrap();
             let description = source["description"].as_str().unwrap_or("");
-            module["description"] = json!(truncate(description, 500));
-            module["descriptionTruncated"] = json!(description.chars().count() > 500);
+            module["description"] = json!(truncate(description, 160));
+            module["descriptionTruncated"] = json!(description.chars().count() > 160);
             module["inlineContentAvailable"] =
                 json!(!source["contentText"].as_str().unwrap_or("").is_empty());
             module["richContentOmitted"] = source["richContentOmitted"].clone();
             module["links"] = source["links"].clone();
+            if let Some(files) = module["files"].as_array() {
+                latest = latest.max(
+                    files
+                        .iter()
+                        .filter_map(|file| file["timemodified"].as_i64())
+                        .max()
+                        .unwrap_or(0),
+                );
+            }
+            let file_count = module["files"].as_array().map(Vec::len).unwrap_or(0);
+            module["fileCount"] = json!(file_count);
+            if file_count > MAX_FILES {
+                if let Some(files) = module["files"].as_array_mut() {
+                    files.truncate(MAX_FILES);
+                }
+                module["filesTruncated"] = json!(true);
+            }
+        }
+        let module_count = section["modules"].as_array().map(Vec::len).unwrap_or(0);
+        section["moduleCount"] = json!(module_count);
+        if module_count > MAX_MODULES {
+            if let Some(modules) = section["modules"].as_array_mut() {
+                modules.truncate(MAX_MODULES);
+            }
+            section["modulesTruncated"] = json!(true);
+        }
+        if latest > 0 {
+            section["lastModified"] = json!(latest);
         }
     }
     if let Some(query) = query {
         let tokens = leftover_search_tokens(query, &[]);
         for section in result["sections"].as_array_mut().unwrap() {
-            let raw_section = raw
-                .as_array()
-                .unwrap()
+            let raw_section = raw_sections
                 .iter()
                 .find(|item| item["id"] == section["id"])
                 .unwrap();
@@ -351,20 +393,110 @@ pub(super) fn overview(courseid: i64, raw: &Value, query: Option<&str>) -> Value
             .unwrap()
             .retain(|section| {
                 !section["modules"].as_array().unwrap().is_empty()
-                    || raw
-                        .as_array()
-                        .unwrap()
+                    || raw_sections
                         .iter()
                         .find(|item| item["id"] == section["id"])
                         .is_some_and(|source| {
                             matches(source["summary"].as_str().unwrap_or(""), &tokens)
                         })
             });
-        result["count"] = json!(result["sections"].as_array().unwrap().len());
     }
+    // Label group-specific sections and modules before the optional filter.
+    let user_group_ids = groups["userGroups"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|group| group["id"].as_i64())
+        .collect::<Vec<_>>();
+    for section in result["sections"].as_array_mut().unwrap() {
+        let text = format!(
+            "{} {}",
+            section["name"].as_str().unwrap_or(""),
+            section["summary"].as_str().unwrap_or("")
+        );
+        let mark = group_mark(&text, groups, &user_group_ids);
+        section["group"] = mark.clone().unwrap_or(Value::Null);
+        for module in section["modules"].as_array_mut().unwrap() {
+            module["group"] = group_mark(
+                module["name"].as_str().unwrap_or(""),
+                groups,
+                &user_group_ids,
+            )
+            .unwrap_or(Value::Null);
+        }
+    }
+    if group_only {
+        result["sections"]
+            .as_array_mut()
+            .unwrap()
+            .retain_mut(|section| {
+                section["modules"]
+                    .as_array_mut()
+                    .unwrap()
+                    .retain(|module| module["group"]["yourGroup"].as_bool() != Some(false));
+                section["group"]["yourGroup"].as_bool() != Some(false)
+            });
+    }
+    let total = result["sections"].as_array().unwrap().len();
+    let from = page
+        .checked_mul(PAGE_SECTIONS)
+        .ok_or("page is too large.")?;
+    if from >= total && page > 0 {
+        return Err("page is past the last section page. Omit page or start at 0.".into());
+    }
+    let sections = result["sections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .skip(from)
+        .take(PAGE_SECTIONS)
+        .cloned()
+        .collect::<Vec<_>>();
+    let end = from + sections.len();
+    result["sections"] = Value::Array(sections);
+    result["count"] = json!(end - from);
+    result["page"] = json!(page);
+    result["totalSections"] = json!(total);
+    result["truncated"] = json!(end < total);
+    result["nextPage"] = json!(if end < total { Some(page + 1) } else { None });
+    result["groups"] = groups.clone();
+    result["groupOnly"] = json!(group_only);
     result["coverage"] = json!({"mode":"overview", "filtered":query.is_some(), "fileContentsRead":false,
-        "descriptionsComplete":false, "note":"Navigation previews only. For all instructions, request detail=full (optionally moduleid/sectionid), then follow nextPage until null. Files need the file tool."});
-    result
+        "descriptionsComplete":false, "firstSection":from + 1,"lastSection":end,"totalSections":total,
+        "note":"Navigation previews only, with shortened descriptions and bounded module/file lists. Follow nextPage for other sections; moduleCount/fileCount show omissions. For all instructions, request detail=full (optionally moduleid/sectionid), then follow nextPage until null. Files need the file tool. Section urls open the Moodle page directly."});
+    Ok(result)
+}
+
+fn section_link(base_url: &str, courseid: i64, section: i64) -> String {
+    format!(
+        "{}/course/view.php?id={courseid}&section={section}",
+        base_url.trim_end_matches('/')
+    )
+}
+
+fn group_tokens(name: &str) -> Vec<String> {
+    normalize_tokens(name)
+}
+
+fn group_mark(text: &str, groups: &Value, user_group_ids: &[i64]) -> Option<Value> {
+    let hay = normalize_tokens(text);
+    let check = |list: &Value| -> Option<Value> {
+        list.as_array().into_iter().flatten().find_map(|group| {
+            let name = group["name"].as_str()?;
+            let tokens = group_tokens(name);
+            // One-token names would mark unrelated sections; require a distinctive label.
+            if tokens.len() < 2
+                || !hay
+                    .windows(tokens.len())
+                    .any(|window| window == tokens.as_slice())
+            {
+                return None;
+            }
+            let id = group["id"].as_i64()?;
+            Some(json!({"id":id,"name":name,"yourGroup":user_group_ids.contains(&id)}))
+        })
+    };
+    check(&groups["courseGroups"]).or_else(|| check(&groups["userGroups"]))
 }
 
 fn file_names(module: &Value) -> String {
@@ -523,6 +655,8 @@ pub(super) fn detail(
     moduleid: Option<i64>,
     sectionid: Option<i64>,
     page: usize,
+    groups: &Value,
+    base_url: &str,
 ) -> Result<Value, String> {
     // Count all blocks, but materialize only the four returned by this call.
     // Keep overflow validation after source selection to preserve error precedence.
@@ -543,6 +677,11 @@ pub(super) fn detail(
                 section,
                 &section["id"],
                 &[section["summary"].as_str().unwrap_or("")],
+                Some(&section_link(
+                    base_url,
+                    courseid,
+                    section["section"].as_i64().unwrap_or(0),
+                )),
             );
         }
         for module in section["modules"].as_array().into_iter().flatten() {
@@ -559,6 +698,7 @@ pub(super) fn detail(
                     "\n",
                     module["contentText"].as_str().unwrap_or(""),
                 ],
+                None,
             );
         }
     }
@@ -575,6 +715,7 @@ pub(super) fn detail(
     Ok(
         json!({"courseid":courseid,"moduleid":moduleid,"sectionid":sectionid,"page":page,
         "blocks":selected,"totalBlocks":total,"truncated":end < total,"nextPage":if end < total {Some(page + 1)} else {None},
+        "groups":groups,
         "coverage":{"mode":"detail", "firstBlock":from + 1,"lastBlock":end,"totalBlocks":total,
             "allSelectedMetadataReturned":from == 0 && end == total,"fileContentsRead":false},
         "note":"Full textual metadata, not attached/linked files. Read every block and follow nextPage. links lists recognized absolute HTTP references, not fetched content. richContentOmitted flags HTML images/media/math/tables/links not fully represented: consult the school page or source files, or disclose the limitation. Relative or unusual HTML references may require the official page. Delivered content is not proof of model comprehension."}),
@@ -588,7 +729,14 @@ struct DetailWindow {
 }
 
 impl DetailWindow {
-    fn append(&mut self, kind: &str, source: &Value, section: &Value, text: &[&str]) {
+    fn append(
+        &mut self,
+        kind: &str,
+        source: &Value,
+        section: &Value,
+        text: &[&str],
+        fallback_url: Option<&str>,
+    ) {
         let length: usize = text.iter().map(|part| part.chars().count()).sum();
         let parts = length.div_ceil(8_000).max(1);
         let start = self.total;
@@ -604,10 +752,16 @@ impl DetailWindow {
             .skip(first * 8_000);
         for part in first..end {
             let text = chars.by_ref().take(8_000).collect::<String>();
+            let url = source
+                .get("url")
+                .filter(|value| !value.is_null())
+                .cloned()
+                .or_else(|| fallback_url.map(|url| json!(url)))
+                .unwrap_or(Value::Null);
             self.blocks.push(
                 json!({"kind":kind,"id":source["id"],"title":source["name"],"sectionid":section,
             "part":part + 1,"parts":parts,"text":text,
-            "files":source.get("contents").cloned().unwrap_or(json!([])),"url":source["url"],
+            "files":source.get("contents").cloned().unwrap_or(json!([])),"url":url,
             "richContentOmitted":source["richContentOmitted"],"links":source["links"]}),
             );
         }

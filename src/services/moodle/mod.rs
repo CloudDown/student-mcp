@@ -737,10 +737,78 @@ impl MoodleClient {
         research::run(self, query, page, courseid, offset, global)
     }
 
-    /// Compact section tree: names, activities and fileurl values, without Moodle's raw blobs.
-    pub fn course_content(&self, courseid: i64, query: Option<&str>) -> Result<Value, String> {
+    /// The student's own groups, plus the course group names used to label sections.
+    /// Group APIs are optional: an unavailable call is reported, never hidden.
+    pub fn course_groups(&self, courseid: i64) -> Value {
+        let mut errors = Vec::new();
+        let mut index = Vec::new();
+        let mut read = |function: &str, key: &str| -> Vec<Value> {
+            let fetched = self.indexed(&format!("groups:{key}:{courseid}"), || {
+                let raw = self.call(function, &json!({ "courseid": courseid }))?;
+                raw["groups"]
+                    .as_array()
+                    .cloned()
+                    .map(Value::Array)
+                    .ok_or("Moodle did not return a group list.".to_string())
+            });
+            match fetched {
+                Ok((Value::Array(list), meta)) => {
+                    index.push(json!({"source": key, "index": meta}));
+                    list
+                }
+                Ok(_) => {
+                    errors.push(
+                        json!({"source": function, "error": "Moodle did not return a group list."}),
+                    );
+                    Vec::new()
+                }
+                Err(error) => {
+                    errors.push(json!({"source": function, "error": error}));
+                    Vec::new()
+                }
+            }
+        };
+        let mine = read("core_group_get_course_user_groups", "user");
+        let all = read("core_group_get_course_groups", "course");
+        let simple = |groups: &[Value]| {
+            groups
+                .iter()
+                .filter_map(|group| {
+                    Some(json!({"id": group["id"].as_i64()?, "name": plain_text(group["name"].as_str()?)}))
+                })
+                .collect::<Vec<_>>()
+        };
+        json!({
+            "available": errors.len() < 2,
+            "userGroups": simple(&mine),
+            "courseGroups": simple(&all),
+            "partial": !errors.is_empty(),
+            "errors": errors,
+            "index": index,
+            "note": if errors.is_empty() { "Group names label sections; they are not proof that an activity is restricted to that group." }
+                else { "Moodle did not expose all group data. Sections may not be marked; do not infer a group from the absence of a label." },
+        })
+    }
+
+    /// Compact, paginated section tree with the student's group and direct section links.
+    pub fn course_content(
+        &self,
+        courseid: i64,
+        query: Option<&str>,
+        group_only: bool,
+        page: usize,
+    ) -> Result<Value, String> {
         let (raw, index) = self.content_snapshot(courseid)?;
-        let mut result = research::overview(courseid, &raw, query);
+        let groups = self.course_groups(courseid);
+        let mut result = research::overview(
+            courseid,
+            &raw,
+            query,
+            &groups,
+            group_only,
+            page,
+            &self.base_url,
+        )?;
         result["index"] = index;
         Ok(result)
     }
@@ -753,7 +821,16 @@ impl MoodleClient {
         page: usize,
     ) -> Result<Value, String> {
         let (raw, index) = self.content_snapshot(courseid)?;
-        let mut result = research::detail(courseid, &raw, moduleid, sectionid, page)?;
+        let groups = self.course_groups(courseid);
+        let mut result = research::detail(
+            courseid,
+            &raw,
+            moduleid,
+            sectionid,
+            page,
+            &groups,
+            &self.base_url,
+        )?;
         result["index"] = index;
         Ok(result)
     }
@@ -915,10 +992,27 @@ impl MoodleClient {
             &json!({ "courseid": courseid, "userid": self.userid()? }),
         )?;
         let grades = compact_grade_items(&raw);
+        let weighted_total = grades
+            .iter()
+            .find(|grade| grade["type"] == "course")
+            .map(|grade| {
+                json!({
+                    "grade": grade["grade"], "raw": grade["raw"], "max": grade["max"],
+                    "percentage": grade["percentage"], "note": "Moodle's own course total, already weighted if the gradebook uses weights."
+                })
+            });
+        let weights_available = grades.iter().any(|grade| !grade["weight"].is_null());
         Ok(json!({
             "courseid": courseid,
             "count": grades.len(),
-            "grades": grades
+            "grades": grades,
+            "weightsAvailable": weights_available,
+            "weightedTotal": weighted_total,
+            "note": if weights_available {
+                "weight is Moodle's reported item weight. weightedTotal is Moodle's aggregate for this course, not a local recalculation."
+            } else {
+                "Moodle did not return grade-item weights for this course. The weighted total is therefore unavailable; only the course total shown by Moodle is reported."
+            }
         }))
     }
 
@@ -1003,8 +1097,8 @@ impl MoodleClient {
             "core_course_get_updates_since",
             &json!({"courseid": courseid, "since": since}),
         )?;
-        let content = self.course_content(courseid, None)?;
-        let modules: Vec<&Value> = content["sections"]
+        let (content, _) = self.content_snapshot(courseid)?;
+        let modules: Vec<&Value> = content
             .as_array()
             .into_iter()
             .flatten()
@@ -1510,7 +1604,7 @@ fn compact_course_contents(courseid: i64, raw: &Value, query: Option<&str>) -> V
         "courseid": courseid,
         "count": sections.len(),
         "sections": sections,
-        "fileurlHint": "fileurl is an internal Moodle reference, not a direct download link. For a link the user can open, call moodle_file with fileurl and share its links.download. Never add or reveal a Moodle token."
+        "fileurlHint": "fileurl is an internal Moodle reference, not a direct download link. For a link the user can open, call moodle_file; share it only when the user asks for a download. Never add or reveal a Moodle token."
     })
 }
 
@@ -1543,6 +1637,13 @@ fn compact_module_files(module: &Value) -> Vec<Value> {
                 .filter(|value| !value.is_null())
             {
                 item["filesize"] = size;
+            }
+            if let Some(modified) = file
+                .get("timemodified")
+                .cloned()
+                .filter(|value| value.as_i64().unwrap_or(0) > 0)
+            {
+                item["timemodified"] = modified;
             }
             if let Some(mime) = file
                 .get("mimetype")
@@ -1597,6 +1698,8 @@ fn compact_grade_items(raw: &Value) -> Vec<Value> {
                 "raw": item.get("graderaw"),
                 "max": item.get("grademax"),
                 "percentage": item.get("percentageformatted"),
+                "weight": item.get("weightraw").or_else(|| item.get("weight")),
+                "weightFormatted": item.get("weightformatted"),
                 "gradedAt": item.get("gradedategraded"),
                 "feedback": truncate(&plain_text(item.get("feedback").and_then(Value::as_str).unwrap_or("")), 2000),
             }))
@@ -3130,13 +3233,21 @@ pub(crate) mod tests {
     #[test]
     fn course_content_is_compact_and_query_keeps_td5() {
         let payload = td5_contents();
-        let (url, worker) = server(vec![payload.clone(), payload]);
+        let no_groups = json!({"groups":[]});
+        let (url, worker) = server(vec![
+            payload.clone(),
+            no_groups.clone(),
+            no_groups.clone(),
+            payload,
+            no_groups.clone(),
+            no_groups,
+        ]);
         let client = MoodleClient::new(&MoodleConfig {
             base_url: url,
             token: "token".into(),
             allow_write: false,
         });
-        let all = client.course_content(5476, None).unwrap();
+        let all = client.course_content(5476, None, false, 0).unwrap();
         assert_eq!(all["courseid"], 5476);
         assert_eq!(all["count"], 1);
         assert_eq!(all["sections"][0]["name"], "Exercices TD");
@@ -3153,7 +3264,7 @@ pub(crate) mod tests {
             true
         );
         assert!(!dumped.contains(&"x".repeat(501)));
-        let filtered = client.course_content(5476, Some("TD5")).unwrap();
+        let filtered = client.course_content(5476, Some("TD5"), false, 0).unwrap();
         assert_eq!(
             filtered["sections"][0]["modules"].as_array().unwrap().len(),
             1
@@ -3243,6 +3354,37 @@ pub(crate) mod tests {
         assert_eq!(grades["grades"][0]["name"], "Quiz 1");
         assert_eq!(grades["grades"][1]["name"], "Course total");
         assert!(grades.get("usergrades").is_none());
+        assert_eq!(grades["weightsAvailable"], false);
+        assert_eq!(grades["weightedTotal"]["grade"], "12,00");
+        assert!(grades["note"].as_str().unwrap().contains("did not return"));
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn grades_report_item_weights_and_moodle_course_total_when_available() {
+        let (url, worker) = server(vec![
+            json!({"userid": 42, "functions": []}),
+            json!({"usergrades": [{"courseid": 15, "gradeitems": [
+                {"itemname": "TP", "itemtype": "mod", "graderaw": 16.0, "grademax": 20.0,
+                    "gradeformatted": "16,00", "weightraw": 40.0, "weightformatted": "40 %"},
+                {"itemname": "", "itemtype": "course", "graderaw": 14.0, "grademax": 20.0,
+                    "gradeformatted": "14,00", "percentageformatted": "70 %"}
+            ]}]}),
+        ]);
+        let client = MoodleClient::new(&MoodleConfig {
+            base_url: url,
+            token: "token".into(),
+            allow_write: false,
+        });
+        let grades = client.grades_for_course(15).unwrap();
+        assert_eq!(grades["weightsAvailable"], true);
+        assert_eq!(grades["grades"][0]["weight"], 40.0);
+        assert_eq!(grades["grades"][0]["weightFormatted"], "40 %");
+        assert_eq!(grades["weightedTotal"]["percentage"], "70 %");
+        assert!(grades["note"]
+            .as_str()
+            .unwrap()
+            .contains("not a local recalculation"));
         worker.join().unwrap();
     }
 

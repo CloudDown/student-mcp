@@ -363,3 +363,31 @@ de découverte d’URL et de non-modification ; tests Playwright 320/390 px, bad
 hôte et traduction ; CI Linux exécute aussi le smoke web et le guide assistants.
 
 Version : **0.8.1**, une seule release. Commit, PR, CI, fusion puis tag unique.
+
+## 12. Test réel v0.8.1 (Claude, ChatGPT, Grok ; Gemini hors zone US)
+
+Cours, liens, échéances, notes et PDF fonctionnaient. Corrections ajoutées :
+
+- `moodle_course_content` : vue par défaut bornée à 6 sections, 8 activités et
+  6 fichiers par source, avec `nextPage`, `moduleCount`/`fileCount`, aperçus
+  réduits et `truncated`. URLs directes `course/view.php?id=…&section=…`.
+  Groupes de l'étudiant (`core_group_get_course_user_groups`) et groupes du cours,
+  marquage `group`/`yourGroup`, filtre optionnel `group_only`. Dates
+  `timemodified` par fichier. Les groupes sont mis en cache avec l'index du compte.
+- `moodle_grades` avec `courseid` : poids Moodle (`weightraw`/`weightformatted`) et
+  total Moodle ; si l'API ne fournit pas les poids, `weightsAvailable=false` et
+  message explicite, sans calcul inventé.
+- Gemini web : limite géographique US confirmée par l'utilisateur, pas un défaut
+  du serveur. Aucun changement de transport ; documentation ajoutée.
+- Journal local des requêtes MCP : `~/.student-mcp.mcp.log`, 0600, rotation 1 MiB,
+  méthode, chemin **rédigé**, statut, user-agent. Jamais d'en-têtes, de corps ni de
+  jeton. `STUDENT_MCP_TEST_LOG` redirige les écritures en test.
+- Liens de fichiers : TTL réduit de 3 h à 30 min. Les descriptions d'outils
+  demandent de ne pas coller `links.download` dans la conversation sans demande
+  explicite de téléchargement.
+- Les empreintes de détail sont mises à jour **une fois** pour le nouveau champ
+  `groups` et l'URL de section ; ce changement de sortie est intentionnel.
+
+Tests ajoutés : pagination/groupes/URLs/dates, taille bornée d'une grosse vue,
+poids de notes et absence de poids, journal (rédaction, permissions, rotation),
+validation de `group_only`.

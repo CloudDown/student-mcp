@@ -70,6 +70,7 @@ struct Request {
     session: Option<String>,
     authorization: Option<String>,
     protocol_version: Option<String>,
+    user_agent: Option<String>,
     body: Vec<u8>,
     close: bool,
 }
@@ -142,6 +143,12 @@ fn connection(
             return Ok(());
         }
         let (status, headers, body) = route(&request, &sessions);
+        crate::request_log::record(
+            &request.method,
+            &request.path,
+            status,
+            request.user_agent.as_deref(),
+        );
         let terminate = request.close || status == 204;
         write_response(&stream, status, headers, &body, !terminate)?;
         if terminate {
@@ -191,6 +198,7 @@ fn read_request(
     let mut session = None;
     let mut authorization = None;
     let mut protocol_version = None;
+    let mut user_agent = None;
     let mut close = false;
     let mut accept_sse = false;
     for line in lines {
@@ -221,6 +229,9 @@ fn read_request(
                 "authorization" => authorization = Some(value.to_string()),
                 "mcp-protocol-version" if protocol_version.is_none() => {
                     protocol_version = Some(value.to_string());
+                }
+                "user-agent" if user_agent.is_none() => {
+                    user_agent = Some(value.chars().take(200).collect());
                 }
                 "connection" => close = value.eq_ignore_ascii_case("close"),
                 "accept" => accept_sse = value.to_ascii_lowercase().contains("text/event-stream"),
@@ -253,6 +264,7 @@ fn read_request(
         session,
         authorization,
         protocol_version,
+        user_agent,
         body,
         close,
     }))
@@ -806,6 +818,7 @@ mod tests {
             session: None,
             authorization: None,
             protocol_version: None,
+            user_agent: Some("mcp-test-client/1".into()),
             body: br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#.to_vec(),
             close: false,
         }

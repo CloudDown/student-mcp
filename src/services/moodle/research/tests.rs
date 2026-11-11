@@ -4,6 +4,87 @@ use crate::{
     services::moodle::{tests::server, MoodleClient},
 };
 
+fn groups() -> Value {
+    json!({"userGroups":[{"id":7,"name":"Groupe 1"}],"courseGroups":[{"id":7,"name":"Groupe 1"},{"id":8,"name":"Groupe 2"}]})
+}
+
+#[test]
+fn overview_paginates_marks_groups_links_sections_and_keeps_file_dates() {
+    let sections = (0..8).map(|i| {
+        let name = if i == 0 { "Groupe 1 - TP" } else if i == 1 { "Groupe 2 - TP" } else { "Commun" };
+        json!({"id":i + 1,"section":i + 1,"name":format!("{name} {i}"),"summary":"Résumé",
+            "modules":[{"id":100 + i,"name":"TD 5","description":"Consigne",
+                "contents":[{"filename":"td.pdf","fileurl":"https://school.test/f","timemodified":1700000000}]}]})
+    }).collect::<Vec<_>>();
+    let raw = snapshot(&json!(sections)).unwrap();
+    let first = overview(42, &raw, None, &groups(), false, 0, "https://school.test").unwrap();
+    assert_eq!(first["count"], 6);
+    assert_eq!(first["truncated"], true);
+    assert_eq!(first["nextPage"], 1);
+    assert_eq!(first["sections"][0]["group"]["name"], "Groupe 1");
+    assert_eq!(first["sections"][0]["group"]["yourGroup"], true);
+    assert_eq!(first["sections"][1]["group"]["yourGroup"], false);
+    assert!(first["sections"][2]["group"].is_null());
+    assert_eq!(
+        first["sections"][0]["url"],
+        "https://school.test/course/view.php?id=42&section=1"
+    );
+    assert_eq!(
+        first["sections"][0]["modules"][0]["files"][0]["timemodified"],
+        1700000000
+    );
+    let last = overview(42, &raw, None, &groups(), false, 1, "https://school.test").unwrap();
+    assert_eq!(last["count"], 2);
+    assert_eq!(last["nextPage"], Value::Null);
+    let mine = overview(42, &raw, None, &groups(), true, 0, "https://school.test").unwrap();
+    assert!(mine["sections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|section| section["group"]["yourGroup"].as_bool() != Some(false)));
+    assert!(overview(42, &raw, None, &groups(), false, 2, "https://school.test").is_err());
+}
+
+#[test]
+fn overview_stays_bounded_for_a_large_multi_group_course() {
+    let modules = (0..30).map(|id| json!({"id":id + 1,"name":format!("Activité {id}"),
+        "description":"Consigne très longue ".repeat(300),"contentText":"Texte ".repeat(500),
+        "contents":(0..20).map(|f| json!({"filename":format!("doc-{id}-{f}.pdf"),"timemodified":1700000000})).collect::<Vec<_>>()}))
+        .collect::<Vec<_>>();
+    let sections = (0..60)
+        .map(|i| {
+            json!({"id":i + 1,"section":i + 1,"name":format!("Groupe 2 - Semaine {i}"),
+        "summary":"Résumé ".repeat(100),"modules":modules.clone()})
+        })
+        .collect::<Vec<_>>();
+    let raw = snapshot(&json!(sections)).unwrap();
+    let view = overview(42, &raw, None, &groups(), false, 0, "https://school.test").unwrap();
+    let size = serde_json::to_vec(&view).unwrap().len();
+    assert!(size < 60_000, "overview must stay bounded, got {size}");
+    assert_eq!(view["sections"][0]["moduleCount"], 30);
+    assert_eq!(view["sections"][0]["modules"].as_array().unwrap().len(), 8);
+    assert_eq!(view["sections"][0]["modulesTruncated"], true);
+    assert_eq!(
+        view["sections"][0]["modules"][0]["files"]
+            .as_array()
+            .unwrap()
+            .len(),
+        6
+    );
+    assert_eq!(view["totalSections"], 60);
+}
+
+#[test]
+fn detail_blocks_carry_the_section_link_and_groups() {
+    let raw = snapshot(&contents("Consigne")).unwrap();
+    let found = detail(42, &raw, None, None, 0, &groups(), "https://school.test").unwrap();
+    assert_eq!(found["groups"]["userGroups"][0]["name"], "Groupe 1");
+    assert!(found["blocks"][0]["url"]
+        .as_str()
+        .unwrap()
+        .contains("/course/view.php?id=42&section=1"));
+}
+
 fn course() -> Value {
     json!({"id":42,"shortname":"PHS0102","fullname":"Électricité","visible":true})
 }
@@ -37,7 +118,16 @@ fn finds_late_description_terms_accents_and_explains_which_field_matched() {
 #[test]
 fn title_filters_keep_related_files_and_overview_explicitly_reports_omissions() {
     let raw = snapshot(&contents(&"Consigne complète. ".repeat(100))).unwrap();
-    let view = overview(42, &raw, Some("TP5"));
+    let view = overview(
+        42,
+        &raw,
+        Some("TP5"),
+        &groups(),
+        false,
+        0,
+        "https://school.test",
+    )
+    .unwrap();
     assert_eq!(
         view["sections"][0]["modules"][0]["files"][0]["filename"],
         "support.pdf"
@@ -60,7 +150,16 @@ fn full_detail_recovers_every_character_including_a_late_requirement() {
     let mut reconstructed = String::new();
     let mut page = 0;
     loop {
-        let response = detail(42, &raw, Some(7), None, page).unwrap();
+        let response = detail(
+            42,
+            &raw,
+            Some(7),
+            None,
+            page,
+            &groups(),
+            "https://school.test",
+        )
+        .unwrap();
         for block in response["blocks"].as_array().unwrap() {
             let text = block["text"].as_str().unwrap();
             assert!(text.chars().count() <= 8000);
@@ -77,8 +176,26 @@ fn full_detail_recovers_every_character_including_a_late_requirement() {
         reconstructed,
         format!("{}\n", crate::services::moodle::plain_text(&description))
     );
-    assert!(detail(42, &raw, Some(999), None, 0).is_err());
-    assert!(detail(42, &raw, Some(7), None, 999).is_err());
+    assert!(detail(
+        42,
+        &raw,
+        Some(999),
+        None,
+        0,
+        &groups(),
+        "https://school.test"
+    )
+    .is_err());
+    assert!(detail(
+        42,
+        &raw,
+        Some(7),
+        None,
+        999,
+        &groups(),
+        "https://school.test"
+    )
+    .is_err());
 }
 
 #[test]
@@ -95,7 +212,7 @@ fn td_number_does_not_override_other_query_terms() {
 fn inline_html_and_decoded_math_are_preserved_without_double_html_parsing() {
     let raw = snapshot(&json!([{"id":1,"name":"Cours", "summary":"x &lt; y",
         "modules":[{"id":7,"name":"Analyse", "contents":[{"type":"content","content":"<p>Condition x &lt; y et unicité</p>"}]}]}])).unwrap();
-    let view = overview(42, &raw, None);
+    let view = overview(42, &raw, None, &groups(), false, 0, "https://school.test").unwrap();
     assert_eq!(view["sections"][0]["summary"], "x < y");
     assert_eq!(
         view["sections"][0]["modules"][0]["inlineContentAvailable"],
@@ -103,7 +220,8 @@ fn inline_html_and_decoded_math_are_preserved_without_double_html_parsing() {
     );
     assert_eq!(search(&course(), &raw, "unicite")[0]["moduleid"], 7);
     assert!(
-        detail(42, &raw, Some(7), None, 0).unwrap()["blocks"][0]["text"]
+        detail(42, &raw, Some(7), None, 0, &groups(), "https://school.test").unwrap()["blocks"][0]
+            ["text"]
             .as_str()
             .unwrap()
             .contains("x < y")
@@ -118,6 +236,9 @@ fn warm_search_makes_no_school_requests_and_explicit_refresh_replaces_the_snapsh
             json!([course()]),
             contents("Exigence quantique originale"),
             contents("Exigence quantique actualisée"),
+            json!({"groups":[]}),
+            json!({"groups":[]}),
+            json!({"exception":"down","message":"Unavailable"}),
         ]);
         let config = MoodleConfig {
             base_url: url,
@@ -143,14 +264,12 @@ fn warm_search_makes_no_school_requests_and_explicit_refresh_replaces_the_snapsh
         assert_eq!(warm["results"], cold["results"]);
         let fresh = MoodleClient::new(&config)
             .with_index("a", true)
-            .course_content(42, None)
+            .course_content(42, None, false, 0)
             .unwrap();
         assert!(fresh["sections"][0]["modules"][0]["description"]
             .as_str()
             .unwrap()
             .contains("actualisée"));
-        let requests = worker.join().unwrap();
-        assert_eq!(requests.len(), 4); // cold 3, warm 0, refresh 1
         let after_restart = MoodleClient::new(&config)
             .with_index("a", false)
             .search("PHS0102 quantique", 0, None)
@@ -161,8 +280,9 @@ fn warm_search_makes_no_school_requests_and_explicit_refresh_replaces_the_snapsh
             .contains("actualisée"));
         assert!(MoodleClient::new(&config)
             .with_index("a", true)
-            .course_content(42, None)
+            .course_content(42, None, false, 0)
             .is_err()); // no stale success
+        assert_eq!(worker.join().unwrap().len(), 7); // cold 3, warm 0, refresh 1 + 2 groups, failed refresh 1
     });
 }
 
@@ -330,10 +450,11 @@ fn html_lists_and_hexadecimal_equations_do_not_lose_boundaries_or_symbols() {
 #[test]
 fn mcp_overview_then_full_detail_reuses_the_same_account_snapshot() {
     crate::config::tests::with_temp_config(|| {
-        let (url, worker) = server(vec![contents(&format!(
-            "{} EXIGENCE FINALE",
-            "Énergie. ".repeat(5000)
-        ))]);
+        let (url, worker) = server(vec![
+            contents(&format!("{} EXIGENCE FINALE", "Énergie. ".repeat(5000))),
+            json!({"groups":[]}),
+            json!({"groups":[]}),
+        ]);
         let settings = crate::config::Settings {
             moodle: Some(crate::config::MoodleSettings {
                 url: Some(url),
@@ -368,7 +489,7 @@ fn mcp_overview_then_full_detail_reuses_the_same_account_snapshot() {
         }
         assert!(read.contains("EXIGENCE FINALE"));
         assert!(page > 0);
-        assert_eq!(worker.join().unwrap().len(), 1);
+        assert_eq!(worker.join().unwrap().len(), 3);
     });
 }
 
@@ -387,6 +508,7 @@ fn new_mcp_selectors_are_validated_before_school_requests() {
         json!({"courseid":1,"refresh":"yes"}),
         json!({"courseid":1,"detail":"full","query":"partiel"}),
         json!({"courseid":1,"moduleid":7}),
+        json!({"courseid":1,"group_only":"yes"}),
         json!({"courseid":1,"detail":"full","page":-1}),
     ] {
         let response = crate::mcp::dispatch_tool(&settings, "moodle_course_content", &args);
@@ -398,7 +520,7 @@ fn new_mcp_selectors_are_validated_before_school_requests() {
 #[test]
 fn html_references_and_media_limits_are_visible_not_silently_flattened() {
     let raw = snapshot(&contents("<p>Lire <a href=\"https://school.test/pluginfile.php/guide.pdf?token=secret&amp;id=3\">le guide</a></p><img src=\"/figure.svg\">" )).unwrap();
-    let full = detail(42, &raw, Some(7), None, 0).unwrap();
+    let full = detail(42, &raw, Some(7), None, 0, &groups(), "https://school.test").unwrap();
     assert_eq!(full["blocks"][0]["richContentOmitted"], true);
     assert_eq!(
         full["blocks"][0]["links"][0]["url"],
