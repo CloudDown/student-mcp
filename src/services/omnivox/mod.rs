@@ -1459,6 +1459,14 @@ pub fn tools() -> Vec<Value> {
     tools
 }
 
+pub(crate) fn read_file(
+    client: &OmnivoxClient,
+    args: &Value,
+    query: &crate::delivery::FileQuery,
+) -> Result<Value, String> {
+    files::read(client, args, query)
+}
+
 pub fn dispatch(client: &OmnivoxClient, name: &str, args: &Value) -> Result<Value, String> {
     if let Some(result) = writes::dispatch(client, name, args) {
         return result;

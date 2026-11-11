@@ -4,7 +4,9 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use url::Url;
 
+mod office;
 pub(crate) mod pdf;
+pub(crate) mod store;
 use pdf::*;
 
 #[derive(Default, Clone)]
@@ -13,6 +15,8 @@ pub(crate) struct FileQuery {
     pub page_from: Option<u32>,
     pub page_to: Option<u32>,
     pub find: Option<String>,
+    pub document_id: Option<String>,
+    pub scope: Option<[u8; 32]>,
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
@@ -26,6 +30,77 @@ pub(crate) enum FileFormat {
 const MAX_TEXT_CHARS: usize = 20_000;
 const MAX_INLINE_BLOB_BYTES: usize = 6 * 1024 * 1024;
 
+pub(super) enum Prepared {
+    Pdf {
+        bytes: Arc<Vec<u8>>,
+        total: u32,
+        text: Option<Vec<String>>,
+        converted: bool,
+    },
+    Office {
+        document: crate::document::Document,
+        limitation: String,
+    },
+    Text(String),
+    Unsupported,
+}
+
+fn prepare(document: &store::Document) -> Result<Prepared, String> {
+    let bytes = &document.bytes;
+    let is_pdf = document.mime.to_ascii_lowercase().contains("pdf") || bytes.starts_with(b"%PDF");
+    let converted = if !is_pdf && office::supported(&document.filename) {
+        Some(office::convert(&document.filename, bytes))
+    } else {
+        None
+    };
+    let pdf = if is_pdf {
+        Some(Arc::clone(bytes))
+    } else {
+        converted
+            .as_ref()
+            .and_then(|result| result.as_ref().ok())
+            .map(Arc::clone)
+    };
+    if let Some(bytes) = pdf {
+        if let Some(total) = pdf_page_count(&bytes).filter(|count| *count > 0) {
+            let text = pdftotext_cli_range(&bytes, 1, total)
+                .map(|text| crate::pdf::split_pages(&text, total));
+            return Ok(Prepared::Pdf {
+                bytes,
+                total,
+                text,
+                converted: !is_pdf,
+            });
+        }
+        if is_pdf {
+            return Err("Cannot inspect this PDF. Install Poppler, or request format=file for the original.".into());
+        }
+    }
+    if let Some(extracted) = crate::document::extract(&document.filename, bytes)? {
+        let limitation = match converted {
+            Some(Err(reason)) => reason,
+            Some(Ok(_)) => "Local PDF conversion could not be inspected. Text fallback may omit charts, equations and layout.".into(),
+            None => "Structured cell values only; formulas are not recalculated and charts are not rendered.".into(),
+        };
+        return Ok(Prepared::Office {
+            document: extracted,
+            limitation,
+        });
+    }
+    if let Some(text) = extract_text(&document.mime, bytes) {
+        return Ok(Prepared::Text(text));
+    }
+    Ok(Prepared::Unsupported)
+}
+
+pub(crate) fn read_cached(query: &FileQuery, secret: &str) -> Result<Value, String> {
+    let scope = query
+        .scope
+        .ok_or("Select a connected account before reading a document ID.")?;
+    let id = query.document_id.as_deref().ok_or("Provide document_id.")?;
+    document_result(store::get(scope, id)?, query, secret)
+}
+
 pub(crate) fn read_document(
     filename: &str,
     mime: &str,
@@ -33,130 +108,198 @@ pub(crate) fn read_document(
     query: &FileQuery,
     secret: &str,
 ) -> Result<Value, String> {
-    let bytes = document.as_slice();
-    let is_pdf = mime.to_ascii_lowercase().contains("pdf") || bytes.starts_with(b"%PDF");
-    if !is_pdf {
-        if let Some(document) = crate::document::extract(filename, bytes)? {
-            if query.format == FileFormat::Images {
-                return Err("Office image rendering is not supported. Request format=text, or export to PDF for diagrams and page images.".into());
-            }
-            return office_document_result(filename, mime, bytes.len(), document, query, secret);
-        }
-        let text = extract_text(mime, bytes).map(|text| scrub_secret(text, secret));
-        let mut result = json!({"filename": filename, "mimeType": mime, "size": bytes.len()});
-        match text {
-            Some(text) if !text.trim().is_empty() => result["text"] = json!(text),
-            _ => result["note"] = json!("Unsupported binary format. No content was extracted; export to PDF or a supported Office/OpenDocument format."),
-        }
-        return Ok(result);
-    }
-    if query.format == FileFormat::File {
-        let mut result =
-            json!({"filename": filename, "mimeType": "application/pdf", "size": bytes.len()});
-        if crate::share::enabled() {
-            if let Some(id) = crate::share::publish_bytes(
-                filename,
-                "application/pdf",
-                Arc::clone(&document),
-                "",
-                0,
-            ) {
-                if let Some(links) = crate::share::links_for(&id) {
-                    let local_only = links.download.contains("://127.0.0.1");
-                    result["links"] = json!({"download": links.download, "expiresInHours": 3, "localOnly": local_only});
-                }
-            } else {
-                result["linkNote"] = json!("The temporary link store is full. The original file is attached instead; existing links remain valid until expiry or app shutdown.");
-            }
-        }
-        if bytes.len() <= MAX_INLINE_BLOB_BYTES || result.get("links").is_none() {
-            use base64::Engine;
-            result["file"] = json!({"filename": filename, "mimeType": "application/pdf", "data": base64::engine::general_purpose::STANDARD.encode(bytes)});
-        }
-        result["note"] = json!("Original PDF. Share links.download when the user asks for a PDF link; never substitute an internal course file URL. If links.localOnly is true, the link only works on the machine running this app. If no link is available, say so. Temporary links expire after 3 hours and require this app to remain running. For scans or diagrams, request format=images with page_from/page_to. No local OCR is performed.");
-        return Ok(result);
-    }
-    let total_pages = pdf_page_count(bytes).ok_or("Cannot inspect this PDF. Install Poppler, or request format=file to read the original without local processing.")?;
-    let full_text = if query.find.is_some() {
-        pdftotext_cli_range(bytes, 1, if total_pages > 0 { total_pages } else { 2000 })
-            .ok_or("Cannot search this PDF's text layer. Request format=file instead.")?
+    document_result(
+        store::remember(store::Document::new(filename, mime, document, query.scope)),
+        query,
+        secret,
+    )
+}
+
+fn document_result(
+    document: Arc<store::Document>,
+    query: &FileQuery,
+    secret: &str,
+) -> Result<Value, String> {
+    let mut result = if query.format == FileFormat::File {
+        original_file(&document)
     } else {
-        String::new()
+        match document
+            .prepared
+            .get_or_init(|| prepare(&document))
+            .as_ref()
+            .map_err(Clone::clone)?
+        {
+            Prepared::Pdf {
+                bytes,
+                total,
+                text,
+                converted,
+            } => {
+                let mut result = study_pdf(
+                    &document.filename,
+                    &document.mime,
+                    Arc::clone(bytes),
+                    *total,
+                    text.as_deref(),
+                    query,
+                    secret,
+                )?;
+                result["conversion"] = json!(if *converted { "local-pdf" } else { "none" });
+                result["size"] = json!(document.bytes.len());
+                result
+            }
+            Prepared::Office {
+                document: extracted,
+                limitation,
+            } => {
+                let mut result = office_document_result(
+                    &document.filename,
+                    &document.mime,
+                    &document.bytes,
+                    extracted,
+                    query,
+                    secret,
+                )?;
+                result["visualLimitations"] = json!(limitation);
+                result["conversion"] = json!(if office::supported(&document.filename) {
+                    "unavailable"
+                } else {
+                    "not-applicable"
+                });
+                result
+            }
+            Prepared::Text(text) => {
+                let extracted = crate::document::Document {
+                    unit: "text",
+                    parts: vec![text.clone()],
+                    note: "Plain text/CSV; no images or OCR.",
+                };
+                let mut result = office_document_result(
+                    &document.filename,
+                    &document.mime,
+                    &document.bytes,
+                    &extracted,
+                    query,
+                    secret,
+                )?;
+                result["text"] = json!(result["blocks"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter_map(|block| block["text"].as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n"));
+                result
+            }
+            Prepared::Unsupported => {
+                return Err(
+                    "Unsupported study format. Request format=file for the original.".into(),
+                )
+            }
+        }
     };
-    let page_texts = crate::pdf::split_pages(&full_text, total_pages);
+    if query.scope.is_some() {
+        result["documentId"] = json!(document.id);
+        result["expiresInSeconds"] = json!(document.remaining_seconds());
+    }
+    Ok(result)
+}
+
+fn original_file(document: &store::Document) -> Value {
+    let filename = &document.filename;
+    let bytes = &document.bytes;
+    let mime = if bytes.starts_with(b"%PDF") {
+        "application/pdf"
+    } else {
+        &document.mime
+    };
+    let mut result = json!({"filename": filename, "mimeType": mime, "size": bytes.len()});
+    if crate::share::enabled() {
+        if let Some(id) = crate::share::publish_bytes(filename, mime, Arc::clone(bytes), "", 0) {
+            if let Some(links) = crate::share::links_for(&id) {
+                let local_only = links.download.contains("://127.0.0.1");
+                result["links"] = json!({"download": links.download, "text":links.text, "expiresInHours": 3, "localOnly": local_only});
+            }
+        } else {
+            result["linkNote"] = json!("The temporary link store is full. The original file is attached instead; existing links remain valid until expiry or app shutdown.");
+        }
+    }
+    if bytes.len() <= MAX_INLINE_BLOB_BYTES || result.get("links").is_none() {
+        use base64::Engine;
+        result["file"] = json!({"filename": filename, "mimeType": mime, "data": base64::engine::general_purpose::STANDARD.encode(bytes.as_slice())});
+    }
+    result["note"] = json!("Original file, not a guarantee that the assistant can read its contents. Share links.download when asked for a download; never substitute an internal school URL. localOnly links work only on this computer. Links expire after 3 hours and require the app to stay running. To study, request format=text or images with document_id and page_from/page_to. No local OCR.");
+    result
+}
+
+fn study_pdf(
+    filename: &str,
+    mime: &str,
+    document: Arc<Vec<u8>>,
+    total_pages: u32,
+    extracted: Option<&[String]>,
+    query: &FileQuery,
+    secret: &str,
+) -> Result<Value, String> {
+    let bytes = document.as_slice();
+    let page_texts = extracted.unwrap_or(&[]);
+    if query.find.is_some() && extracted.is_none() {
+        return Err("PDF text extraction unavailable; cannot search. Request a page window without find to read images.".into());
+    }
     let matches = query
         .find
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(|needle| find_pdf_matches(&page_texts, needle))
+        .map(|needle| find_pdf_matches(page_texts, needle))
         .unwrap_or_default();
     let matched_page = matches
         .iter()
         .map(|(page, _)| *page)
-        .find(|page| *page > 2 && !looks_like_toc(*page, &page_texts))
+        .find(|page| *page > 2 && !looks_like_toc(*page, page_texts))
         .or_else(|| matches.first().map(|(page, _)| *page));
     let start_page = query.page_from.or(matched_page).unwrap_or(1);
-    let page_to = if query.format == FileFormat::Images {
-        Some(
-            query
-                .page_to
-                .unwrap_or(start_page.saturating_add(1))
-                .min(start_page.saturating_add(7)),
-        )
-    } else {
-        query.page_to
-    };
-    let range = resolve_pdf_range(Some(start_page), page_to, total_pages)?;
-    let text = if query.format == FileFormat::Text {
-        pdftotext_cli_range(bytes, range.from, range.to).ok_or(
-            "PDF text extraction failed or timed out. Check Poppler, or request format=file.",
-        )?
-    } else {
-        String::new()
-    };
+    let range = resolve_pdf_range(Some(start_page), query.page_to, total_pages)?;
     let window_pages = (range.to.saturating_sub(range.from) + 1) as usize;
-    let pages = if query.format == FileFormat::Images {
-        render_pdf_pages(bytes, range.from, range.to)
-    } else {
-        Vec::new()
-    };
-    if query.format == FileFormat::Images && pages.is_empty() {
-        return Err("PDF rendering failed, timed out or exceeded the image limit. Check Poppler, or request format=file.".into());
+    let text = (range.from..=range.to)
+        .map(|page| {
+            format!(
+                "--- page {page} ---\n{}",
+                page_texts
+                    .get(page as usize - 1)
+                    .map(String::as_str)
+                    .unwrap_or("")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    let pages = render_pdf_pages(bytes, range.from, range.to);
+    // Never claim a complete study window while silently omitting a diagram.
+    if pages.len() != window_pages {
+        return Err("PDF window could not be fully rendered within time/size limits. Request a smaller page window or format=file. No page images were delivered.".into());
     }
     let truncated = total_pages > 0 && range.to < total_pages;
     let next_page_from = if truncated { Some(range.to + 1) } else { None };
-    let (text, text_truncated) = match usable_text(text) {
-        Some(text) => {
-            let over = text.chars().count() > MAX_TEXT_CHARS;
-            let text = if over { truncate_text(&text) } else { text };
-            (Some(scrub_secret(text, secret)), over)
-        }
-        None => (None, false),
-    };
-    let shared = if crate::share::enabled() && query.find.is_some() {
-        crate::share::publish_bytes(
-            filename,
-            "application/pdf",
-            Arc::clone(&document),
-            &scrub_secret(full_text, secret),
-            total_pages,
-        )
+    let (text, text_truncated) = if extracted.is_some() {
+        let over = text.chars().count() > MAX_TEXT_CHARS;
+        let text = if over { truncate_text(&text) } else { text };
+        (Some(scrub_secret(text, secret)), over)
     } else {
-        None
+        (None, false)
     };
-    let links = shared.as_deref().and_then(share_links_json);
     let mut result = json!({
         "filename": filename, "mimeType": mime, "size": bytes.len(),
         "totalPages": if total_pages > 0 { json!(total_pages) } else { Value::Null },
         "pageFrom": range.from, "pageTo": range.to, "renderedPages": pages.len(),
         "truncated": truncated, "nextPageFrom": next_page_from, "textTruncated": text_truncated,
     });
-    let outline = pdf_outline(&page_texts);
+    let outline = pdf_outline(page_texts);
     if !outline.is_empty() {
         result["outline"] = json!(outline
             .iter()
-            .map(|(page, title)| json!({"page": page, "title": title}))
+            .map(
+                |(page, title)| json!({"page": page, "title": scrub_secret(title.clone(), secret)})
+            )
             .collect::<Vec<_>>());
     }
     if let Some(needle) = query
@@ -165,37 +308,28 @@ pub(crate) fn read_document(
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        result["find"] = json!(needle);
+        result["find"] = json!(scrub_secret(needle.to_string(), secret));
         result["matchedPage"] = matched_page.map_or(Value::Null, |page| json!(page));
         if !matches.is_empty() {
             result["matches"] = json!(matches
                 .iter()
-                .map(|(page, snippet)| json!({"page": page, "snippet": snippet}))
+                .map(|(page, snippet)| json!({"page": page, "snippet": scrub_secret(snippet.clone(), secret)}))
                 .collect::<Vec<_>>());
         }
     }
-    match &text {
-        Some(text) if !text.trim().is_empty() => result["text"] = json!(text),
-        _ if pages.is_empty() => result["note"] = json!("This PDF has no usable text layer. Request format=images for selected pages, or format=file for the original PDF."),
-        _ => {}
+    if let Some(text) = &text {
+        result["text"] = json!(text);
     }
     if text.is_some() {
         result["textSource"] = json!("pdf-text");
+    } else {
+        result["textSource"] = json!("unavailable");
     }
-    if let Some(links) = links {
-        if let Some(url) = links.get("download").and_then(Value::as_str) {
-            result["downloadUrl"] = json!(url);
-        }
-        result["links"] = links;
-    }
-    let rendered_pages = pages.len();
-    if !pages.is_empty() {
-        result["pageCount"] = json!(rendered_pages);
-        result["pages"] = json!(pages);
-    }
+    result["pageCount"] = json!(pages.len());
+    result["pages"] = json!(pages);
     let mut note = pdf_result_note(truncated, range.from, range.to, total_pages, next_page_from);
-    if query.format == FileFormat::Text && text.is_none() {
-        note.push_str(" No usable text layer: request format=images for selected pages or format=file for the original PDF.");
+    if extracted.is_none() || page_texts.iter().all(|text| text.trim().is_empty()) {
+        note.push_str(" No usable text layer was extracted; read the page images. No local OCR was performed.");
     }
     if let Some(needle) = query
         .find
@@ -214,21 +348,15 @@ pub(crate) fn read_document(
     if text_truncated {
         note.push_str(" Text was capped at 20,000 characters; request a smaller page window for the omitted text.");
     }
-    if query.format == FileFormat::Images && rendered_pages < window_pages {
-        note.push_str(" Some page images are unavailable or too large to inline; request a smaller window or the original file.");
-    }
-    if result.get("links").is_some() {
-        note.push_str(" links.download opens the original PDF. Temporary links require this app to remain running.");
-    }
-    result["note"] = json!(note);
+    result["note"] = json!(scrub_secret(note, secret));
     Ok(result)
 }
 
 fn office_document_result(
     filename: &str,
     mime: &str,
-    size: usize,
-    document: crate::document::Document,
+    bytes: &[u8],
+    document: &crate::document::Document,
     query: &FileQuery,
     secret: &str,
 ) -> Result<Value, String> {
@@ -241,6 +369,9 @@ fn office_document_result(
         }
     }
     let total = blocks.len() as u32;
+    if total == 0 {
+        return Err("No text or cell values could be extracted. Request format=file for the original; no page images are available on this fallback path.".into());
+    }
     let needle = query.find.as_deref().map(str::to_lowercase);
     let matches: Vec<u32> = needle
         .as_ref()
@@ -272,11 +403,13 @@ fn office_document_result(
         .take(to.saturating_sub(from).saturating_add(1) as usize)
         .map(|(i, (unit, text))| json!({"block": i + 1, "sourceUnit": unit, "text": text}))
         .collect();
-    Ok(json!({"filename": filename, "mimeType": mime, "size": size,
+    let note = format!("{} Text/cells only: no faithful page images. page_from/page_to select text blocks (8000 characters), not physical pages; sourceUnit identifies the original slide/sheet/document. Follow nextPageFrom for the rest.", document.note);
+    let result = json!({"filename": filename, "mimeType": mime, "size": bytes.len(),
         "sourceUnit": document.unit, "totalBlocks": total, "pageFrom": from, "pageTo": to,
         "blocks": selected, "matches": matches, "truncated": to < total,
         "nextPageFrom": if to < total { Some(to + 1) } else { None },
-        "note": format!("{} page_from/page_to select text blocks (8000 characters), not physical pages; sourceUnit identifies the original slide/sheet/document. Follow nextPageFrom for the rest.", document.note)}))
+        "note": note});
+    Ok(result)
 }
 
 pub(crate) fn filename_from(disposition: Option<&str>, fileurl: &str) -> String {
@@ -309,23 +442,10 @@ pub(crate) fn filename_from(disposition: Option<&str>, fileurl: &str) -> String 
 fn extract_text(mime: &str, bytes: &[u8]) -> Option<String> {
     let mime = mime.to_ascii_lowercase();
     if mime.starts_with("text/") || mime.contains("json") || mime.contains("xml") {
-        return usable_text(truncate_text(&String::from_utf8_lossy(bytes)));
+        // Keep numeric CSV/formula-like text too. Input bytes are connector-bounded.
+        return Some(String::from_utf8_lossy(bytes).replace('\0', ""));
     }
     None
-}
-
-pub(crate) fn usable_text(text: String) -> Option<String> {
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let total = trimmed.chars().count().max(1);
-    let junk = trimmed.chars().filter(|ch| matches!(ch, '\0'..='\u{08}' | '\u{0B}' | '\u{0C}' | '\u{0E}'..='\u{1F}' | '\u{7F}')).count();
-    let letters = trimmed.chars().filter(|ch| ch.is_alphabetic()).count();
-    if junk * 10 > total || (total > 80 && letters * 20 < total) {
-        return None;
-    }
-    Some(text)
 }
 
 fn truncate_text(text: &str) -> String {
@@ -335,14 +455,6 @@ fn truncate_text(text: &str) -> String {
         text.push_str("\n…");
     }
     text
-}
-
-fn share_links_json(id: &str) -> Option<Value> {
-    let links = crate::share::links_for(id)?;
-    let local_only = links.download.contains("://127.0.0.1");
-    Some(
-        json!({"download": links.download, "text": links.text, "expiresInHours": 3, "localOnly": local_only}),
-    )
 }
 
 pub(crate) fn mcp_content_for_file(mut data: Value, service: &str) -> Vec<Value> {
@@ -393,17 +505,25 @@ pub(crate) fn mcp_content_for_file(mut data: Value, service: &str) -> Vec<Value>
             .get("mimeType")
             .and_then(Value::as_str)
             .unwrap_or("image/jpeg");
+        if let Some(number) = page.get("page").and_then(Value::as_u64) {
+            content.push(
+                json!({"type":"text", "text":format!("Page {number} (complete page image):")}),
+            );
+        }
         content.push(json!({"type": "image", "data": image, "mimeType": mime}));
     }
     if let Some(links) = links {
         for (key, name, description) in [
-            ("download", "PDF file", "Direct link to the original PDF. Open or download it, then attach it to the chat if the client supports uploads."),
-            ("text", "PDF text", "Extracted text, when requested."),
+            ("download", "Original file", "Direct link to the original file. Open or download it, then attach it to the chat if supported."),
+            ("text", "Document text", "Extracted text, when requested."),
         ] {
             let Some(uri) = links.get(key).and_then(Value::as_str) else { continue; };
             content.push(json!({"type": "resource_link", "uri": uri, "name": name, "description": description,
-                "mimeType": if key == "download" { "application/pdf" } else { "text/plain" }}));
+                "mimeType": if key == "download" { data.get("mimeType").and_then(Value::as_str).unwrap_or("application/octet-stream") } else { "text/plain" }}));
         }
     }
     content
 }
+
+#[cfg(test)]
+mod tests;

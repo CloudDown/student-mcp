@@ -2,9 +2,8 @@
 use crate::pdf::{output as pdf_output, Workspace};
 use serde_json::{json, Value};
 
-pub(crate) const MAX_PDF_PAGES: u32 = 24;
-const PDF_TAIL_EXTEND: u32 = 8;
-const PDF_HARD_MAX: u32 = MAX_PDF_PAGES + PDF_TAIL_EXTEND;
+pub(crate) const MAX_PDF_PAGES: u32 = 4;
+const PDF_HARD_MAX: u32 = 8;
 const MAX_PAGE_BYTES: usize = 1_500_000;
 const MAX_IMAGES_TOTAL_BYTES: usize = 8_000_000;
 
@@ -37,13 +36,6 @@ pub(crate) fn resolve_pdf_range(
             ));
         }
         to = to.min(total_pages);
-        if page_to.is_none()
-            && to < total_pages
-            && total_pages - to <= PDF_TAIL_EXTEND
-            && total_pages <= hard_cap
-        {
-            to = total_pages;
-        }
     }
     Ok(PdfRange { from, to })
 }
@@ -189,7 +181,7 @@ pub(crate) fn pdf_result_note(
         } else {
             "unknown".into()
         };
-        format!("Rendered PDF pages {from}-{to} of {total}. This window is incomplete. Call the same file tool again with the same document identifiers and page_from={next} (and optional page_to) to continue. Prefer the extracted text and page images over guessing missing pages.")
+        format!("Rendered PDF pages {from}-{to} of {total}. This window is incomplete. Call the same file tool again: reuse documentId as document_id with the same account and page_from={next} (and optional page_to) to continue. Prefer the extracted text and page images over guessing missing pages.")
     } else if total_pages > 0 {
         format!("Rendered PDF pages {from}-{to} of {total_pages}. Read the extracted text and page images; do not invent content for pages outside this range.")
     } else {
@@ -293,7 +285,18 @@ pub(crate) fn render_pdf_pages(bytes: &[u8], from: u32, to: u32) -> Vec<Value> {
     use base64::Engine;
     let mut pages = Vec::new();
     let mut total_image_bytes = 0usize;
-    for (index, path) in files.into_iter().enumerate() {
+    for path in files {
+        let Some(page) = path
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .and_then(|name| name.strip_prefix("page-"))
+            .and_then(|number| number.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        if !(from..=to).contains(&page) {
+            continue;
+        }
         let Ok(image) = std::fs::read(&path) else {
             continue;
         };
@@ -304,7 +307,8 @@ pub(crate) fn render_pdf_pages(bytes: &[u8], from: u32, to: u32) -> Vec<Value> {
             continue;
         }
         total_image_bytes += image.len();
-        pages.push(json!({"page": from.saturating_add(index as u32), "mimeType": "image/jpeg", "data": base64::engine::general_purpose::STANDARD.encode(image)}));
+        pages.push(json!({"page": page, "mimeType": "image/jpeg", "data": base64::engine::general_purpose::STANDARD.encode(image)}));
     }
+    pages.sort_by_key(|page| page["page"].as_u64());
     pages
 }

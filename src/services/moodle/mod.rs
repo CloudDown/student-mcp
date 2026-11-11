@@ -1,7 +1,7 @@
 use crate::config::MoodleConfig;
 use crate::delivery::{filename_from, read_document, FileQuery};
 #[cfg(test)]
-use crate::delivery::{mcp_content_for_file, pdf::*, usable_text, FileFormat};
+use crate::delivery::{mcp_content_for_file, pdf::*, FileFormat};
 use serde_json::{json, Value};
 use std::io::Read;
 use std::sync::Arc;
@@ -2404,7 +2404,7 @@ pub(crate) mod tests {
         let first = resolve_pdf_range(None, None, 100).unwrap();
         assert_eq!((first.from, first.to), (1, MAX_PDF_PAGES));
         let mid = resolve_pdf_range(Some(90), None, 100).unwrap();
-        assert_eq!((mid.from, mid.to), (90, 100));
+        assert_eq!((mid.from, mid.to), (90, 93));
         let note = pdf_result_note(true, 1, MAX_PDF_PAGES, 100, Some(MAX_PDF_PAGES + 1));
         assert!(
             note.contains("nextPageFrom")
@@ -2417,10 +2417,13 @@ pub(crate) mod tests {
         );
         assert!(resolve_pdf_range(Some(20), Some(10), 50).is_err());
         assert!(resolve_pdf_range(Some(200), None, 50).is_err());
-        // A short tail must never be silently dropped (the "last two pages" bug).
+        // Even a short tail is explicit: small windows never expand silently.
         let short = resolve_pdf_range(None, None, 30).unwrap();
-        assert_eq!((short.from, short.to), (1, 30));
-        assert!(!pdf_result_note(false, 1, 30, 30, None).contains("incomplete"));
+        assert_eq!((short.from, short.to), (1, 4));
+        let tail = resolve_pdf_range(Some(29), None, 30).unwrap();
+        assert_eq!((tail.from, tail.to), (29, 30));
+        assert!(!pdf_result_note(false, 29, 30, 30, None).contains("incomplete"));
+        assert_eq!(resolve_pdf_range(Some(1), Some(100), 100).unwrap().to, 8);
         // Huge documents still window, and explicit page_to is honored.
         let huge = resolve_pdf_range(Some(25), Some(30), 400).unwrap();
         assert_eq!((huge.from, huge.to), (25, 30));
@@ -2530,11 +2533,11 @@ pub(crate) mod tests {
                     },
                 )
                 .unwrap();
-            let links = &data["links"];
+            let original = client
+                .download_file(&fileurl, &FileQuery::default())
+                .unwrap();
+            let links = &original["links"];
             assert_eq!(links["localOnly"], true, "{data}");
-            let reader_url = links["text"].as_str().unwrap();
-            let reader = ureq::get(reader_url).call().unwrap().into_string().unwrap();
-            assert!(reader.contains("Taux de variation"), "{reader}");
             let mut part = Vec::new();
             ureq::get(links["download"].as_str().unwrap())
                 .call()
@@ -2549,8 +2552,9 @@ pub(crate) mod tests {
             assert_eq!(data["totalPages"], 30);
             assert_eq!(data["matchedPage"], 26, "{data}");
             assert_eq!(data["pageFrom"], 26);
-            assert_eq!(data["pageTo"], 30);
-            assert_eq!(data["truncated"], false);
+            assert_eq!(data["pageTo"], 29);
+            assert_eq!(data["nextPageFrom"], 30);
+            assert_eq!(data["truncated"], true);
             assert!(
                 data["text"]
                     .as_str()
@@ -2558,7 +2562,7 @@ pub(crate) mod tests {
                     .contains("Taux de variation"),
                 "{data}"
             );
-            assert!(data.get("pages").is_none());
+            assert_eq!(data["pages"].as_array().unwrap().len(), 4);
             assert!(data.get("file").is_none());
             let images = client
                 .download_file(
@@ -2573,7 +2577,7 @@ pub(crate) mod tests {
                 .unwrap();
             assert_eq!(images["pages"].as_array().unwrap().len(), 2);
             assert!(images.get("file").is_none());
-            assert!(images.get("text").is_none());
+            assert!(images.get("text").is_some());
             assert!(
                 data["outline"]
                     .as_array()
@@ -2724,8 +2728,11 @@ pub(crate) mod tests {
             ..Default::default()
         };
         let fileurl = format!("{url}/pluginfile.php/9/mod_resource/content/0/TD5.txt");
-        let reply =
-            crate::mcp::dispatch_tool(&settings, "moodle_file", &json!({ "fileurl": fileurl }));
+        let reply = crate::mcp::dispatch_tool(
+            &settings,
+            "moodle_file",
+            &json!({ "fileurl": fileurl, "format":"text" }),
+        );
         let request = worker.join().unwrap().remove(0);
         assert!(
             request.starts_with(
@@ -2743,10 +2750,60 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn usable_text_rejects_embedded_font_noise() {
-        let noise = "001\u{0004}\u{0004}\\u0008\\LZdnx\u{0001}\u{0004}".repeat(20);
-        assert!(usable_text(noise).is_none());
-        assert!(usable_text("TD 5 — Calcul différentiel\nExercice 1".into()).is_some());
+    fn document_id_reuses_bytes_after_server_stops_and_cannot_cross_accounts() {
+        let body = b"Cached lecture";
+        let (url, worker) = raw_server(vec![(200, "text/plain".into(), vec![], body.to_vec())]);
+        let mut settings = crate::config::Settings {
+            moodle: Some(crate::config::MoodleSettings {
+                url: Some(url.clone()),
+                token: Some("private-cache-token".into()),
+                allow_write: None,
+            }),
+            ..Default::default()
+        };
+        let first = crate::mcp::dispatch_tool(
+            &settings,
+            "moodle_file",
+            &json!({"fileurl":format!("{url}/pluginfile.php/9/mod_resource/content/0/cache.txt")}),
+        );
+        assert_eq!(first["isError"], false, "{first}");
+        let metadata: Value =
+            serde_json::from_str(first["content"][0]["text"].as_str().unwrap()).unwrap();
+        let id = metadata["documentId"].as_str().unwrap();
+        assert_eq!(worker.join().unwrap().len(), 1); // school listener gone
+        let again = crate::mcp::dispatch_tool(
+            &settings,
+            "moodle_file",
+            &json!({"document_id":id,"format":"text"}),
+        );
+        assert_eq!(again["isError"], false, "{again}");
+        assert!(again["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Cached lecture"));
+        settings.accounts.push(crate::config::Account {
+            id: "second-cache-account".into(),
+            service: "moodle".into(),
+            moodle: settings.moodle.clone(),
+            omnivox: None,
+            brightspace: None,
+            canvas: None,
+        });
+        let other = crate::mcp::dispatch_tool(
+            &settings,
+            "moodle_file",
+            &json!({"account_id":"second-cache-account","document_id":id,"format":"text"}),
+        );
+        assert_eq!(other["isError"], true);
+        settings.disabled_accounts.push("moodle/moodle".into());
+        assert_eq!(
+            crate::mcp::dispatch_tool(
+                &settings,
+                "moodle_file",
+                &json!({"account_id":"moodle","document_id":id})
+            )["isError"],
+            true
+        );
     }
 
     #[test]
@@ -2791,6 +2848,7 @@ pub(crate) mod tests {
     fn mcp_content_attaches_pdf_pages_as_images_without_inlining_them_in_text() {
         let data = json!({
             "filename": "TD5.pdf",
+            "mimeType": "application/pdf",
             "size": 10,
             "text": "Exercice 1 page 452",
             "file": { "filename": "TD5.pdf", "mimeType": "application/pdf", "data": "JVBERg==" },
@@ -2875,11 +2933,15 @@ pub(crate) mod tests {
             )
             .unwrap()
         };
-        let first = read(FileQuery::default());
+        let first = read(FileQuery {
+            format: FileFormat::Text,
+            ..Default::default()
+        });
         assert_eq!(first["totalBlocks"], 3);
         assert_eq!(first["nextPageFrom"], 3);
         assert_eq!(first["blocks"].as_array().unwrap().len(), 2);
         let found = read(FileQuery {
+            format: FileFormat::Text,
             find: Some("needle".into()),
             ..Default::default()
         });
@@ -2890,17 +2952,44 @@ pub(crate) mod tests {
             .contains("[redacted] Needle"));
         assert!(!found.to_string().contains("PRIVATE-TOKEN"));
         assert_eq!(found["truncated"], false);
-        assert!(read_document(
+        let images = read(FileQuery {
+            format: FileFormat::Images,
+            ..Default::default()
+        });
+        assert!(images.get("pages").is_none());
+        assert_eq!(images["totalBlocks"], 3);
+    }
+
+    #[test]
+    fn office_download_is_the_original_not_disconnected_embedded_images() {
+        let png = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]
+            .into_iter()
+            .chain(std::iter::repeat_n(0x41, 3000))
+            .collect::<Vec<_>>();
+        let bytes = crate::document::tests::archive_bytes(&[
+            (
+                "word/document.xml",
+                b"<document><p>Figure in the margin</p></document>".as_slice(),
+            ),
+            ("word/media/image1.png", png.as_slice()),
+        ]);
+        let data = read_document(
             "notes.docx",
             "application/octet-stream",
-            Arc::new(bytes),
-            &FileQuery {
-                format: FileFormat::Images,
-                ..Default::default()
-            },
-            "secret"
+            Arc::new(bytes.clone()),
+            &FileQuery::default(),
+            "secret",
         )
-        .is_err());
+        .unwrap();
+        use base64::Engine;
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD
+                .decode(data["file"]["data"].as_str().unwrap())
+                .unwrap(),
+            bytes
+        );
+        assert!(data.get("pages").is_none());
+        assert!(data.get("blocks").is_none());
     }
 
     #[test]

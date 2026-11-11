@@ -29,7 +29,7 @@ clients over cosmetic renames.
 | IDs | Positive integers when the platform uses numeric IDs; strings when the platform does (Omnivox `course_id` like `2434K5EM.1011`) |
 | Limits | Always bound (`minimum` / `maximum`); clamp server-side too |
 | Pagination | Preserve upstream cursors (`bookmark`, `page`, `nextPageFrom`). Never imply the first page is complete |
-| Files | Never accept raw school cookies/tokens as tool args. Moodle uses `fileurl` from content tools; Brightspace uses `courseid` + file `topicid` |
+| Files | Never accept raw school cookies/tokens as tool args. Initial download: Moodle `fileurl`; Brightspace `courseid` + file `topicid`; Canvas `fileid`; Omnivox category/IDs. Later calls may use the account-scoped `document_id` instead. |
 
 Do **not** rename established keys only for symmetry (`courseid` vs
 `course_id`). Document the platform difference instead.
@@ -70,7 +70,8 @@ every `readOnlyHint:false` tool also carries `destructiveHint:true`,
 |-----|--------|------------------------|
 | “What is due?” | `moodle_deadlines`, `brightspace_deadlines`, `omnivox_deadlines`, `canvas_deadlines` | Combining calendar + assignments + quizzes by hand |
 | Find a TD / file | `moodle_search` or course content + query | Blind full course dumps |
-| Read a PDF/Office doc | `moodle_file` / `brightspace_file` / `omnivox_file` | Generic HTTP fetch of school URLs |
+| Download a document | Existing `*_file` tool with `format=file`; share `links.download` | Generic HTTP fetch of school URLs |
+| Study a PDF/Office doc | Same file tool with `text` or `images` (text + every page image); reuse `document_id` | Treating an original blob/link as proof the model saw its contents |
 | Rare Moodle action | dedicated tool, else `ws_discover` → `ws_call` | `ws_call` for everyday reads |
 | Account routing | Match the person/school in `initialize` instructions or `student_status`, then pass that `account_id` | Guessing which account, mixing course IDs across accounts |
 

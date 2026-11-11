@@ -34,7 +34,7 @@ pub(crate) fn extract(filename: &str, bytes: &[u8]) -> Result<Option<Document>, 
     Ok(Some(result))
 }
 
-fn validate_zip(bytes: &[u8]) -> Result<(), String> {
+pub(crate) fn validate_zip(bytes: &[u8]) -> Result<(), String> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
         .map_err(|_| "Invalid or encrypted Office/OpenDocument archive.".to_string())?;
     if archive.len() > 4096 {
@@ -301,12 +301,21 @@ pub(crate) mod tests {
     use std::io::Write;
 
     pub(crate) fn archive(entries: &[(&str, &str)]) -> Vec<u8> {
+        archive_bytes(
+            &entries
+                .iter()
+                .map(|(name, text)| (*name, text.as_bytes()))
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    pub(crate) fn archive_bytes(entries: &[(&str, &[u8])]) -> Vec<u8> {
         let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
-        for (name, text) in entries {
+        for (name, bytes) in entries {
             writer
                 .start_file(*name, zip::write::SimpleFileOptions::default())
                 .unwrap();
-            writer.write_all(text.as_bytes()).unwrap();
+            writer.write_all(bytes).unwrap();
         }
         writer.finish().unwrap().into_inner()
     }

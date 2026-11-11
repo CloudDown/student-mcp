@@ -1,36 +1,86 @@
 # Student documents and Moodle updates
 
-`moodle_file` and `brightspace_file` share the same local document reader.
+`moodle_file`, `omnivox_file`, `brightspace_file` and `canvas_file` share the same local document reader.
 No university-specific filename or course-code convention is required.
 
 | Format | Reading support |
 | --- | --- |
-| PDF | Original attachment; text/page search and page images with Poppler |
-| Word `.docx`, `.docm` | Main-body text and table cells |
-| PowerPoint `.pptx`, `.pptm` | Slide text and table cells in presentation order (package-number fallback if metadata is absent) |
+| PDF | Study: text by page plus a full page image for every selected page, with Poppler |
+| Word `.docx`, `.docm` | Isolated local PDF conversion; fallback: main-body text and table cells |
+| PowerPoint `.pptx`, `.pptm` | Isolated local PDF conversion; fallback: text and table cells in presentation order |
 | Excel `.xlsx`, `.xlsm`, `.xls` | Sheet names, row numbers, stored cell values |
-| OpenDocument `.odt`, `.odp`, `.ods` | Document text, slides, or sheet cell values |
-| Legacy Word `.doc` | Requires local `antiword` |
-| Legacy PowerPoint `.ppt` | Requires local `catppt` (catdoc package) |
+| OpenDocument `.odt`, `.odp`, `.ods` | PDF conversion for documents/slides; structured cell text for sheets |
+| Legacy Word `.doc` | Isolated PDF conversion; text fallback requires local `antiword` |
+| Legacy PowerPoint `.ppt` | Isolated PDF conversion; text fallback requires local `catppt` |
 | Plain text / CSV | Existing text extraction, depending on the supplied MIME type |
 
-Office extraction is text-only, not a visual rendering. Embedded charts, images,
-equations, formatting, headers/footers and presenter notes may be absent. Export
-to PDF and request page images for visual analysis. Spreadsheet formulas are not
-recalculated: cached values can be stale. Macros and external links are not run.
-Password-protected documents are not supported.
+## Download vs study
 
-Office results contain `blocks` of at most 8,000 characters, at most two per call.
+`format=file` (default) always returns the **original**, with no extraction or
+conversion, including Office files. Share `links.download` if present, never a
+school-internal URL. Links last 3 hours while the app runs; a link/resource does
+not guarantee that a client passes the file contents to its model.
+
+`format=text` and `format=images` both study a PDF window: 4 pages by default,
+8 maximum, page-labeled text (20,000 characters maximum) and **every page image**.
+Vector figures are preserved, not guessed from raster images or text density.
+An incomplete render is an error, not silent omission; retry a smaller window.
+`find` searches the text layer before selecting pages; scans have no searchable
+text unless they already contain a text layer. No OCR or cloud conversion.
+Follow `nextPageFrom` and `textTruncated`; never assume omitted pages were read.
+
+Each response exposes `documentId` and `expiresInSeconds`. Pass that ID back as
+`document_id` to the **same tool/account** instead of the school identifiers.
+Originals and one-time study preparation remain in memory for at most 5 minutes
+(4 originals, 24 MiB total; eviction possible). Re-load from the school after
+expiry or app restart. An ID cannot authorize access to another/disabled account.
+
+## Optional Office conversion
+
+On Linux, system LibreOffice (`/usr/bin/libreoffice` or `soffice`), Bubblewrap and
+`prlimit` enable isolated PDF conversion. The sandbox exposes only system runtime
+files and a private job directory, not the host home or school credentials. It
+has no network, an empty inherited environment, a new profile with macros disabled,
+30-second wall deadline, 25-second CPU limit, 2 GiB address-space limit and
+32 MiB per-file/output-PDF limit. Temporary files are removed after the operation.
+Converted PDFs use the same study path; downloads remain the original Office file.
+Conversion can change pagination/fonts; it is a rendering, not proof of identical
+Microsoft Office layout. External network assets cannot be fetched.
+
+There is **no unsandboxed conversion**. Missing dependencies, unsupported platforms
+or failed conversion fall back to text with `conversion=unavailable` and
+`visualLimitations`: charts, equations, layout, headers/footers and notes may be
+absent. Spreadsheets stay sheet/row/cell text; formulas are not recalculated and
+cached values may be stale. Password-protected documents are unsupported for study.
+
+Fallback Office, spreadsheet and plain-text results contain `blocks` of at most
+8,000 characters, at most two per call.
 `page_from` / `page_to` select **text blocks**, not printed pages or slide numbers.
 Each block includes `sourceUnit` (1-based slide/sheet/document index); the result
 names the unit type. Follow `nextPageFrom` until `truncated` is false. `find`
-locates matching blocks in extracted text. `format=images` requires PDF, not Office.
+locates matching blocks in extracted text. These blocks are not page images,
+even when the requested format was `images`.
 
 The existing 12 MiB download ceiling still applies. ZIP-based documents are
 checked for at most 4096 entries and 32 MiB declared expanded size. Text, slide,
 sheet and cell limits reject oversized results rather than silently omitting them.
 These limits are safeguards, not an OS sandbox for file parsers. Keep dependencies
 and optional legacy extraction utilities updated.
+
+## Verification
+
+`cargo test --offline --lib` covers mixed vector/text PDFs with Poppler, pagination,
+original Office downloads, explicit fallback, numeric CSV, and account-isolated IDs.
+PDF tests need Poppler and skip when it is absent. Optional local checks:
+
+```sh
+cargo test --offline --lib office_sandbox_hides_home_environment_and_host_network -- --ignored
+cargo test --offline --lib office_conversion_renders_a_real_docx -- --ignored
+```
+
+The latter also needs LibreOffice. These tests use synthetic files, no school
+credentials. They do not prove what Claude, ChatGPT or Grok displays: verify each
+client's image/resource handling separately.
 
 ## Moodle tools
 

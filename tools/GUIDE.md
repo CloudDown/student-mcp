@@ -184,7 +184,7 @@ minutes for its OS lock, without launching competing browsers. Cancelling a
 browser sign-in also interrupts its lock wait.
 
 Document links last up to three hours while the app is running. The shared
-store is bounded to 128 links and 24 MiB; when full, new PDFs are attached
+store is bounded to 128 links and 24 MiB; when full, new files are attached
 inline rather than evicting links that were already issued.
 
 `omnivox_deadlines` and `canvas_deadlines` match the Moodle/Brightspace due-work
@@ -394,24 +394,38 @@ student-mcp version
   URLs need the web service token, which is never given to the model. Use
   `moodle_file` with the `fileurl` from `moodle_course_content`; do not fetch
   that URL with a generic HTTP tool. The default `format=file` returns the original
-  PDF resource and a download link when HTTP sharing is available, without running
-  local PDF tools or duplicating the document as text/images. Above 6 MB, HTTP
-  clients receive the download link; stdio still receives the original file.
+  file (PDF, Office or other) and a download link when HTTP sharing is available,
+  without conversion or extraction. Above 6 MiB, sharing-enabled clients receive
+  the download link; without HTTP sharing, the original is still attached.
 
-  If your client cannot consume PDF resources, use `format=text` with
-  `page_from`/`page_to` (20,000 characters maximum), or `format=images` for scans
-  and diagrams (2 pages by default, at most 8). There is no local OCR: the LLM
-  interprets the PDF or the requested images. `find` searches a section/phrase
-  in the text layer. Page/search arguments without a format default to text.
-  Follow `nextPageFrom` when `truncated` is true, or reduce the page range when
-  `textTruncated` is true. Downloads are cached for 60 seconds per account.
+  To **study** a PDF, use `format=text` or `format=images`: both send the
+  extracted text labeled by page **and a full image of every page in the window**,
+  including vector diagrams on text-heavy pages. Default: 4 pages; maximum: 8;
+  text: 20,000 characters per call. If any image cannot be delivered, the call
+  fails explicitly: request a smaller window or the original. No local OCR.
+  `find` searches the text layer and selects a matching window. Page/search
+  arguments without a format imply study mode. Follow `nextPageFrom` when
+  `truncated` is true; reduce the window when `textTruncated` is true.
 
-  Poppler (`pdftotext`, `pdftoppm`, `pdfinfo`, `pdftocairo`) is needed only for
-  requested extraction/rendering. Search results also offer original-file and
-  text links. Localhost links cannot be opened by a remote browser
-  AI; use inline resources or enable the public link.
+  Every file response supplies `documentId`. Reuse it as `document_id` with the
+  same tool and account for later searches/windows, without school file IDs or
+  another download. The in-memory cache lasts up to 5 minutes (4 originals /
+  24 MiB total; early eviction possible). PDF inspection/text extraction and
+  Office conversion are prepared once per cached document, on first study.
+  Reload via the original school IDs after expiry or app restart.
+
+  Word/PowerPoint/OpenDocument documents and slides convert to PDF locally on
+  Linux when system LibreOffice, Bubblewrap and `prlimit` are available. Conversion
+  uses a fresh macro-disabled profile, no host home/environment/network, a
+  30-second deadline and bounded resources. There is no unsandboxed fallback:
+  without conversion, results contain text blocks and explicit `visualLimitations`.
+  Spreadsheets stay sheet/row/cell text (no formula execution); TXT/CSV stay text.
+
+  Poppler (`pdftotext`, `pdftoppm`, `pdfinfo`) is needed only for study.
+  For an original download link request `format=file`. Localhost links cannot be opened by a remote
+  browser AI; use inline resources or enable the public link.
 - **The shared file link says it expired**: links are capability URLs valid for
-  up to three hours (4 files / 24 MiB maximum). Call `moodle_file` again to mint a fresh one. Anyone with the
+  up to three hours (128 files / 24 MiB maximum). Call `moodle_file` again to mint a fresh one. Anyone with the
   link can read that one file until it expires; the Moodle token is never in
   the link.
 - **Claude cannot register with the sign-in service** (`ofid_…` reference):

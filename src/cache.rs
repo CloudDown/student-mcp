@@ -17,6 +17,7 @@ pub(crate) fn start_expiry_worker() {
             let now = Instant::now();
             crate::share::expire(now);
             crate::moodle::download::expire(now);
+            crate::delivery::store::expire(now);
         })
         .is_err()
     {
