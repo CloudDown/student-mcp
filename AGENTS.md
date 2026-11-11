@@ -3,6 +3,25 @@
 Backend Rust + interface web locale + MCP pour Moodle, Omnivox et Brightspace.
 Un dépôt = un commit. Secrets dans `~/.student-mcp.json`, jamais dans git.
 
+## Mémoire de travail
+
+Le contexte de la session sur les documents, la recherche Moodle et les
+optimisations internes est conservé dans [`tools/SESSION-MEMORY.md`](tools/SESSION-MEMORY.md).
+Le lire pour reprendre ces travaux : décisions, contrats, preuves, limites et
+état des changements y sont regroupés. L’état Git indiqué est historique ;
+revérifier le dépôt avant toute modification.
+
+- Priorité utilisateur : retrouver les informations vite et éviter de confondre
+  aperçu/extrait avec lecture complète. Aucun couplage à Polytechnique.
+- Optimisations demandées : mêmes entrées/sorties, classement, erreurs et
+  pagination ; modifications internes mesurées, sans changement visuel ou MCP.
+- `src/services/moodle/research/performance.rs` conserve des empreintes de sorties
+  capturées **avant** optimisation. Ne pas les remplacer pour faire passer une
+  régression. Méthode et mesures : `tools/PERFORMANCE.md`.
+- `coverage` décrit des données transmises/recherchées, jamais une garantie de
+  compréhension du modèle. Pas d’OCR local ou distant ; préparation documentaire
+  locale, conversion Office isolée, aucun repli de conversion non isolé.
+
 ## HTTP scolaire — ne pas refaire cette erreur
 
 Les sites école (surtout `moodle.polymtl.ca`) sont derrière un **WAF AWS**.

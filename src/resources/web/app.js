@@ -962,7 +962,7 @@ document.addEventListener('click',async e=>{
    lightbox.showModal();$('lightbox').dataset.trigger=shot.dataset.lightbox;document.body.classList.add('lightbox-open');$('lightbox').querySelector('[data-lightbox-close]').focus();return
   }
   if(e.target.closest('[data-lightbox-close]')||e.target.id==='lightbox'){$('lightbox').close();return}
-  if(e.target.closest('[data-assistant-choose]')){openAssistant('grok');return}
+  if(e.target.closest('[data-assistant-choose]')){openAssistant('chatgpt');return}
   const guideStep=e.target.closest('[data-guide-step]');if(guideStep&&!state.assistantBusy){assistantJourney.step=Number(guideStep.dataset.guideStep);state.assistantConfirm=false;render();return}
   if(e.target.closest('[data-guide-next],[data-guide-previous]')&&!state.assistantBusy){assistantJourney.step=Math.max(0,Math.min(2,assistantJourney.step+(e.target.closest('[data-guide-next]')?1:-1)));state.assistantConfirm=false;render();$('setup-title')?.focus({preventScroll:true});return}
  const assistant=e.target.closest('[data-assistant]');if(assistant){openAssistant(assistant.dataset.assistant);return}

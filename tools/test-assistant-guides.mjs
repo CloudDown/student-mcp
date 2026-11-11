@@ -69,10 +69,10 @@ try{
   await openGeneral();
   assert.equal(await page.locator('.assistant-picker,.assistant-choice-map').count(),0,'There must be no intermediate choice page');
   assert.equal(await page.locator('.assistant-switcher button').count(),4);
-   assert.equal(await page.locator('.assistant-switcher [aria-pressed="true"]').getAttribute('data-assistant'),'grok');
+   assert.equal(await page.locator('.assistant-switcher [aria-pressed="true"]').getAttribute('data-assistant'),'chatgpt');
    assert.equal(await page.locator('[data-assistant="others"]').count(),0,'The general MCP guide must be removed');
-   assert.equal(await page.locator('.journey-node').count(),3,'The Grok tutorial must open immediately');
-   assert.equal(requests.filter(path=>path.startsWith('/assistant/')).length,0,'Grok must not detect or configure a local assistant');
+   assert.equal(await page.locator('.journey-node').count(),3,'The ChatGPT tutorial must open immediately');
+   assert.equal(requests.filter(path=>path.startsWith('/assistant/')).length,0,'ChatGPT must not detect or configure a local assistant');
   for(const width of [1440,768,390,320]){await page.setViewportSize({width,height:1000});await noOverflow();for(const button of await page.locator('.assistant-switcher button').all()){const box=await button.boundingBox();assert.ok(box.width>=44&&box.height>=44)}await snapshot('general-default-'+width)}
  await page.getByRole('button',{name:'Retour aux services',exact:true}).click();
  await page.setViewportSize({width:1440,height:1000});

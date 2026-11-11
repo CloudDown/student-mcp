@@ -1,7 +1,7 @@
 //! Searchable course metadata and bounded reads of its complete textual details.
 use super::{
-    compact_course_contents, compact_module_files, haystack_matches, leftover_search_tokens,
-    normalize_tokens, plain_text, truncate,
+    compact_course_contents, compact_module_files, leftover_search_tokens, normalize_tokens,
+    plain_text, truncate,
 };
 use serde_json::{json, Value};
 
@@ -378,27 +378,23 @@ fn file_names(module: &Value) -> String {
 }
 
 fn matches(text: &str, tokens: &[String]) -> bool {
+    !tokens.is_empty() && matches_normalized(&normalize_tokens(text), tokens)
+}
+
+fn matches_normalized(hay: &[String], tokens: &[String]) -> bool {
     if tokens.is_empty() {
         return false;
     }
-    let hay = normalize_tokens(text);
     // Keep TD5 → TD Chapitre 5, but do not let that special case ignore "corrigé".
     let td = tokens.iter().any(|token| token == "td")
         && tokens
             .iter()
             .any(|token| token.chars().all(|ch| ch.is_ascii_digit()));
     if td
-        && !haystack_matches(
-            text,
-            &[],
-            &tokens
-                .iter()
-                .filter(|token| {
-                    token.as_str() == "td" || token.chars().all(|ch| ch.is_ascii_digit())
-                })
-                .cloned()
-                .collect::<Vec<_>>(),
-        )
+        && !tokens
+            .iter()
+            .filter(|token| token.chars().all(|ch| ch.is_ascii_digit()))
+            .all(|number| super::td_number_in(hay, number))
     {
         return false;
     }
@@ -416,12 +412,30 @@ fn matches(text: &str, tokens: &[String]) -> bool {
         })
 }
 
+fn field_score(text: &str, tokens: &[String], weight: i64) -> i64 {
+    let hay = normalize_tokens(text);
+    if matches_normalized(&hay, tokens) {
+        weight
+    } else if hay.iter().any(|part| tokens.contains(part)) {
+        weight / 4
+    } else {
+        0
+    }
+}
+
 pub(super) fn search(course: &Value, raw: &Value, query: &str) -> Vec<Value> {
     let tokens = leftover_search_tokens(query, std::slice::from_ref(course));
     let mut hits = Vec::new();
     for section in raw.as_array().into_iter().flatten() {
         let section_name = section["name"].as_str().unwrap_or("");
         let summary = section["summary"].as_str().unwrap_or("");
+        // Fields shared by every attachment are scored only when a hit needs them.
+        let section_scores = std::cell::LazyCell::new(|| {
+            [
+                ("section", field_score(section_name, &tokens, 20)),
+                ("summary", field_score(summary, &tokens, 10)),
+            ]
+        });
         if matches(&format!("{section_name} {summary}"), &tokens) {
             hits.push(json!({"area":"section", "title":section_name, "courseid":course["id"],
                 "sectionid":section["id"], "score":10, "matchedIn":["section"],
@@ -432,9 +446,22 @@ pub(super) fn search(course: &Value, raw: &Value, query: &str) -> Vec<Value> {
             let description = module["description"].as_str().unwrap_or("");
             let inline = module["contentText"].as_str().unwrap_or("");
             let context = format!("{name} {section_name} {summary} {description} {inline}");
-            let files = module["contents"].as_array().cloned().unwrap_or_default();
+            let shared = std::cell::LazyCell::new(|| {
+                let fields = [
+                    ("title", field_score(name, &tokens, 80)),
+                    ("description", field_score(description, &tokens, 40)),
+                    ("inlineContent", field_score(inline, &tokens, 30)),
+                    section_scores[0],
+                    section_scores[1],
+                ];
+                (fields, excerpt(&format!("{description} {inline}"), &tokens))
+            });
+            let files = module["contents"]
+                .as_array()
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
             let candidates = if files.is_empty() {
-                vec![Value::Null]
+                std::slice::from_ref(&Value::Null)
             } else {
                 files
             };
@@ -445,22 +472,12 @@ pub(super) fn search(course: &Value, raw: &Value, query: &str) -> Vec<Value> {
                 }
                 let mut matched = Vec::new();
                 let mut score = 1;
-                for (field, text, weight) in [
-                    ("filename", filename, 100),
-                    ("title", name, 80),
-                    ("description", description, 40),
-                    ("inlineContent", inline, 30),
-                    ("section", section_name, 20),
-                    ("summary", summary, 10),
-                ] {
-                    if matches(text, &tokens) {
+                for (field, weight) in
+                    std::iter::once(("filename", field_score(filename, &tokens, 100)))
+                        .chain(shared.0.iter().copied())
+                {
+                    if weight > 0 {
                         score += weight;
-                        matched.push(field);
-                    } else if normalize_tokens(text)
-                        .iter()
-                        .any(|part| tokens.contains(part))
-                    {
-                        score += weight / 4;
                         matched.push(field);
                     }
                 }
@@ -468,7 +485,7 @@ pub(super) fn search(course: &Value, raw: &Value, query: &str) -> Vec<Value> {
                     "section":section_name, "sectionid":section["id"], "moduleid":module["id"],
                     "component":module["modname"], "url":module["url"], "score":score, "matchedIn":matched,
                     "area":if file.is_null() {"activity"} else {"file"},
-                    "snippet":excerpt(&format!("{description} {inline}"), &tokens),
+                    "snippet":shared.1,
                     "contentTruncated":true, "fileContentsRead":false});
                 if !file.is_null() {
                     hit["filename"] = file["filename"].clone();
@@ -507,7 +524,13 @@ pub(super) fn detail(
     sectionid: Option<i64>,
     page: usize,
 ) -> Result<Value, String> {
-    let mut blocks = Vec::new();
+    // Count all blocks, but materialize only the four returned by this call.
+    // Keep overflow validation after source selection to preserve error precedence.
+    let mut window = DetailWindow {
+        from: page.saturating_mul(4),
+        total: 0,
+        blocks: Vec::new(),
+    };
     let mut found = false;
     for section in raw.as_array().into_iter().flatten() {
         if sectionid.is_some_and(|id| section["id"].as_i64() != Some(id)) {
@@ -515,12 +538,11 @@ pub(super) fn detail(
         }
         if moduleid.is_none() {
             found = true;
-            append_blocks(
-                &mut blocks,
+            window.append(
                 "section",
                 section,
-                section["id"].clone(),
-                section["summary"].as_str().unwrap_or(""),
+                &section["id"],
+                &[section["summary"].as_str().unwrap_or("")],
             );
         }
         for module in section["modules"].as_array().into_iter().flatten() {
@@ -528,16 +550,15 @@ pub(super) fn detail(
                 continue;
             }
             found = true;
-            append_blocks(
-                &mut blocks,
+            window.append(
                 "activity",
                 module,
-                section["id"].clone(),
-                &format!(
-                    "{}\n{}",
+                &section["id"],
+                &[
                     module["description"].as_str().unwrap_or(""),
-                    module["contentText"].as_str().unwrap_or("")
-                ),
+                    "\n",
+                    module["contentText"].as_str().unwrap_or(""),
+                ],
             );
         }
     }
@@ -545,11 +566,11 @@ pub(super) fn detail(
         return Err("No section/activity matches these IDs in this course.".into());
     }
     let from = page.checked_mul(4).ok_or("page is too large.")?;
-    if from >= blocks.len() && page > 0 {
+    if from >= window.total && page > 0 {
         return Err("page is past the last detail block.".into());
     }
-    let total = blocks.len();
-    let selected = blocks.into_iter().skip(from).take(4).collect::<Vec<_>>();
+    let total = window.total;
+    let selected = window.blocks;
     let end = from + selected.len();
     Ok(
         json!({"courseid":courseid,"moduleid":moduleid,"sectionid":sectionid,"page":page,
@@ -560,22 +581,41 @@ pub(super) fn detail(
     )
 }
 
-fn append_blocks(blocks: &mut Vec<Value>, kind: &str, source: &Value, section: Value, text: &str) {
-    let chars = text.chars().collect::<Vec<_>>();
-    let chunks = if chars.is_empty() {
-        vec![&[][..]]
-    } else {
-        chars.chunks(8_000).collect::<Vec<_>>()
-    };
-    for (part, chunk) in chunks.iter().enumerate() {
-        blocks.push(
-            json!({"kind":kind,"id":source["id"],"title":source["name"],"sectionid":section,
-            "part":part + 1,"parts":chunks.len(),"text":chunk.iter().collect::<String>(),
+struct DetailWindow {
+    from: usize,
+    total: usize,
+    blocks: Vec<Value>,
+}
+
+impl DetailWindow {
+    fn append(&mut self, kind: &str, source: &Value, section: &Value, text: &[&str]) {
+        let length: usize = text.iter().map(|part| part.chars().count()).sum();
+        let parts = length.div_ceil(8_000).max(1);
+        let start = self.total;
+        self.total += parts;
+        let first = self.from.saturating_sub(start).min(parts);
+        let end = self.from.saturating_add(4).saturating_sub(start).min(parts);
+        if first >= end {
+            return;
+        }
+        let mut chars = text
+            .iter()
+            .flat_map(|part| part.chars())
+            .skip(first * 8_000);
+        for part in first..end {
+            let text = chars.by_ref().take(8_000).collect::<String>();
+            self.blocks.push(
+                json!({"kind":kind,"id":source["id"],"title":source["name"],"sectionid":section,
+            "part":part + 1,"parts":parts,"text":text,
             "files":source.get("contents").cloned().unwrap_or(json!([])),"url":source["url"],
             "richContentOmitted":source["richContentOmitted"],"links":source["links"]}),
-        );
+            );
+        }
     }
 }
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod performance;
