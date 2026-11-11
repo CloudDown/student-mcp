@@ -78,7 +78,7 @@ class InstallTests(unittest.TestCase):
                     self.assertEqual(result.returncode, 0, result.stderr.decode())
                 if not conflict:
                     self.assertTrue(cli.is_symlink())
-                    self.assertEqual(cli.resolve(), installed)
+                    self.assertEqual(cli.resolve(), installed.resolve())
                     command = "student-mcp" if in_path else str(cli)
                     version = subprocess.run([command, "--version"], env=environment, capture_output=True, check=True)
                     self.assertIn(b"fixture CLI --version", version.stdout)
