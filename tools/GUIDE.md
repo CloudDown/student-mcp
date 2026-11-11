@@ -232,6 +232,9 @@ Metadata persists beside the configuration in `~/.student-mcp.index/` (or the
 configuration path with an `.index` extension). It contains course text and file
 references, not downloaded PDF/Office bytes or login credentials. It is private
 to the local user, is not part of git and can be removed while the app is closed.
+The 15-minute lifetime is a freshness limit, not an erasure deadline. On index
+writes, snapshots older than one day are reclaimed; at most 16 account snapshots
+of 24 MiB each are retained. Old credential namespaces can be evicted early.
 
 The index is built as tools are used: no background full-school crawl, external
 LLM, graph viewer or new MCP tool is required. `coverage` describes what a response

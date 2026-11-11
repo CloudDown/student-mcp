@@ -83,6 +83,19 @@ impl Index {
         }
         let snapshot = self.snapshot.lock().ok()?;
         let record = snapshot.as_ref()?.records.get(key)?;
+        let entries = record.value.as_array()?;
+        if entries.iter().any(|entry| entry["id"].as_i64().is_none()) {
+            return None;
+        }
+        if key.starts_with("course:")
+            && entries.iter().any(|section| {
+                section["modules"].as_array().is_none_or(|modules| {
+                    modules.iter().any(|module| module["id"].as_i64().is_none())
+                })
+            })
+        {
+            return None;
+        }
         if record.fetched > now || now - record.fetched >= TTL {
             return None;
         }
@@ -169,6 +182,9 @@ impl Index {
             .filter_map(Result::ok)
             .filter_map(|entry| {
                 let path = entry.path();
+                if path == self.path() {
+                    return None;
+                }
                 let stem = path.file_stem()?.to_str()?;
                 if path.extension()?.to_str()? != "json"
                     || stem.len() != 64
@@ -190,9 +206,10 @@ impl Index {
             })
             .collect::<Vec<_>>();
         files.sort_by_key(|(_, time)| *time);
-        let excess = files.len().saturating_sub(16);
+        // The snapshot just written is retained separately; keep at most 15 others.
+        let excess = files.len().saturating_sub(15);
         for (i, (path, modified)) in files.into_iter().enumerate() {
-            if path != self.path() && (i < excess || now.saturating_sub(modified) > 86_400) {
+            if i < excess || now.saturating_sub(modified) > 86_400 {
                 let _ = fs::remove_file(path);
             }
         }
@@ -242,7 +259,7 @@ mod tests {
             let index = make("private-token", "a");
             assert!(index.put(
                 "course:1",
-                &json!([{"id":1,"description":"Consigne"}]),
+                &json!([{"id":1,"description":"Consigne","modules":[]}]),
                 1000
             ));
             assert!(make("private-token", "a").get("course:1", 1001).is_some());
@@ -265,6 +282,37 @@ mod tests {
                     0o700
                 );
             }
+        });
+    }
+
+    #[test]
+    fn capacity_is_bounded_even_when_all_writes_share_the_same_timestamp() {
+        crate::config::tests::with_temp_config(|| {
+            let now = crate::services::moodle::unix_now();
+            let mut last = None;
+            for id in 0..20 {
+                let index =
+                    Index::for_account("https://school.test", "token", &id.to_string()).unwrap();
+                assert!(index.put("courses", &json!([]), now));
+                last = Some(index);
+            }
+            let index = last.unwrap();
+            assert!(index.get("courses", now).is_some());
+            let count = fs::read_dir(&index.root)
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "json"))
+                .count();
+            assert_eq!(count, 16);
+        });
+    }
+
+    #[test]
+    fn malformed_snapshot_values_are_cache_misses_not_empty_course_proofs() {
+        crate::config::tests::with_temp_config(|| {
+            let index = Index::for_account("https://school.test", "token", "a").unwrap();
+            assert!(index.put("course:1", &json!([{"id":1,"modules":"unexpected"}]), 1000));
+            assert!(index.get("course:1", 1001).is_none());
         });
     }
 

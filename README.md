@@ -107,6 +107,8 @@ You should be able to go from install to that question in a few minutes on Windo
 
 School passwords are not stored. The public link is a secret: anyone who has it can use your enabled tools. The HTTPS relay (`srv.us`) can technically read traffic. Prefer the local link or stdio if you do not want that. [Privacy and relay](tools/GUIDE.md#4-automatic-public-link-for-web-ai).
 
+Moodle course names, descriptions and file references are cached privately on this computer to avoid repeated school requests. The index is account-specific, is reused for up to 15 minutes and contains no downloaded PDF/Office files. It can persist across app restarts; see [search and reading](tools/GUIDE.md#finding-moodle-sources-and-reading-all-instructions) for refresh, retention and removal. Search excerpts are not a complete reading of your instructions or files.
+
 Technical maintenance, packaging and signing: [tools/GUIDE.md](tools/GUIDE.md).
 
 MIT code; [GPL-3.0+ Moodle catalogue](src/services/moodle/catalog/LICENSE.md).

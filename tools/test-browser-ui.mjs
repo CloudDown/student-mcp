@@ -80,43 +80,48 @@ try {
   state.browser_login={...state.browser_login,state:'connected'};
   await page.evaluate(()=>refresh());
   await page.getByRole('button',{name:'Edit sign-in',exact:true}).waitFor();
-  await page.getByRole('button',{name:'Rename account',exact:true}).click();
+   await page.locator('.account-row.active [data-account]').click();
   const profileName=page.getByLabel('Account name',{exact:true});
   assert.equal(await profileName.getAttribute('maxlength'),'80');
   await profileName.fill('Léa');
   rejectRename=true;
-  await page.getByRole('button',{name:'Save',exact:true}).click();
+   await profileName.press('Enter');
   await page.getByRole('alert').filter({hasText:'Rename failed'}).waitFor();
   assert.equal(await profileName.inputValue(),'Léa');
   rejectRename=false;
-  await page.getByRole('button',{name:'Save',exact:true}).click();
+   await profileName.press('Enter');
   await page.locator('.account-row-title').filter({hasText:'Léa'}).waitFor();
   const cardBounds=await page.locator('.manage-card').boundingBox();
-  for(const action of ['rename','check']){
+   for(const action of ['account-info','check']){
     const bounds=await page.locator(`[data-action="${action}"]`).boundingBox();
     assert.ok(bounds.x>=cardBounds.x&&bounds.x+bounds.width<=cardBounds.x+cardBounds.width,`${action} is clipped`);
   }
   assert.deepEqual(actions.at(-1),{action:'rename_account',service:'brightspace',id:'fixture',name:'Léa'});
   assert.equal(await profileName.count(),0);
-  await page.getByRole('button',{name:'Rename account',exact:true}).click();
+   await page.locator('.account-row.active [data-account]').click();
   await profileName.fill('Not saved');
-  await page.getByRole('button',{name:'Cancel',exact:true}).click();
+   await profileName.press('Escape');
   assert.equal(state.accounts[0].name,'Léa');
-  await page.getByRole('button',{name:'Rename account',exact:true}).click();
+   await page.locator('.account-row.active [data-account]').click();
   await profileName.fill('Connected <img src=x onerror=alert(1)>');
-  await page.getByRole('button',{name:'Save',exact:true}).click();
+   await profileName.press('Enter');
   await page.locator('.account-row-title').filter({hasText:'Connected <img src=x onerror=alert(1)>'}).waitFor();
   assert.equal(await page.locator('.account-row-title img').count(),0);
   // A second profile on the same platform is chosen by its label, not just its host.
   state.accounts.push({id:'second',service:'brightspace',url:'https://school.brightspace.com',name:'Alex'});
   await page.evaluate(()=>refresh());
   await page.getByRole('button',{name:'Alex',exact:true}).click();
-  await page.getByRole('button',{name:'Rename account',exact:true}).click();
+  await page.locator('.account-row.active [data-account]').click();
   assert.equal(await profileName.inputValue(),'Alex');
   await profileName.fill('');
-  await page.getByRole('button',{name:'Save',exact:true}).click();
+  await profileName.press('Tab');
   await page.waitForFunction(()=>!document.getElementById('profile-name-form'));
   assert.equal(state.accounts[1].name,null);
+  await page.getByRole('button',{name:'Account information',exact:true}).click();
+  await page.locator('#account-info').waitFor();
+  assert.ok((await page.locator('#account-info').innerText()).includes('https://school.brightspace.com'));
+  await page.getByRole('button',{name:'Account information',exact:true}).click();
+  assert.equal(await page.locator('#account-info').count(),0);
   state.accounts.splice(1);
   await page.evaluate(async()=>{state.accountId='fixture';await refresh()});
   await page.getByRole('button',{name:'Edit sign-in',exact:true}).click();

@@ -394,3 +394,16 @@ fn new_mcp_selectors_are_validated_before_school_requests() {
         assert!(!response.to_string().contains("Cannot reach"), "{response}");
     }
 }
+
+#[test]
+fn html_references_and_media_limits_are_visible_not_silently_flattened() {
+    let raw = snapshot(&contents("<p>Lire <a href=\"https://school.test/pluginfile.php/guide.pdf?token=secret&amp;id=3\">le guide</a></p><img src=\"/figure.svg\">" )).unwrap();
+    let full = detail(42, &raw, Some(7), None, 0).unwrap();
+    assert_eq!(full["blocks"][0]["richContentOmitted"], true);
+    assert_eq!(
+        full["blocks"][0]["links"][0]["url"],
+        "https://school.test/pluginfile.php/guide.pdf?id=3"
+    );
+    assert!(!full.to_string().contains("secret"));
+    assert!(full["note"].as_str().unwrap().contains("Relative"));
+}
