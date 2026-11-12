@@ -14,7 +14,7 @@ The builds are unsigned, so Windows or macOS may warn. Do not turn off system pr
 
 ## 1. Open
 
-<p align="center"><img src="tools/screens/home.png" width="100%" alt="student-mcp 0.8.2 home screen with school search, four learning platforms, link settings and assistant setup" /></p>
+<p align="center"><img src="tools/screens/home.png" width="100%" alt="student-mcp 0.8.4 home screen with school search, four learning platforms, link settings and assistant setup" /></p>
 
 A local page opens. Closing the tab leaves a tray icon.
 

@@ -451,3 +451,16 @@ Retours du test réel et correctifs :
   devoirs ouverts ou dus sous 14 jours. `full_status=true` pour tout.
 - Cache court des statuts (3 min), budget de 10 s, et `statusesMissing` indique
   les statuts omis et comment les obtenir.
+
+## 14. Version 0.8.4
+
+Release 0.8.3 (`v0.8.3`, commit `5f71ffc`) contenait les sous-sections, le
+filtrage de groupes par `uservisible` et les poids de notes. 0.8.4 regroupe
+ensuite : `cmid` accepté par `moodle_assignment_status` (résolution via
+`core_course_get_course_module`), `query` avec `detail=full`, liens de fichiers
+à 24 h par défaut (`link_ttl_hours`, 1–168), et statut de remise chargé
+seulement pour les travaux ouverts ou dus sous 14 jours (`full_status`).
+
+Version 0.8.4 dans `Cargo.toml`/`Cargo.lock`, `README.md`, `CHANGELOG.md` et les
+captures README. Un seul tag `v0.8.4` ; la CI publie `setup.exe`, `dmg`, Linux
+x64/arm64 et `SHA256SUMS.txt`, release marquée Latest.
