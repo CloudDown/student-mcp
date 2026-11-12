@@ -3,6 +3,15 @@
 Notable changes, newest first. Downloads for each release are on the
 [releases page](https://github.com/CloudDown/student-mcp/releases).
 
+## Unreleased
+
+- **File links survive restarts.** Temporary `/s/...` links are also saved in the
+  private folder `~/.student-mcp.links/` (`0700`, one `0600` file per link) and
+  restored at startup, so restarting the app or installing an update no longer
+  breaks a link before its deadline. Each link keeps its original expiry; expired,
+  orphaned, symlinked or oversized entries are deleted instead of served, and the
+  128-link / 24 MiB bounds still apply.
+
 ## 0.8.4 — 2026-11-12
 
 - **Assignment id tolerance.** `moodle_assignment_status` accepts a course module

@@ -183,9 +183,7 @@ close it afterwards. Concurrent calls for the same profile wait up to two
 minutes for its OS lock, without launching competing browsers. Cancelling a
 browser sign-in also interrupts its lock wait.
 
-Document links last 24 hours by default while the app is running (`link_ttl_hours` in `~/.student-mcp.json`, 1–168 hours). The shared
-store is bounded to 128 links and 24 MiB; when full, new files are attached
-inline rather than evicting links that were already issued.
+Document links last 24 hours by default while the app is running (`link_ttl_hours` in `~/.student-mcp.json`, 1–168 hours). Unexpired links are also saved in the private folder `~/.student-mcp.links/` (mode `0700`, one `0600` file per link), so restarting the app or updating it no longer invalidates them; each link keeps its original deadline and its files are deleted at expiry. The store is bounded to 128 links and 24 MiB; when full, new files are attached inline rather than evicting links that were already issued.
 
 `omnivox_deadlines` and `canvas_deadlines` match the Moodle/Brightspace due-work
 tools: a sorted window (default 60 days), `partial`/`errors` when a course
@@ -517,7 +515,11 @@ command there is preserved.
   For an original download link request `format=file`. Localhost links cannot be opened by a remote
   browser AI; use inline resources or enable the public link.
 - **The shared file link says it expired**: links are capability URLs valid for
-  the configured lifetime (24 hours by default; 128 files / 24 MiB maximum). Call `moodle_file` again to mint a fresh one. Anyone with the
+  the configured lifetime (24 hours by default; 128 files / 24 MiB maximum). They
+  survive app restarts and updates while unexpired, because they are stored in
+  `~/.student-mcp.links/` and deleted at expiry. A link still fails before its
+  deadline only if that folder was removed, the configuration points elsewhere,
+  or the address changed. Call `moodle_file` again to mint a fresh one. Anyone with the
   link can read that one file until it expires; the Moodle token is never in
   the link.
 - **Gemini web says the MCP server could not be reached**: Gemini's custom

@@ -79,6 +79,8 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
     if let Some(error) = settings.config_error {
         return Err(error);
     }
+    // Restore unexpired links so a restart does not invalidate them.
+    crate::share::init_default();
     let gateway = settings.gateway();
     let instance = crate::config::config_path().with_extension("ui.json");
     let listener = match crate::http::bind(port.unwrap_or(gateway.port)) {

@@ -242,7 +242,7 @@ fn original_file(document: &store::Document) -> Value {
         result["file"] = json!({"filename": filename, "mimeType": mime, "data": base64::engine::general_purpose::STANDARD.encode(bytes.as_slice())});
     }
     let delivery = if result.get("links").is_some() {
-        "Share links.download only when the user asks for a downloadable link; do not paste it into a chat by default. Never substitute an internal school URL. localOnly links work only on this computer. Links expire after the configured lifetime (24 hours by default) and require the app to stay running."
+        "Share links.download only when the user asks for a downloadable link; do not paste it into a chat by default. Never substitute an internal school URL. localOnly links work only on this computer. Links expire after the configured lifetime (24 hours by default), stay valid across app restarts until then, and must be opened while the app runs."
     } else {
         "The original file is attached as an MCP resource. No download link is available in this response; do not invent one or substitute an internal school URL."
     };

@@ -19,7 +19,7 @@ No university-specific filename or course-code convention is required.
 
 `format=file` (default) always returns the **original**, with no extraction or
 conversion, including Office files. Share `links.download` if present, never a
-school-internal URL. Links last 24 hours by default (`link_ttl_hours` in the config, 1–168) while the app runs; a link/resource does
+school-internal URL. Links last 24 hours by default (`link_ttl_hours` in the config, 1–168) while the app runs, and survive restarts until that deadline; unexpired links are kept in the private folder `~/.student-mcp.links/` and deleted at expiry. A link/resource does
 not guarantee that a client passes the file contents to its model.
 
 `format=text` and `format=images` both study a PDF window: 4 pages by default,

@@ -464,3 +464,31 @@ seulement pour les travaux ouverts ou dus sous 14 jours (`full_status`).
 Version 0.8.4 dans `Cargo.toml`/`Cargo.lock`, `README.md`, `CHANGELOG.md` et les
 captures README. Un seul tag `v0.8.4` ; la CI publie `setup.exe`, `dmg`, Linux
 x64/arm64 et `SHA256SUMS.txt`, release marquée Latest.
+
+## 15. Liens de fichiers persistants (après v0.8.4)
+
+Demande : un lien `/s/…` annoncé « valide 24 h » renvoyait `410 File expired`
+après un redémarrage de l’application, car `share::FILES` vivait uniquement en
+mémoire. Le tampon est maintenant aussi écrit dans un dossier privé.
+
+- `src/share.rs` : `Artifact.expires_at` (échéance absolue en secondes Unix) en
+  plus de l’`Instant` en mémoire ; `init`/`init_default` chargent le dossier,
+  `persist` écrit `{id}.data`, `{id}.text` puis `{id}.json` en dernier (renommage
+  atomique, `0600`, dossier `0700`), `forget`/`expire` suppriment les trois.
+- Dossier : `config_path().with_extension("links")` → `~/.student-mcp.links/`,
+  comme `.index` et `.browsers`. Aucun secret scolaire n’y est écrit : uniquement
+  les octets déjà publiés et les métadonnées du lien.
+- Au chargement : échéance d’origine conservée, entrées expirées, corrompues,
+  liées par symlink, orphelines ou hors limites supprimées au lieu d’être
+  servies ; mêmes bornes 128 fichiers / 24 MiB, les liens à échéance la plus
+  lointaine gardés.
+- Écriture disque non bloquante pour le lien : un dossier indisponible ou plein
+  laisse le lien mémoire fonctionner jusqu’à l’arrêt.
+- `src/web.rs` appelle `share::init_default()` au démarrage ; le worker
+  d’expiration existant nettoie aussi les fichiers.
+- Tests : `restart_keeps_unexpired_links_and_expiry_removes_their_files`,
+  `restore_drops_expired_orphan_and_symlinked_entries`, plus les tests existants
+  de capacité/TTL. `cargo test` : 302 passés, 13 ignorés ; `cargo clippy
+  --all-targets` propre.
+- Limite : un lien ne répond pas pendant que l’application ou l’ordinateur est
+  arrêté ; un lien `localOnly` dépend du port local courant.
