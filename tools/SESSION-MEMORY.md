@@ -392,11 +392,15 @@ Tests ajoutés : pagination/groupes/URLs/dates, taille bornée d'une grosse vue,
 poids de notes et absence de poids, journal (rédaction, permissions, rotation),
 validation de `group_only`.
 
-## 13. Version 1.2.0
+## 13. Version 0.8.2
 
 Les fonctionnalités du commit `f3fec5b` étaient publiées sous le tag `v0.8.1`
-déjà existant. Nouvelle version : **1.2.0**, sans réécrire ni supprimer aucun
-tag ou release. `Cargo.toml`/`Cargo.lock`, `README.md`, `CHANGELOG.md` et les
-captures README portent la version 1.2.0 ; le reste (UI, installeurs, DMG,
-`setup.exe`) lit `CARGO_PKG_VERSION`. Tag unique `v1.2.0` : la CI construit et
-publie `setup.exe`, `dmg`, Linux x64/arm64 et `SHA256SUMS.txt`.
+déjà existant. Une première tentative les a étiquetées `v1.2.0` : erreur de
+numérotation, release et tag supprimés, remplacés par **0.8.2** (pas de
+réécriture d'historique, `v0.8.1` et antérieurs intacts).
+
+`Cargo.toml`/`Cargo.lock`, `README.md`, `CHANGELOG.md` et les captures README
+portent la version 0.8.2 ; le reste (UI, installeurs, DMG, `setup.exe`) lit
+`CARGO_PKG_VERSION`. Tag unique `v0.8.2` : la CI construit et publie
+`setup.exe`, `dmg`, Linux x64/arm64 et `SHA256SUMS.txt`, et marque la release
+Latest.

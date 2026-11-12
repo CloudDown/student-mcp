@@ -34,7 +34,7 @@ The installer adds student-mcp to the application menu. Windows or macOS may war
 
 Launch it from the Start menu, Applications, or your app launcher. A local page opens. Closing the tab leaves a tray icon; quit from there when you are done.
 
-<p align="center"><img src="tools/screens/home.png" width="100%" alt="student-mcp 1.2.0 home screen with school search, four learning platforms, link settings and assistant setup" /></p>
+<p align="center"><img src="tools/screens/home.png" width="100%" alt="student-mcp 0.8.2 home screen with school search, four learning platforms, link settings and assistant setup" /></p>
 
 ## 2. Connect your school
 
@@ -111,7 +111,7 @@ Moodle course names, descriptions and file references are cached privately on th
 
 Incoming MCP requests are logged locally in `~/.student-mcp.mcp.log` with the method, redacted path, status and user-agent. Connector tokens, headers and message bodies are never logged.
 
-## What's new in 1.2.0
+## What's new in 0.8.2
 
 - **Bounded course navigation.** `moodle_course_content` returns at most 6 sections per page, 8 activities per section and 6 files per activity, with `nextPage`, `moduleCount`/`fileCount` and explicit `truncated` flags instead of silent omissions.
 - **Groups and section links.** Course views expose a direct Moodle `url` per section, your groups and the course groups, plus `group`/`yourGroup` labels; `group_only=true` hides sections marked for another group.

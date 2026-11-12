@@ -3,9 +3,10 @@
 Notable changes, newest first. Downloads for each release are on the
 [releases page](https://github.com/CloudDown/student-mcp/releases).
 
-## 1.2.0 — 2026-11-11
+## 0.8.2 — 2026-11-12
 
-First 1.x release. The 0.x tags and releases stay published as they were.
+Continuous numbering with the earlier 0.8.x releases. The `v1.2.0` tag and
+release were withdrawn: this is 0.8.2, and `0.8.1` and older tags are unchanged.
 
 ### Added
 

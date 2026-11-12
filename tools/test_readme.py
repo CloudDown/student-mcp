@@ -23,7 +23,7 @@ class ReadmeTests(unittest.TestCase):
         self.assertTrue(re.search(r"Connect with browser", README))
         self.assertNotIn("Mail transfer", README)
         self.assertNotIn("SPEC.md", README)
-        self.assertIn("1.2.0", (ROOT / "tools" / "capture-readme.mjs").read_text(encoding="utf-8"))
+        self.assertIn("0.8.2", (ROOT / "tools" / "capture-readme.mjs").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

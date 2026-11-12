@@ -29,7 +29,7 @@ await page.route('http://student.test/**',async route=>{
   if(path==='/app.css')return route.fulfill({contentType:'text/css',body:css});
   if(path==='/app.js')return route.fulfill({contentType:'text/javascript',body:js});
   if(path==='/state')return route.fulfill({json:state});
-  if(path==='/update')return route.fulfill({json:{available:false,current:'1.2.0',latest:'v1.2.0',checking:false,checked:true}});
+  if(path==='/update')return route.fulfill({json:{available:false,current:'0.8.2',latest:'v0.8.2',checking:false,checked:true}});
   if(path==='/assistants')return route.fulfill({json:{assistants:[
     {assistant:'claude',name:'Claude Desktop',detected:true,configured:true,reload:'restart'},
     {assistant:'opencode',name:'OpenCode',detected:true,configured:false,reload:'automatic'},
