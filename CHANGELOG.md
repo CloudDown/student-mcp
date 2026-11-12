@@ -17,6 +17,10 @@ Notable changes, newest first. Downloads for each release are on the
 - **Configurable file-link lifetime.** Temporary `/s/...` links now last 24 hours
   by default. Set `link_ttl_hours` in the config (1–168) to change it; responses
   report `expiresInSeconds`/`expiresInMinutes`.
+- **Lighter assignment status.** `moodle_assignments` queries submission status
+  only for open assignments and those due within 14 days by default, with a
+  3-minute cache and a 10-second budget. `full_status=true` requests every status.
+  `statusesMissing` lists omitted entries and how to obtain them.
 
 ## 0.8.3 — 2026-11-12
 

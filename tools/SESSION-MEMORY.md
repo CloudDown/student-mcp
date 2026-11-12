@@ -444,3 +444,10 @@ Retours du test réel et correctifs :
 - `detail=full` accepte `query` et renvoie le détail complet des éléments trouvés.
 - Liens `/s/` : 24 h par défaut, réglable par `link_ttl_hours` (1–168), exposé en
   secondes/minutes. Pas de tag ni release 0.8.4 (changement de processus).
+
+### v0.8.4 — devoirs allégés
+
+- `moodle_assignments` : un seul appel de liste ; statut seulement pour les
+  devoirs ouverts ou dus sous 14 jours. `full_status=true` pour tout.
+- Cache court des statuts (3 min), budget de 10 s, et `statusesMissing` indique
+  les statuts omis et comment les obtenir.

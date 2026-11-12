@@ -118,16 +118,13 @@ fn assignments_summary_omits_large_bodies_and_preserves_dates_warnings_and_ids()
         {"id":3,"name":"Closed","cutoffdate":now - 1,"allowsubmissionsfromdate":0},
         {"id":4,"name":"Unknown"}]}],"warnings":[{"warningcode":"courseignored","message":"Some course unavailable"}]}),
         json!({"lastattempt":{"submission":{"status":"submitted","timemodified":123},"cansubmit":false}}),
-        json!({"lastattempt":{"submission":{"status":"new"},"cansubmit":true}}),
-        json!({"lastattempt":{"submission":{"status":"draft"},"cansubmit":true}}),
-        json!({"lastattempt":{"submission":{"status":"reopened"},"cansubmit":true}}),
     ]);
     let client = MoodleClient::new(&MoodleConfig {
         base_url: url,
         token: "secret".into(),
         allow_write: false,
     });
-    let result = client.assignments(Some(&[42])).unwrap();
+    let result = client.assignments(Some(&[42]), false).unwrap();
     assert_eq!(result["count"], 4);
     assert_eq!(result["assignments"][0]["title"], "Title");
     assert_eq!(result["assignments"][0]["course"], "Course");
@@ -136,8 +133,16 @@ fn assignments_summary_omits_large_bodies_and_preserves_dates_warnings_and_ids()
     assert_eq!(result["assignments"][0]["status"], "open");
     assert_eq!(result["assignments"][0]["submissionStatus"], "submitted");
     assert_eq!(result["assignments"][0]["submittedAt"], 123);
-    assert_eq!(result["assignments"][1]["submissionStatus"], "new");
-    assert_eq!(result["assignments"][2]["submissionStatus"], "draft");
+    assert_eq!(result["assignments"][3]["submissionStatusSkipped"], true);
+    assert_eq!(result["assignments"][1]["submissionStatusSkipped"], true);
+    assert_eq!(result["assignments"][2]["submissionStatusSkipped"], true);
+    assert_eq!(result["statusesQueried"], 1);
+    assert_eq!(result["statusesMissing"].as_array().unwrap().len(), 3);
+    assert_eq!(result["statusComplete"], false);
+    assert!(result["statusesMissing"][0]["how"]
+        .as_str()
+        .unwrap()
+        .contains("full_status"));
     assert_eq!(result["assignments"][1]["status"], "not-open");
     assert!(result["assignments"][1]["dueDate"].is_null());
     assert_eq!(result["assignments"][2]["status"], "closed");
@@ -145,7 +150,7 @@ fn assignments_summary_omits_large_bodies_and_preserves_dates_warnings_and_ids()
     assert_eq!(result["partial"], true);
     assert!(result.to_string().len() < 2500);
     let requests = worker.join().unwrap();
-    assert_eq!(requests.len(), 5, "one list plus one status per assignment");
+    assert_eq!(requests.len(), 2, "one list plus one relevant status");
     assert!(requests[0].contains("courseids%5B0%5D=42"));
 }
 
@@ -157,7 +162,7 @@ fn assignments_malformed_reply_is_not_an_empty_success() {
         token: "fixture".into(),
         allow_write: false,
     });
-    assert!(client.assignments(None).is_err());
+    assert!(client.assignments(None, false).is_err());
     worker.join().unwrap();
 }
 
@@ -210,4 +215,53 @@ fn assignment_status_explains_the_difference_instead_of_leaking_invalidrecord() 
     assert!(error.contains("assignment instance id"), "{error}");
     assert!(!error.contains("invalidrecord"), "{error}");
     worker.join().unwrap();
+}
+
+#[test]
+fn assignments_full_status_queries_every_assignment() {
+    let now = unix_now();
+    let (url, worker) = tests::server(vec![
+        json!({"courses":[{"id":42,"fullname":"Course","assignments":[
+            {"id":1,"name":"Past","duedate":now - 9999,"cutoffdate":now - 9999},
+            {"id":2,"name":"Future","allowsubmissionsfromdate":now + 9999,"duedate":now + 99999}]}]}),
+        json!({"lastattempt":{"submission":{"status":"submitted"},"cansubmit":false}}),
+        json!({"lastattempt":{"submission":{"status":"new"},"cansubmit":false}}),
+    ]);
+    let client = MoodleClient::new(&MoodleConfig {
+        base_url: url,
+        token: "full-status-fixture".into(),
+        allow_write: false,
+    });
+    let result = client.assignments(None, true).unwrap();
+    assert_eq!(result["fullStatus"], true);
+    assert_eq!(result["statusesQueried"], 2);
+    assert_eq!(result["statusComplete"], true);
+    assert_eq!(result["assignments"][0]["submissionStatus"], "submitted");
+    assert_eq!(result["assignments"][1]["submissionStatus"], "new");
+    worker.join().unwrap();
+}
+
+#[test]
+fn assignment_statuses_are_cached_for_a_short_time() {
+    let now = unix_now();
+    let (url, worker) = tests::server(vec![
+        json!({"courses":[{"id":42,"fullname":"Course","assignments":[
+            {"id":1,"name":"Open","allowsubmissionsfromdate":now - 10,"duedate":now + 100}]}]}),
+        json!({"lastattempt":{"submission":{"status":"new"},"cansubmit":true}}),
+        json!({"courses":[{"id":42,"fullname":"Course","assignments":[
+            {"id":1,"name":"Open","allowsubmissionsfromdate":now - 10,"duedate":now + 100}]}]}),
+    ]);
+    let client = MoodleClient::new(&MoodleConfig {
+        base_url: url,
+        token: "cache-fixture".into(),
+        allow_write: false,
+    });
+    assert_eq!(
+        client.assignments(None, false).unwrap()["statusesQueried"],
+        1
+    );
+    let second = client.assignments(None, false).unwrap();
+    assert_eq!(second["statusesQueried"], 1);
+    assert_eq!(second["statusesFromCache"], 1);
+    assert_eq!(worker.join().unwrap().len(), 3);
 }

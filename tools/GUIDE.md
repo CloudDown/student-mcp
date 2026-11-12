@@ -240,6 +240,12 @@ call. Omit selectors to read the course's available metadata text. Attachments
 `detail=full` can take `query` directly: it returns the complete text of the
 matching activities/sections in the same call, with `nextPage` pagination.
 
+`moodle_assignments` lists assignments in one call. Submission status is fetched
+only for open assignments and those due within 14 days, with a 3-minute cache and
+a 10-second budget; `statusesMissing` explains anything omitted and how to obtain
+it. Use `full_status=true` for every assignment or `moodle_assignment_status`
+with one `assignid` for details.
+
 `moodle_resources` adds the real `sectionid` and section name to each page,
 file, URL, folder and book, including resources inside a subsection. With
 `courseid`, `moodle_grades` reports Moodle item weights (from grade items or the

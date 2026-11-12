@@ -3,9 +3,10 @@ use crate::delivery::{filename_from, read_document, FileQuery};
 #[cfg(test)]
 use crate::delivery::{mcp_content_for_file, pdf::*, FileFormat};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::io::Read;
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use url::Url;
 pub(crate) mod catalog;
 pub(crate) mod download;
@@ -17,6 +18,18 @@ mod research;
 const MOBILE_SERVICE: &str = "moodle_mobile_app";
 const TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_FILE_BYTES: u64 = 12 * 1024 * 1024;
+const STATUS_TTL: Duration = Duration::from_secs(3 * 60);
+const STATUS_BUDGET: Duration = Duration::from_secs(10);
+const STATUS_CACHE_MAX: usize = 128;
+const STATUS_WINDOW_DAYS: i64 = 14;
+
+struct StatusEntry {
+    key: [u8; 32],
+    snapshot: Value,
+    expires: Instant,
+}
+
+static STATUS_CACHE: Mutex<Vec<StatusEntry>> = Mutex::new(Vec::new());
 use crate::redact::{scrub, scrub_secret};
 
 fn agent() -> ureq::Agent {
@@ -892,7 +905,11 @@ impl MoodleClient {
         Ok(result)
     }
 
-    pub fn assignments(&self, courseids: Option<&[i64]>) -> Result<Value, String> {
+    pub fn assignments(
+        &self,
+        courseids: Option<&[i64]>,
+        full_status: bool,
+    ) -> Result<Value, String> {
         let raw = self.call("mod_assign_get_assignments", &courseids_payload(courseids))?;
         let courses = raw["courses"]
             .as_array()
@@ -923,40 +940,99 @@ impl MoodleClient {
                     "cutoffDate":(closes > 0).then_some(closes)}));
             }
         }
-        // Fill per-user submission status. Bound the extra calls and report omissions.
-        let checked = assignments.len().min(60);
+        // Default mode asks Moodle only for the statuses that can change an answer:
+        // open assignments and those due in the next 14 days. Cached for 3 minutes.
+        let started = Instant::now();
+        let mut missing = Vec::new();
+        let mut queried = 0usize;
+        let mut cached = 0usize;
         let mut errors = Vec::new();
-        for assignment in assignments.iter_mut().take(checked) {
+        for assignment in &mut assignments {
             let Some(assignid) = assignment["id"].as_i64() else {
                 continue;
             };
-            match self.call(
-                "mod_assign_get_submission_status",
-                &json!({ "assignid": assignid }),
-            ) {
-                Ok(raw) => {
-                    let snapshot = submission_snapshot(&raw);
+            if !full_status && !assignment_needs_status(assignment, now) {
+                assignment["submissionStatusSkipped"] = json!(true);
+                assignment["submissionStatusReason"] = json!(
+                    "Outside the default status window: not open and not due within 14 days. Pass full_status=true or call moodle_assignment_status with this id."
+                );
+                missing.push(
+                    json!({"assignid": assignid, "reason": "outside-default-window",
+                    "how": "full_status=true or moodle_assignment_status with assignid"}),
+                );
+                continue;
+            }
+            if started.elapsed() >= STATUS_BUDGET {
+                assignment["submissionStatusSkipped"] = json!(true);
+                assignment["submissionStatusReason"] = json!(
+                    "Moodle did not answer within the 10-second status budget. Call moodle_assignment_status with this id for the missing status."
+                );
+                missing.push(json!({"assignid": assignid, "reason": "time-budget",
+                    "how": "moodle_assignment_status with assignid"}));
+                continue;
+            }
+            queried += 1;
+            match self.cached_submission_snapshot(assignid) {
+                Ok((snapshot, from_cache)) => {
+                    if from_cache {
+                        cached += 1;
+                    }
                     assignment["submissionStatus"] = snapshot["submissionStatus"].clone();
                     assignment["submittedAt"] = snapshot["timeSubmitted"].clone();
                     assignment["canSubmit"] = snapshot["canSubmit"].clone();
                 }
                 Err(error) => {
                     assignment["submissionStatusError"] = json!(error);
+                    assignment["submissionStatusReason"] =
+                        json!("Moodle did not return this status. Retry or call moodle_assignment_status with this id.");
                     errors.push(assignid);
+                    missing.push(json!({"assignid": assignid, "reason": "error",
+                        "how": "moodle_assignment_status with assignid"}));
                 }
-            }
-        }
-        if assignments.len() > checked {
-            for assignment in assignments.iter_mut().skip(checked) {
-                assignment["submissionStatusSkipped"] = json!(true);
             }
         }
         let warnings = raw["warnings"].as_array().cloned().unwrap_or_default();
         Ok(json!({"count":assignments.len(),"assignments":assignments,
+            "fullStatus": full_status,
+            "statusesQueried": queried,
+            "statusesFromCache": cached,
+            "statusesMissing": missing,
+            "statusComplete": missing.is_empty(),
             "partial":!warnings.is_empty() || !errors.is_empty(),
             "warnings":warnings,
             "submissionStatusErrors":errors,
-            "note":"status is the scheduled window from Moodle dates; submissionStatus is the current attempt state. Submission status was queried for at most 60 assignments; skipped/error entries say so. Use moodle_assignment_status with id as assignid for grading details. Full instructions: moodle_course_content detail=full with cmid as moduleid."}))
+            "note":"status is the scheduled window from Moodle dates. By default, submissionStatus is fetched only for open assignments and those due within 14 days, with a 3-minute cache and a 10-second budget. statusesMissing lists what was not fetched and how to obtain it (full_status=true or moodle_assignment_status). Use moodle_assignment_status with id as assignid for grading details. Full instructions: moodle_course_content detail=full with cmid as moduleid."}))
+    }
+
+    fn cached_submission_snapshot(&self, assignid: i64) -> Result<(Value, bool), String> {
+        let key: [u8; 32] =
+            Sha256::digest(format!("{}\0{}\0{assignid}", self.base_url, self.token).as_bytes())
+                .into();
+        if let Ok(mut cache) = STATUS_CACHE.lock() {
+            let now = Instant::now();
+            cache.retain(|entry| entry.expires > now);
+            if let Some(entry) = cache.iter().find(|entry| entry.key == key) {
+                return Ok((entry.snapshot.clone(), true));
+            }
+        }
+        let raw = self.call(
+            "mod_assign_get_submission_status",
+            &json!({ "assignid": assignid }),
+        )?;
+        let snapshot = submission_snapshot(&raw);
+        if let Ok(mut cache) = STATUS_CACHE.lock() {
+            let now = Instant::now();
+            cache.retain(|entry| entry.expires > now);
+            if cache.len() >= STATUS_CACHE_MAX {
+                cache.remove(0);
+            }
+            cache.push(StatusEntry {
+                key,
+                snapshot: snapshot.clone(),
+                expires: now + STATUS_TTL,
+            });
+        }
+        Ok((snapshot, false))
     }
 
     /// Resolve an assignment id, accepting a course module id (cmid) when Moodle
@@ -1794,6 +1870,15 @@ fn looks_like_invalid_id(error: &str) -> bool {
     ]
     .iter()
     .any(|needle| error.contains(needle))
+}
+
+fn assignment_needs_status(assignment: &Value, now: i64) -> bool {
+    if assignment["status"] == "open" {
+        return true;
+    }
+    assignment["dueDate"]
+        .as_i64()
+        .is_some_and(|due| due > now && due <= now + STATUS_WINDOW_DAYS * 86_400)
 }
 
 fn submission_snapshot(raw: &Value) -> Value {

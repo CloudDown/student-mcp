@@ -118,9 +118,12 @@ client's image/resource handling separately.
 - `moodle_assignment_status`: `assignid` is the assignment instance id; a course
   module id (`cmid`) is also accepted and resolved. Unknown or non-assignment
   modules return a clear id explanation instead of Moodle's raw error.
-- `moodle_assignments`: fills `submissionStatus` for at most 60 assignments and
-  reports skipped/errored entries. `moodle_assignment_status` returns a coherent
-  `status`, `timeSubmitted` only for submitted attempts, and `canSubmitReason`.
+- `moodle_assignments`: one list call fills dates/status. By default it fetches
+  `submissionStatus` only for open assignments and those due within 14 days, with
+  a 3-minute cache and a 10-second budget; `full_status=true` checks all.
+  `statusesMissing` names omitted entries and how to obtain them.
+  `moodle_assignment_status` returns a coherent `status`, `timeSubmitted` only for
+  submitted attempts, and `canSubmitReason`.
 - `moodle_deadlines`: `include_expired=true` adds items already due within the
   same day window. The response states the exact `windowStart`/`windowEnd`.
 
