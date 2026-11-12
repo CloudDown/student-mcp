@@ -117,6 +117,10 @@ fn assignments_summary_omits_large_bodies_and_preserves_dates_warnings_and_ids()
         {"id":2,"cmid":12,"name":"Future","duedate":0,"allowsubmissionsfromdate":now + 99},
         {"id":3,"name":"Closed","cutoffdate":now - 1,"allowsubmissionsfromdate":0},
         {"id":4,"name":"Unknown"}]}],"warnings":[{"warningcode":"courseignored","message":"Some course unavailable"}]}),
+        json!({"lastattempt":{"submission":{"status":"submitted","timemodified":123},"cansubmit":false}}),
+        json!({"lastattempt":{"submission":{"status":"new"},"cansubmit":true}}),
+        json!({"lastattempt":{"submission":{"status":"draft"},"cansubmit":true}}),
+        json!({"lastattempt":{"submission":{"status":"reopened"},"cansubmit":true}}),
     ]);
     let client = MoodleClient::new(&MoodleConfig {
         base_url: url,
@@ -130,7 +134,10 @@ fn assignments_summary_omits_large_bodies_and_preserves_dates_warnings_and_ids()
     assert_eq!(result["assignments"][0]["cmid"], 11);
     assert_eq!(result["assignments"][0]["dueDate"], now + 10);
     assert_eq!(result["assignments"][0]["status"], "open");
-    assert!(result["assignments"][0]["submissionStatus"].is_null());
+    assert_eq!(result["assignments"][0]["submissionStatus"], "submitted");
+    assert_eq!(result["assignments"][0]["submittedAt"], 123);
+    assert_eq!(result["assignments"][1]["submissionStatus"], "new");
+    assert_eq!(result["assignments"][2]["submissionStatus"], "draft");
     assert_eq!(result["assignments"][1]["status"], "not-open");
     assert!(result["assignments"][1]["dueDate"].is_null());
     assert_eq!(result["assignments"][2]["status"], "closed");
@@ -138,11 +145,7 @@ fn assignments_summary_omits_large_bodies_and_preserves_dates_warnings_and_ids()
     assert_eq!(result["partial"], true);
     assert!(result.to_string().len() < 2500);
     let requests = worker.join().unwrap();
-    assert_eq!(
-        requests.len(),
-        1,
-        "Summary does not query individual submissions"
-    );
+    assert_eq!(requests.len(), 5, "one list plus one status per assignment");
     assert!(requests[0].contains("courseids%5B0%5D=42"));
 }
 

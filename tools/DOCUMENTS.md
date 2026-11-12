@@ -97,17 +97,28 @@ client's image/resource handling separately.
 - `moodle_course_content`: `detail=overview` is a bounded navigation view (6
   sections per page, 8 activities and 6 files per source) with `nextPage`,
   `moduleCount`/`fileCount` and truncation flags. Sections include a direct
-  Moodle `url` and, when available, the student's groups plus `group`/`yourGroup`
-  labels; `group_only=true` hides sections plainly labelled for another group.
+  Moodle `url` and, when available, the student's groups plus
+  `uservisible`/`groupRestricted` flags; `group_only=true` filters with Moodle's
+  own `uservisible` and availability group/grouping conditions, never by section
+  name. Nested
+  `mod_subsection` activities are returned under `subsections` and are searchable.
   Files include `timemodified` when Moodle reports it. `detail=full` reads
   complete metadata text in paginated blocks. Optional `moduleid`/`sectionid`
   select a source; follow `nextPage` for all text. Media and linked resources are
   not implicitly read. Recognized absolute links are listed;
   `richContentOmitted` and the source URL expose the remaining limits.
 - `moodle_grades`: with `courseid`, reports each item's Moodle weight
-  (`weightraw`/`weightformatted`) and Moodle's own course total. If the gradebook
-  API returns no weights, `weightsAvailable=false` and the response says the
-  weighted total is unavailable instead of inventing one.
+  (`weightraw`/`weightformatted`) and Moodle's own course total. When grade items
+  omit weights, the Moodle user report table is consulted; `weightsSource` names
+  the source. If both return none, `weightsAvailable=false` and the response says
+  the weighted total is unavailable instead of inventing one.
+- `moodle_resources`: includes `sectionid` and the section name for every item,
+  including resources inside a subsection.
+- `moodle_assignments`: fills `submissionStatus` for at most 60 assignments and
+  reports skipped/errored entries. `moodle_assignment_status` returns a coherent
+  `status`, `timeSubmitted` only for submitted attempts, and `canSubmitReason`.
+- `moodle_deadlines`: `include_expired=true` adds items already due within the
+  same day window. The response states the exact `windowStart`/`windowEnd`.
 
 - `moodle_assignments`: bounded summary of visible assignments (title, course,
   due/cutoff dates, scheduled submission window). It does not fetch each

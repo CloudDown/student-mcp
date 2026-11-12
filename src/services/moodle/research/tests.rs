@@ -9,22 +9,107 @@ fn groups() -> Value {
 }
 
 #[test]
-fn overview_paginates_marks_groups_links_sections_and_keeps_file_dates() {
+fn subsections_are_nested_and_searchable_and_detail_reads_their_activities() {
+    let raw = snapshot(&json!([
+        {"id":1,"section":1,"name":"TD","modules":[
+            {"id":10,"modname":"subsection","instance":77,"name":"TD 5","uservisible":true},
+            {"id":11,"modname":"resource","name":"Plan","uservisible":true}]},
+        {"id":2,"section":2,"component":"mod_subsection","itemid":77,"name":"TD 5",
+            "modules":[{"id":12,"modname":"resource","name":"Énoncé TD5",
+                "description":"Faire les exercices.","uservisible":true,
+                "contents":[{"filename":"td5.pdf","fileurl":"https://school.test/td5.pdf"}]}]}
+    ]))
+    .unwrap();
+    let flat = raw.as_array().unwrap();
+    assert_eq!(flat.len(), 1, "the delegated section is not duplicated");
+    assert_eq!(
+        flat[0]["modules"][0]["subsections"][0]["modules"][0]["id"],
+        12
+    );
+    let view = overview(
+        42,
+        &raw,
+        None,
+        &groups(),
+        false,
+        0,
+        "https://school.test",
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        view["sections"][0]["modules"][0]["subsections"][0]["name"],
+        "TD 5"
+    );
+    assert_eq!(
+        view["sections"][0]["modules"][0]["subsections"][0]["modules"][0]["id"],
+        12
+    );
+    let hits = search(&course(), &raw, "exercices");
+    assert_eq!(hits[0]["moduleid"], 12);
+    assert_eq!(hits[0]["subsection"], "TD 5");
+    let found = detail(
+        42,
+        &raw,
+        Some(12),
+        None,
+        0,
+        &groups(),
+        "https://school.test",
+    )
+    .unwrap();
+    assert!(found["blocks"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("Faire les exercices"));
+    let subsection = detail(
+        42,
+        &raw,
+        Some(10),
+        None,
+        0,
+        &groups(),
+        "https://school.test",
+    )
+    .unwrap();
+    assert!(subsection["blocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|block| block["text"]
+            .as_str()
+            .unwrap()
+            .contains("Faire les exercices")));
+}
+
+#[test]
+fn overview_paginates_filters_group_restrictions_links_sections_and_keeps_file_dates() {
     let sections = (0..8).map(|i| {
-        let name = if i == 0 { "Groupe 1 - TP" } else if i == 1 { "Groupe 2 - TP" } else { "Commun" };
-        json!({"id":i + 1,"section":i + 1,"name":format!("{name} {i}"),"summary":"Résumé",
+        let hidden = i == 1;
+        json!({"id":i + 1,"section":i + 1,"name":format!("Semaine {i}"),"summary":"Résumé",
             "modules":[{"id":100 + i,"name":"TD 5","description":"Consigne",
+                "uservisible":!hidden,
+                "availability":if hidden { json!("{\"op\":\"&\",\"c\":[{\"type\":\"group\",\"id\":8}]}") } else { Value::Null },
                 "contents":[{"filename":"td.pdf","fileurl":"https://school.test/f","timemodified":1700000000}]}]})
     }).collect::<Vec<_>>();
     let raw = snapshot(&json!(sections)).unwrap();
-    let first = overview(42, &raw, None, &groups(), false, 0, "https://school.test").unwrap();
+    let first = overview(
+        42,
+        &raw,
+        None,
+        &groups(),
+        false,
+        0,
+        "https://school.test",
+        None,
+    )
+    .unwrap();
     assert_eq!(first["count"], 6);
     assert_eq!(first["truncated"], true);
     assert_eq!(first["nextPage"], 1);
-    assert_eq!(first["sections"][0]["group"]["name"], "Groupe 1");
-    assert_eq!(first["sections"][0]["group"]["yourGroup"], true);
-    assert_eq!(first["sections"][1]["group"]["yourGroup"], false);
-    assert!(first["sections"][2]["group"].is_null());
+    assert_eq!(first["sections"][0]["uservisible"], true);
+    assert_eq!(first["sections"][1]["modules"][0]["groupRestricted"], true);
+    assert_eq!(first["sections"][1]["modules"][0]["uservisible"], false);
     assert_eq!(
         first["sections"][0]["url"],
         "https://school.test/course/view.php?id=42&section=1"
@@ -33,16 +118,62 @@ fn overview_paginates_marks_groups_links_sections_and_keeps_file_dates() {
         first["sections"][0]["modules"][0]["files"][0]["timemodified"],
         1700000000
     );
-    let last = overview(42, &raw, None, &groups(), false, 1, "https://school.test").unwrap();
+    let last = overview(
+        42,
+        &raw,
+        None,
+        &groups(),
+        false,
+        1,
+        "https://school.test",
+        None,
+    )
+    .unwrap();
     assert_eq!(last["count"], 2);
     assert_eq!(last["nextPage"], Value::Null);
-    let mine = overview(42, &raw, None, &groups(), true, 0, "https://school.test").unwrap();
-    assert!(mine["sections"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|section| section["group"]["yourGroup"].as_bool() != Some(false)));
-    assert!(overview(42, &raw, None, &groups(), false, 2, "https://school.test").is_err());
+    let mine = overview(
+        42,
+        &raw,
+        None,
+        &groups(),
+        true,
+        0,
+        "https://school.test",
+        None,
+    )
+    .unwrap();
+    assert_eq!(mine["totalSections"], 7);
+    assert!(mine["sections"].as_array().unwrap().iter().all(|section| {
+        section["modules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|module| module["uservisible"].as_bool() == Some(true))
+    }));
+    let only = overview(
+        42,
+        &raw,
+        None,
+        &groups(),
+        false,
+        0,
+        "https://school.test",
+        Some(3),
+    )
+    .unwrap();
+    assert_eq!(only["count"], 1);
+    assert_eq!(only["sections"][0]["id"], 3);
+    assert!(overview(
+        42,
+        &raw,
+        None,
+        &groups(),
+        false,
+        2,
+        "https://school.test",
+        None
+    )
+    .is_err());
 }
 
 #[test]
@@ -58,7 +189,17 @@ fn overview_stays_bounded_for_a_large_multi_group_course() {
         })
         .collect::<Vec<_>>();
     let raw = snapshot(&json!(sections)).unwrap();
-    let view = overview(42, &raw, None, &groups(), false, 0, "https://school.test").unwrap();
+    let view = overview(
+        42,
+        &raw,
+        None,
+        &groups(),
+        false,
+        0,
+        "https://school.test",
+        None,
+    )
+    .unwrap();
     let size = serde_json::to_vec(&view).unwrap().len();
     assert!(size < 60_000, "overview must stay bounded, got {size}");
     assert_eq!(view["sections"][0]["moduleCount"], 30);
@@ -126,6 +267,7 @@ fn title_filters_keep_related_files_and_overview_explicitly_reports_omissions() 
         false,
         0,
         "https://school.test",
+        None,
     )
     .unwrap();
     assert_eq!(
@@ -212,7 +354,17 @@ fn td_number_does_not_override_other_query_terms() {
 fn inline_html_and_decoded_math_are_preserved_without_double_html_parsing() {
     let raw = snapshot(&json!([{"id":1,"name":"Cours", "summary":"x &lt; y",
         "modules":[{"id":7,"name":"Analyse", "contents":[{"type":"content","content":"<p>Condition x &lt; y et unicité</p>"}]}]}])).unwrap();
-    let view = overview(42, &raw, None, &groups(), false, 0, "https://school.test").unwrap();
+    let view = overview(
+        42,
+        &raw,
+        None,
+        &groups(),
+        false,
+        0,
+        "https://school.test",
+        None,
+    )
+    .unwrap();
     assert_eq!(view["sections"][0]["summary"], "x < y");
     assert_eq!(
         view["sections"][0]["modules"][0]["inlineContentAvailable"],
@@ -249,22 +401,16 @@ fn warm_search_makes_no_school_requests_and_explicit_refresh_replaces_the_snapsh
             .with_index("a", false)
             .search("PHS0102 quantique", 0, None)
             .unwrap();
-        assert_eq!(
-            cold["coverage"]["coursesExamined"][0]["index"]["status"],
-            "fresh"
-        );
+        assert_eq!(cold["coverage"]["freshCourses"], 1);
         let warm = MoodleClient::new(&config)
             .with_index("a", false)
             .search("PHS0102 quantique", 0, None)
             .unwrap();
-        assert_eq!(
-            warm["coverage"]["coursesExamined"][0]["index"]["status"],
-            "cached"
-        );
+        assert_eq!(warm["coverage"]["cachedCourses"], 1);
         assert_eq!(warm["results"], cold["results"]);
         let fresh = MoodleClient::new(&config)
             .with_index("a", true)
-            .course_content(42, None, false, 0)
+            .course_content(42, None, false, 0, None)
             .unwrap();
         assert!(fresh["sections"][0]["modules"][0]["description"]
             .as_str()
@@ -280,7 +426,7 @@ fn warm_search_makes_no_school_requests_and_explicit_refresh_replaces_the_snapsh
             .contains("actualisée"));
         assert!(MoodleClient::new(&config)
             .with_index("a", true)
-            .course_content(42, None, false, 0)
+            .course_content(42, None, false, 0, None)
             .is_err()); // no stale success
         assert_eq!(worker.join().unwrap().len(), 7); // cold 3, warm 0, refresh 1 + 2 groups, failed refresh 1
     });
@@ -346,22 +492,10 @@ fn a_broad_search_visits_all_course_windows() {
         };
         let client = MoodleClient::new(&config).with_index("a", false);
         let first = client.search("quantique", 0, None).unwrap();
-        assert_eq!(
-            first["coverage"]["coursesExamined"]
-                .as_array()
-                .unwrap()
-                .len(),
-            8
-        );
+        assert_eq!(first["coverage"]["coursesExamined"], 8);
         assert_eq!(first["continuation"]["page"], 1);
         let last = client.search("quantique", 1, None).unwrap();
-        assert_eq!(
-            last["coverage"]["coursesExamined"]
-                .as_array()
-                .unwrap()
-                .len(),
-            2
-        );
+        assert_eq!(last["coverage"]["coursesExamined"], 2);
         assert!(last["continuation"].is_null());
         assert_eq!(worker.join().unwrap().len(), 12);
     });
@@ -491,6 +625,28 @@ fn mcp_overview_then_full_detail_reuses_the_same_account_snapshot() {
         assert!(page > 0);
         assert_eq!(worker.join().unwrap().len(), 3);
     });
+}
+
+#[test]
+fn a_bulk_courseids_argument_is_not_reported_as_a_missing_courseid() {
+    let settings = crate::config::Settings {
+        moodle: Some(crate::config::MoodleSettings {
+            url: Some("http://127.0.0.1:0".into()),
+            token: Some("fixture".into()),
+            allow_write: None,
+        }),
+        ..Default::default()
+    };
+    let response = crate::mcp::dispatch_tool(
+        &settings,
+        "moodle_course_content",
+        &json!({"courseids":[1,2]}),
+    );
+    assert_eq!(response["isError"], true);
+    assert!(response["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("courseids is accepted by bulk tools"));
 }
 
 #[test]

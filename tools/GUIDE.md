@@ -195,7 +195,8 @@ holidays stay on `omnivox_calendar`. Canvas merges assignments, Classic Quizzes
 and upcoming-events, and de-duplicates assignment calendar rows.
 
 `moodle_deadlines` reports `partial` and per-source `errors` when some sources
-fail. Action events are paged (up to 500 per call); a remaining cursor is returned
+fail. `include_expired=true` returns items already due inside the same day
+window (for example, this week's past items). Action events are paged (up to 500 per call); a remaining cursor is returned
 as `actionEventsNextAfterEventId` for `ws_call` with
 `core_calendar_get_action_events_by_timesort`. The upcoming-calendar source
 remains subject to the school's own calendar window.
@@ -214,7 +215,9 @@ are capped at 40 per window; `offset` retrieves the rest. `page` selects the nex
 course window in the default `source=auto` mode. Use `source=global` to search
 Moodle's upstream index instead; in that mode `page` is the upstream result page.
 `partial`/`errors` report failed sources. No match is not proof of absence when
-coverage is incomplete. This is **not a full-text search inside every PDF**.
+coverage is incomplete. PDF contents are **not searched**, and no PDF text cache
+is consulted: `pdfTextSearched=false` says so. Read a PDF with `moodle_file`
+first if you need to search inside it.
 
 `moodle_course_content` defaults to a bounded navigation overview: at most six
 sections per page, eight activities per section and six files per activity, with
@@ -223,16 +226,23 @@ sections per page, eight activities per section and six files per activity, with
 (`course/view.php?id=…&section=…`). Each file carries `timemodified` when Moodle
 reports it.
 
-The response also includes the student's **groups** (`core_group_get_course_user_groups`)
-and the course groups. Sections/activities whose names plainly contain a group
-label are marked with `group` and `yourGroup`. `group_only=true` hides sections
-marked for another group; unmarked sections stay visible. Group data can be
-unavailable or partial: labels are navigation hints, never proof of an access
-restriction. Description previews and section summaries explicitly report
+Subsections (`mod_subsection`, Moodle 4.3+) appear as `subsections` under their
+parent activity; their activities are searchable and readable like normal ones.
+The response also includes the student's **groups**
+(`core_group_get_course_user_groups`) and the course groups. `group_only=true`
+filters with Moodle's own `uservisible` and standard availability
+`group`/`grouping` conditions: it never infers a group from section names. Group
+data can be unavailable or partial; the response reports that instead of guessing. Description previews and section summaries explicitly report
 truncation. To read all textual instructions, use `detail=full`, optionally with
 `moduleid` or `sectionid`, then follow `nextPage` until null. This returns up to 4
 blocks of 8,000 characters per
 call. Omit selectors to read the course's available metadata text. Attachments
+`moodle_resources` adds the real `sectionid` and section name to each page,
+file, URL, folder and book, including resources inside a subsection. With
+`courseid`, `moodle_grades` reports Moodle item weights (from grade items or the
+user report table), `weightsSource` and the course total; if Moodle reports no
+weights, `weightsAvailable=false` and no weight is invented.
+
 still require the appropriate file tool and its page windows. Recognized absolute
 HTML links are listed but not fetched; `richContentOmitted` flags media, layout or
 references that require the school page or source files.

@@ -404,3 +404,27 @@ portent la version 0.8.2 ; le reste (UI, installeurs, DMG, `setup.exe`) lit
 `CARGO_PKG_VERSION`. Tag unique `v0.8.2` : la CI construit et publie
 `setup.exe`, `dmg`, Linux x64/arm64 et `SHA256SUMS.txt`, et marque la release
 Latest.
+
+## 13. Mise à jour v0.8.3
+
+Retours du test réel et correctifs :
+
+- Sous-sections `mod_subsection` : les sections déléguées (`component`, `itemid`)
+  sont rattachées au module parent, exposées sous `subsections`, et parcourues par
+  la recherche, l'aperçu et `detail=full`.
+- `group_only` : filtre selon `uservisible` et les conditions d'availability
+  `group`/`grouping` de Moodle. Les noms de sections ne servent plus à deviner un
+  groupe (`group`/`yourGroup` supprimés).
+- `moodle_resources` : `sectionid` et nom de section réels, y compris dans une
+  sous-section.
+- Notes : repli sur `gradereport_user_get_grades_table` quand les éléments
+  n'exposent pas de poids ; `weightsSource`, et absence explicite si Moodle ne
+  fournit rien.
+- Devoirs : `submissionStatus` rempli (max 60 appels), statut/`timeSubmitted`/
+  `canSubmit` cohérents avec `canSubmitReason`.
+- Échéances : `include_expired=true` inclut les éléments échus dans la fenêtre.
+- Recherche : métadonnées de couverture compactées ; `pdfTextSearched=false` et
+  note explicite (aucun cache texte PDF consulté).
+- `sectionid` accepté en mode overview ; `courseids` ne produit plus l'erreur
+  « fournir un courseid ».
+- Version 0.8.3, tests ajoutés pour chaque point.

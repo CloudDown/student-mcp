@@ -37,11 +37,13 @@ impl Index {
     pub fn for_account(base: &str, token: &str, account: &str) -> Option<Self> {
         // Unit fixtures must never touch real configuration or real index files.
         #[cfg(test)]
-        crate::config::tests::override_config_path()?;
+        let root = crate::config::tests::override_config_path()?.with_extension("index");
+        #[cfg(not(test))]
+        let root = crate::config::config_path().with_extension("index");
         let digest = Sha256::digest(serde_json::to_vec(&(base, token, account)).ok()?);
         let key = digest.iter().map(|byte| format!("{byte:02x}")).collect();
         let mut index = Self {
-            root: crate::config::config_path().with_extension("index"),
+            root,
             key,
             snapshot: std::sync::Mutex::new(None),
         };

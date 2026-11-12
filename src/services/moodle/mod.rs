@@ -399,9 +399,19 @@ impl MoodleClient {
     }
 
     /// Upcoming deadlines from assignments, quizzes and the Moodle calendar/action feed.
-    pub fn deadlines(&self, days: i64, courseids: Option<Vec<i64>>) -> Result<Value, String> {
+    pub fn deadlines(
+        &self,
+        days: i64,
+        courseids: Option<Vec<i64>>,
+        include_expired: bool,
+    ) -> Result<Value, String> {
         let days = days.clamp(1, 365);
         let now = unix_now();
+        let start = if include_expired {
+            now.saturating_sub(days * 86_400)
+        } else {
+            now
+        };
         let until = now + days * 86_400;
         let filter = courseids_payload(courseids.as_deref());
         let mut errors = Vec::new();
@@ -430,7 +440,7 @@ impl MoodleClient {
         for page in 0..10 {
             let actions = read_source(
                 "core_calendar_get_action_events_by_timesort",
-                &json!({"timesortfrom": now.saturating_sub(7 * 86_400),
+                &json!({"timesortfrom": start,
                     "timesortto": until, "limitnum": 50, "aftereventid": cursor}),
                 "events",
             );
@@ -492,7 +502,7 @@ impl MoodleClient {
                     .get("duedate")
                     .and_then(Value::as_i64)
                     .unwrap_or(0);
-                if due <= 0 || due < now || due > until {
+                if due <= 0 || due < start || due > until {
                     continue;
                 }
                 let id = assignment.get("id").and_then(Value::as_i64).unwrap_or(0);
@@ -534,7 +544,7 @@ impl MoodleClient {
             } else {
                 0
             };
-            if time <= 0 || time < now || time > until {
+            if time <= 0 || time < start || time > until {
                 continue;
             }
             let id = quiz.get("id").and_then(Value::as_i64).unwrap_or(0);
@@ -568,7 +578,7 @@ impl MoodleClient {
                 .or_else(|| event.get("timestart"))
                 .and_then(Value::as_i64)
                 .unwrap_or(0);
-            if time <= 0 || time < now || time > until {
+            if time <= 0 || time < start || time > until {
                 continue;
             }
             let course_id = event
@@ -629,8 +639,11 @@ impl MoodleClient {
             left_time.cmp(&right_time)
         });
         Ok(json!({
-            "from": now,
+            "from": start,
             "until": until,
+            "windowStart": start,
+            "windowEnd": until,
+            "includeExpired": include_expired,
             "days": days,
             "partial": !errors.is_empty() || next_action_id.is_some(),
             "errors": errors,
@@ -797,6 +810,7 @@ impl MoodleClient {
         query: Option<&str>,
         group_only: bool,
         page: usize,
+        sectionid: Option<i64>,
     ) -> Result<Value, String> {
         let (raw, index) = self.content_snapshot(courseid)?;
         let groups = self.course_groups(courseid);
@@ -808,6 +822,7 @@ impl MoodleClient {
             group_only,
             page,
             &self.base_url,
+            sectionid,
         )?;
         result["index"] = index;
         Ok(result)
@@ -862,14 +877,44 @@ impl MoodleClient {
                     "title":plain_text(item["name"].as_str().unwrap_or("")),
                     "courseid":course["id"], "course":plain_text(course["fullname"].as_str().unwrap_or("")),
                     "dueDate":item["duedate"].as_i64().filter(|date| *date > 0),
-                    "status":status, "submissionStatus":item.get("submissionstatus"),
+                    "status":status, "submissionStatus":Value::Null,
                     "cutoffDate":(closes > 0).then_some(closes)}));
+            }
+        }
+        // Fill per-user submission status. Bound the extra calls and report omissions.
+        let checked = assignments.len().min(60);
+        let mut errors = Vec::new();
+        for assignment in assignments.iter_mut().take(checked) {
+            let Some(assignid) = assignment["id"].as_i64() else {
+                continue;
+            };
+            match self.call(
+                "mod_assign_get_submission_status",
+                &json!({ "assignid": assignid }),
+            ) {
+                Ok(raw) => {
+                    let snapshot = submission_snapshot(&raw);
+                    assignment["submissionStatus"] = snapshot["submissionStatus"].clone();
+                    assignment["submittedAt"] = snapshot["timeSubmitted"].clone();
+                    assignment["canSubmit"] = snapshot["canSubmit"].clone();
+                }
+                Err(error) => {
+                    assignment["submissionStatusError"] = json!(error);
+                    errors.push(assignid);
+                }
+            }
+        }
+        if assignments.len() > checked {
+            for assignment in assignments.iter_mut().skip(checked) {
+                assignment["submissionStatusSkipped"] = json!(true);
             }
         }
         let warnings = raw["warnings"].as_array().cloned().unwrap_or_default();
         Ok(json!({"count":assignments.len(),"assignments":assignments,
-            "partial":!warnings.is_empty(),"warnings":warnings,
-            "note":"status describes the scheduled submission window, not whether you submitted. submissionStatus is null when not supplied by Moodle; use moodle_assignment_status with id as assignid for submission and grading details. Full instructions: moodle_course_content detail=full with cmid as moduleid."}))
+            "partial":!warnings.is_empty() || !errors.is_empty(),
+            "warnings":warnings,
+            "submissionStatusErrors":errors,
+            "note":"status is the scheduled window from Moodle dates; submissionStatus is the current attempt state. Submission status was queried for at most 60 assignments; skipped/error entries say so. Use moodle_assignment_status with id as assignid for grading details. Full instructions: moodle_course_content detail=full with cmid as moduleid."}))
     }
 
     pub fn assignment_status(&self, assignid: i64) -> Result<Value, String> {
@@ -877,16 +922,25 @@ impl MoodleClient {
             "mod_assign_get_submission_status",
             &json!({ "assignid": assignid }),
         )?;
-        let last = raw.get("lastattempt").cloned().unwrap_or(Value::Null);
-        let submission = last.get("submission").cloned().unwrap_or(Value::Null);
+        let snapshot = submission_snapshot(&raw);
         let feedback = raw.get("feedback").cloned().unwrap_or(Value::Null);
+        let submission = raw
+            .get("lastattempt")
+            .and_then(|last| last.get("submission"))
+            .cloned()
+            .unwrap_or(Value::Null);
         Ok(json!({
             "assignid": assignid,
-            "submissionStatus": submission.get("status"),
-            "timeSubmitted": submission.get("timemodified"),
-            "gradingStatus": last.get("gradingstatus"),
-            "canEdit": last.get("canedit"),
-            "canSubmit": last.get("cansubmit"),
+            "status": snapshot["status"],
+            "submissionStatus": snapshot["submissionStatus"],
+            "timeSubmitted": snapshot["timeSubmitted"],
+            "timeModified": snapshot["timeModified"],
+            "submissionsEnabled": snapshot["submissionsEnabled"],
+            "locked": snapshot["locked"],
+            "canEdit": snapshot["canEdit"],
+            "canSubmit": snapshot["canSubmit"],
+            "canSubmitReason": snapshot["canSubmitReason"],
+            "gradingStatus": snapshot["gradingStatus"],
             "attemptNumber": submission.get("attemptnumber"),
             "grade": feedback.get("grade").and_then(|grade| grade.get("grade")),
             "gradeDate": feedback.get("gradeddate"),
@@ -991,7 +1045,34 @@ impl MoodleClient {
             "gradereport_user_get_grade_items",
             &json!({ "courseid": courseid, "userid": self.userid()? }),
         )?;
-        let grades = compact_grade_items(&raw);
+        let mut grades = compact_grade_items(&raw);
+        let mut weights_source = if grades.iter().any(|grade| !grade["weight"].is_null()) {
+            "grade_items"
+        } else {
+            "unavailable"
+        };
+        let mut weight_error = None;
+        if weights_source == "unavailable" {
+            let userid = self.userid()?;
+            // Some gradebooks hide the weight column in get_grade_items. The user
+            // report table can still expose Moodle's own weight cell; never derive it.
+            match self.grade_table_weights(courseid, userid) {
+                Ok(weights) if !weights.is_empty() => {
+                    for grade in &mut grades {
+                        if let Some((raw_weight, formatted)) =
+                            grade["id"].as_i64().and_then(|id| weights.get(&id))
+                        {
+                            grade["weight"] = json!(raw_weight);
+                            grade["weightFormatted"] = json!(formatted);
+                            grade["weightSource"] = json!("grades_table");
+                        }
+                    }
+                    weights_source = "grades_table";
+                }
+                Ok(_) => {}
+                Err(error) => weight_error = Some(error),
+            }
+        }
         let weighted_total = grades
             .iter()
             .find(|grade| grade["type"] == "course")
@@ -1001,19 +1082,66 @@ impl MoodleClient {
                     "percentage": grade["percentage"], "note": "Moodle's own course total, already weighted if the gradebook uses weights."
                 })
             });
-        let weights_available = grades.iter().any(|grade| !grade["weight"].is_null());
+        let weights_available = weights_source != "unavailable";
         Ok(json!({
             "courseid": courseid,
             "count": grades.len(),
             "grades": grades,
             "weightsAvailable": weights_available,
+            "weightsSource": weights_source,
+            "weightError": weight_error,
             "weightedTotal": weighted_total,
             "note": if weights_available {
                 "weight is Moodle's reported item weight. weightedTotal is Moodle's aggregate for this course, not a local recalculation."
             } else {
-                "Moodle did not return grade-item weights for this course. The weighted total is therefore unavailable; only the course total shown by Moodle is reported."
+                "Moodle did not report grade-item weights for this course (the user report may hide weights, or the gradebook uses no weights). No weight or weighted total was calculated locally; only Moodle's course total is shown when available."
             }
         }))
+    }
+
+    fn grade_table_weights(
+        &self,
+        courseid: i64,
+        userid: i64,
+    ) -> Result<std::collections::HashMap<i64, (f64, String)>, String> {
+        let raw = self.call(
+            "gradereport_user_get_grades_table",
+            &json!({"courseid": courseid, "userid": userid}),
+        )?;
+        let mut weights = std::collections::HashMap::new();
+        for row in raw["tables"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|table| table["tabledata"].as_array().into_iter().flatten())
+        {
+            let Some(itemid) = row["itemname"]["id"]
+                .as_str()
+                .and_then(|id| id.strip_prefix("row_"))
+                .and_then(|id| id.split('_').next())
+                .and_then(|id| id.parse::<i64>().ok())
+            else {
+                continue;
+            };
+            let Some(formatted) = row["weight"]["content"].as_str() else {
+                continue;
+            };
+            let cleaned = formatted
+                .replace("&nbsp;", " ")
+                .replace('%', "")
+                .replace(',', ".");
+            let Some(number) = cleaned
+                .split_whitespace()
+                .find(|part| part.chars().any(|ch| ch.is_ascii_digit()))
+            else {
+                continue;
+            };
+            if let Ok(value) = number.parse::<f64>() {
+                // The table shows the weight as a percentage; weightraw uses 0..1.
+                weights.insert(itemid, (value / 100.0, formatted.to_string()));
+            }
+        }
+        Ok(weights)
     }
 
     /// Recent assessment grades, not course totals. Never invent a publication date.
@@ -1518,6 +1646,26 @@ impl MoodleClient {
         items.extend(map_named(&urls, "urls", "url"));
         items.extend(map_named(&folders, "folders", "folder"));
         items.extend(map_named(&books, "books", "book"));
+        // Map each activity to the section that actually contains it, including
+        // activities placed inside a mod_subsection. Best effort: the resource
+        // list stays usable when course contents are unavailable.
+        let section_index = match self.content_snapshot(courseid) {
+            Ok((contents, _)) => {
+                let mut map = std::collections::HashMap::new();
+                index_sections(&contents, &mut map);
+                Some(map)
+            }
+            Err(_) => None,
+        };
+        for item in &mut items {
+            if let Some((sectionid, section)) = item["cmid"]
+                .as_i64()
+                .and_then(|id| section_index.as_ref().and_then(|map| map.get(&id)))
+            {
+                item["sectionid"] = json!(sectionid);
+                item["section"] = json!(section);
+            }
+        }
         items.sort_by(|left, right| {
             let left_name = left.get("name").and_then(Value::as_str).unwrap_or("");
             let right_name = right.get("name").and_then(Value::as_str).unwrap_or("");
@@ -1526,85 +1674,79 @@ impl MoodleClient {
         Ok(json!({
             "courseid": courseid,
             "count": items.len(),
+            "sectionDataAvailable": section_index.is_some(),
             "resources": items
         }))
     }
 }
 
-fn compact_course_contents(courseid: i64, raw: &Value, query: Option<&str>) -> Value {
-    let mut sections = Vec::new();
-    for section in raw.as_array().cloned().unwrap_or_default() {
-        let mut modules = Vec::new();
-        for module in section
-            .get("modules")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default()
-        {
-            let name = if section["normalized"] == true {
-                module["name"].as_str().unwrap_or("").to_string()
-            } else {
-                plain_text(module.get("name").and_then(Value::as_str).unwrap_or(""))
-            };
-            let leftover = query.map(|query| leftover_search_tokens(query, &[]));
-            let mut files = compact_module_files(&module);
-            if let Some(leftover) = leftover.as_deref() {
-                files.retain(|file| {
-                    haystack_matches(
-                        file.get("filename").and_then(Value::as_str).unwrap_or(""),
-                        &[],
-                        leftover,
-                    )
-                });
-                if files.is_empty() && !haystack_matches(&name, &[], leftover) {
-                    continue;
-                }
+fn index_sections(sections: &Value, map: &mut std::collections::HashMap<i64, (i64, String)>) {
+    for section in sections.as_array().into_iter().flatten() {
+        let sectionid = section["id"].as_i64().unwrap_or(0);
+        let name = section["name"].as_str().unwrap_or("").to_string();
+        for module in section["modules"].as_array().into_iter().flatten() {
+            if let Some(cmid) = module["id"].as_i64() {
+                map.insert(cmid, (sectionid, name.clone()));
             }
-            let mut item = json!({
-                "id": module.get("id"),
-                "modname": module.get("modname"),
-                "name": name,
-            });
-            if let Some(url) = module.get("url").cloned().filter(|value| !value.is_null()) {
-                item["url"] = url;
+            if let Some(children) = module["subsections"].as_array() {
+                index_sections(&Value::Array(children.clone()), map);
             }
-            if !files.is_empty() {
-                item["files"] = Value::Array(files);
-            }
-            modules.push(item);
         }
-        if query.is_some() && modules.is_empty() {
-            continue;
-        }
-        let name = if section["normalized"] == true {
-            section["name"].as_str().unwrap_or("").to_string()
-        } else {
-            plain_text(section.get("name").and_then(Value::as_str).unwrap_or(""))
-        };
-        let summary = truncate(
-            &if section["normalized"] == true {
-                section["summary"].as_str().unwrap_or("").to_string()
-            } else {
-                plain_text(section.get("summary").and_then(Value::as_str).unwrap_or(""))
-            },
-            240,
-        );
-        let mut item = json!({
-            "id": section.get("id"),
-            "section": section.get("section"),
-            "name": name,
-            "modules": modules,
-        });
-        if !summary.is_empty() {
-            item["summary"] = json!(summary);
-        }
-        sections.push(item);
     }
+}
+
+fn submission_snapshot(raw: &Value) -> Value {
+    let last = raw.get("lastattempt").unwrap_or(&Value::Null);
+    let submission = last.get("submission").unwrap_or(&Value::Null);
+    let submission_status = submission.get("status").and_then(Value::as_str);
+    let enabled = last.get("submissionsenabled").and_then(Value::as_bool);
+    let locked = last.get("locked").and_then(Value::as_bool);
+    let can_submit = last.get("cansubmit").and_then(Value::as_bool);
+    let status = if submission_status == Some("submitted") {
+        "submitted"
+    } else if enabled == Some(false) {
+        "submissions-disabled"
+    } else if locked == Some(true) && can_submit != Some(true) {
+        "closed"
+    } else if can_submit == Some(true) {
+        "open"
+    } else if can_submit == Some(false) {
+        "unavailable"
+    } else {
+        "unknown"
+    };
+    let reason = if can_submit == Some(true) {
+        "Moodle currently allows submission."
+    } else if enabled == Some(false) {
+        "Moodle reports that submissions are disabled for this assignment."
+    } else if locked == Some(true) {
+        "Moodle reports that submissions are locked (deadline, cutoff or teacher action)."
+    } else if submission_status == Some("submitted") {
+        "Moodle reports that this attempt is already submitted; it may not allow another submission."
+    } else if can_submit == Some(false) {
+        "Moodle reports that submission is not currently allowed; this response does not include the assignment dates, so the exact window is unknown."
+    } else {
+        "Moodle did not report whether submission is allowed."
+    };
+    let submitted_at = if submission_status == Some("submitted") {
+        submission
+            .get("timemodified")
+            .cloned()
+            .unwrap_or(Value::Null)
+    } else {
+        Value::Null
+    };
     json!({
-        "courseid": courseid,
-        "count": sections.len(),
-        "sections": sections,
-        "fileurlHint": "fileurl is an internal Moodle reference, not a direct download link. For a link the user can open, call moodle_file; share it only when the user asks for a download. Never add or reveal a Moodle token."
+        "status": status,
+        "submissionStatus": submission_status,
+        "timeSubmitted": submitted_at,
+        "timeModified": submission.get("timemodified"),
+        "submissionsEnabled": enabled,
+        "locked": locked,
+        "canEdit": last.get("canedit"),
+        "canSubmit": can_submit,
+        "canSubmitReason": reason,
+        "gradingStatus": last.get("gradingstatus"),
     })
 }
 
@@ -1856,6 +1998,7 @@ fn map_global_search_results(raw: &Value) -> Vec<Value> {
         .collect()
 }
 
+#[cfg(test)]
 fn haystack_matches(name: &str, files: &[Value], leftover: &[String]) -> bool {
     if leftover.is_empty() {
         return false;
@@ -3013,6 +3156,121 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn resources_include_the_real_section_even_inside_a_subsection() {
+        let (url, worker) = server(vec![
+            json!({"pages":[{"id":1,"coursemodule":10,"name":"Page"}]}),
+            json!({"resources":[]}),
+            json!({"urls":[]}),
+            json!({"folders":[]}),
+            json!({"books":[]}),
+            json!([{"id":2,"section":1,"name":"Semaine 1","modules":[
+                {"id":10,"name":"Page","modname":"page","uservisible":true}]}]),
+        ]);
+        let client = MoodleClient::new(&MoodleConfig {
+            base_url: url,
+            token: "fixture".into(),
+            allow_write: false,
+        });
+        let resources = client.resources(42).unwrap();
+        assert_eq!(resources["sectionDataAvailable"], true);
+        assert_eq!(resources["resources"][0]["sectionid"], 2);
+        assert_eq!(resources["resources"][0]["section"], "Semaine 1");
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn grades_use_the_user_report_weight_when_grade_items_omit_it() {
+        let (url, worker) = server(vec![
+            json!({"userid": 42}),
+            json!({"usergrades": [{"courseid": 15, "gradeitems": [
+                {"id": 7, "itemname": "TP", "itemtype": "mod", "graderaw": 16.0,
+                    "grademax": 20.0, "gradeformatted": "16,00"}]}]}),
+            json!({"userid": 42}),
+            json!({"tables": [{"tabledata": [
+                {"itemname": {"id": "row_7_42"}, "weight": {"content": "40.00 %"}}]}]}),
+        ]);
+        let client = MoodleClient::new(&MoodleConfig {
+            base_url: url,
+            token: "fixture".into(),
+            allow_write: false,
+        });
+        let grades = client.grades_for_course(15).unwrap();
+        assert_eq!(grades["weightsAvailable"], true);
+        assert_eq!(grades["weightsSource"], "grades_table");
+        assert_eq!(grades["grades"][0]["weight"], 0.4);
+        assert_eq!(grades["grades"][0]["weightFormatted"], "40.00 %");
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn assignment_status_uses_moodle_booleans_instead_of_contradicting_them() {
+        let (url, worker) = server(vec![
+            json!({"lastattempt": {"submission": {"status": "new", "timemodified": 1700},
+                "submissionsenabled": true, "locked": false, "cansubmit": true,
+                "canedit": true, "gradingstatus": "notgraded"}}),
+            json!({"lastattempt": {"submission": {"status": "submitted", "timemodified": 1234},
+                "submissionsenabled": true, "locked": false, "cansubmit": false,
+                "gradingstatus": "notgraded"}}),
+            json!({"lastattempt": {"submission": {"status": "draft", "timemodified": 99},
+                "submissionsenabled": true, "locked": true, "cansubmit": false}}),
+        ]);
+        let client = MoodleClient::new(&MoodleConfig {
+            base_url: url,
+            token: "fixture".into(),
+            allow_write: false,
+        });
+        let open = client.assignment_status(5).unwrap();
+        assert_eq!(open["status"], "open");
+        assert_eq!(open["canSubmit"], true);
+        assert!(open["timeSubmitted"].is_null());
+        assert!(open["canSubmitReason"].as_str().unwrap().contains("allows"));
+        let submitted = client.assignment_status(5).unwrap();
+        assert_eq!(submitted["status"], "submitted");
+        assert_eq!(submitted["timeSubmitted"], 1234);
+        let closed = client.assignment_status(5).unwrap();
+        assert_eq!(closed["status"], "closed");
+        assert_eq!(closed["canSubmit"], false);
+        assert!(closed["canSubmitReason"]
+            .as_str()
+            .unwrap()
+            .contains("locked"));
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn deadlines_can_include_items_already_due_in_the_window() {
+        let now = unix_now();
+        let (url, worker) = server(vec![
+            json!({"courses":[{"id":42,"shortname":"MTH","assignments":[
+                {"id":1,"cmid":10,"name":"Déjà échu","duedate":now - 3600,
+                    "allowsubmissionsfromdate":now - 7200}]}]}),
+            json!({"quizzes":[]}),
+            json!({"events":[]}),
+            json!({"events":[]}),
+            json!({"courses":[{"id":42,"shortname":"MTH","assignments":[
+                {"id":1,"cmid":10,"name":"Déjà échu","duedate":now - 3600,
+                    "allowsubmissionsfromdate":now - 7200}]}]}),
+            json!({"quizzes":[]}),
+            json!({"events":[]}),
+            json!({"events":[]}),
+        ]);
+        let client = MoodleClient::new(&MoodleConfig {
+            base_url: url,
+            token: "fixture".into(),
+            allow_write: false,
+        });
+        assert!(client.deadlines(1, None, false).unwrap()["deadlines"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        let with_expired = client.deadlines(1, None, true).unwrap();
+        assert_eq!(with_expired["includeExpired"], true);
+        assert_eq!(with_expired["count"], 1);
+        assert_eq!(with_expired["deadlines"][0]["name"], "Déjà échu");
+        worker.join().unwrap();
+    }
+
+    #[test]
     fn resources_do_not_report_an_expired_token_as_an_empty_course() {
         let (url, worker) = server(vec![
             json!({"exception":"moodle_exception","errorcode":"invalidtoken","message":"Expired"}),
@@ -3247,7 +3505,7 @@ pub(crate) mod tests {
             token: "token".into(),
             allow_write: false,
         });
-        let all = client.course_content(5476, None, false, 0).unwrap();
+        let all = client.course_content(5476, None, false, 0, None).unwrap();
         assert_eq!(all["courseid"], 5476);
         assert_eq!(all["count"], 1);
         assert_eq!(all["sections"][0]["name"], "Exercices TD");
@@ -3264,7 +3522,9 @@ pub(crate) mod tests {
             true
         );
         assert!(!dumped.contains(&"x".repeat(501)));
-        let filtered = client.course_content(5476, Some("TD5"), false, 0).unwrap();
+        let filtered = client
+            .course_content(5476, Some("TD5"), false, 0, None)
+            .unwrap();
         assert_eq!(
             filtered["sections"][0]["modules"].as_array().unwrap().len(),
             1
@@ -3342,6 +3602,8 @@ pub(crate) mod tests {
                     ]
                 }]
             }),
+            json!({"userid": 42, "functions": []}),
+            json!({"tables": []}),
         ]);
         let client = MoodleClient::new(&MoodleConfig {
             base_url: url,
@@ -3355,8 +3617,9 @@ pub(crate) mod tests {
         assert_eq!(grades["grades"][1]["name"], "Course total");
         assert!(grades.get("usergrades").is_none());
         assert_eq!(grades["weightsAvailable"], false);
+        assert_eq!(grades["weightsSource"], "unavailable");
         assert_eq!(grades["weightedTotal"]["grade"], "12,00");
-        assert!(grades["note"].as_str().unwrap().contains("did not return"));
+        assert!(grades["note"].as_str().unwrap().contains("did not report"));
         worker.join().unwrap();
     }
 
@@ -3462,7 +3725,7 @@ pub(crate) mod tests {
             token: "token".into(),
             allow_write: false,
         });
-        let deadlines = client.deadlines(7, None).unwrap();
+        let deadlines = client.deadlines(7, None, false).unwrap();
         assert_eq!(deadlines["count"], 1);
         assert_eq!(deadlines["deadlines"][0]["kind"], "assignment");
         assert_eq!(deadlines["deadlines"][0]["id"], 99);
@@ -3482,7 +3745,7 @@ pub(crate) mod tests {
             token: "fixture".into(),
             allow_write: false,
         });
-        let result = client.deadlines(7, None).unwrap();
+        let result = client.deadlines(7, None, false).unwrap();
         assert_eq!(result["partial"], true);
         assert_eq!(result["count"], 1);
         assert_eq!(result["deadlines"][0]["kind"], "quiz");
@@ -3513,7 +3776,7 @@ pub(crate) mod tests {
                 token: "fixture".into(),
                 allow_write: false,
             });
-            let result = client.deadlines(7, None).unwrap();
+            let result = client.deadlines(7, None, false).unwrap();
             assert_eq!(result["partial"], capped);
             assert_eq!(result["count"], if capped { 500 } else { 51 });
             assert_eq!(
@@ -3534,7 +3797,7 @@ pub(crate) mod tests {
             allow_write: false,
         });
         assert!(client
-            .deadlines(7, None)
+            .deadlines(7, None, false)
             .unwrap_err()
             .contains("All deadline sources failed"));
         worker.join().unwrap();

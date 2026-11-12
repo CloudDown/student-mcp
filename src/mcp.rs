@@ -127,17 +127,17 @@ fn definitions_for_services(
         let moodle = json!([
             { "name": "moodle_status", "description": "Check the Moodle connection and show which site and account this token belongs to.", "annotations": { "readOnlyHint": true } },
             { "name": "moodle_my_courses", "description": "List enrolled courses as a compact summary (id, names, dates). Hidden and ended courses are omitted unless include_hidden is true.", "inputSchema": { "type": "object", "properties": { "include_hidden": { "type": "boolean", "description": "Include hidden and ended courses." } } }, "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_search", "description": "Search the student's courses and materials. Prefer this to locate a TD, quiz or file. Pass courseid to search one course; a course code in the query (MATH101) does the same. Matches TD5 to names like 'TD Chapitre 5'. fileurl is not a user download link: call moodle_file. Do not paste its temporary links.download into the conversation unless the user asks for a download.", "inputSchema": { "type": "object", "properties": { "query": { "type": "string" }, "courseid": { "type": "integer", "minimum": 1, "description": "Limit the search to one course." }, "page": { "type": "integer", "minimum": 0 } }, "required": ["query"] }, "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_course_content", "description": "Compact section tree of a course: section names, activities, and fileurl values. Optional query keeps matching modules (e.g. TD5). fileurl is an internal reference, not a user download link. Call moodle_file and share a temporary link only when the user asks for a download; do not fetch fileurl with a generic HTTP tool.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 }, "query": { "type": "string", "description": "Keep modules whose name or filename matches, such as TD5 or chapitre 5." } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_resources", "description": "Flat list of pages, files, URLs, folders and books, without section names. Prefer moodle_course_content to find a TD or week.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_search", "description": "Search course/activity names, filenames, descriptions and section text. Matches TD5 to names like 'TD Chapitre 5'. PDF contents are NOT searched and no PDF text cache is consulted; read a PDF with moodle_file first. fileurl is internal: call moodle_file, and do not paste its temporary link unless the user asks for a download.", "inputSchema": { "type": "object", "properties": { "query": { "type": "string" }, "courseid": { "type": "integer", "minimum": 1, "description": "Limit the search to one course." }, "page": { "type": "integer", "minimum": 0 } }, "required": ["query"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_course_content", "description": "Bounded course navigation. Overview: 6 sections per page, nested mod_subsection activities, direct section URLs, uservisible/groupRestricted flags and optional group_only filtering based on Moodle group restrictions. sectionid selects one section; query filters. detail=full reads complete instruction text. fileurl is internal: call moodle_file; share a temporary link only when the user asks for a download.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 }, "query": { "type": "string", "description": "Keep modules whose name or filename matches, such as TD5 or chapitre 5." } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_resources", "description": "Pages, files, URLs, folders and books with their Moodle sectionid and section name. Prefer moodle_course_content for the full week/TD tree.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_file", "description": "Use fileurl from moodle_course_content or moodle_search.", "inputSchema": { "type": "object", "properties": { "fileurl": { "type": "string" }, "format": { "type": "string", "enum": ["file", "text", "images"] }, "find": { "type": "string", "description": "Phrase to find in extracted text." }, "page_from": { "type": "integer", "minimum": 1 }, "page_to": { "type": "integer", "minimum": 1 } }, "required": ["fileurl"] }, "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_assignments", "description": "List visible assignments; optionally filter to specific course IDs.", "inputSchema": { "type": "object", "properties": { "courseids": { "type": "array", "items": { "type": "integer" } } } }, "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_assignment_status", "description": "Submission and grading status for one assignment, including uploaded files.", "inputSchema": { "type": "object", "properties": { "assignid": { "type": "integer", "minimum": 1 } }, "required": ["assignid"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_assignments", "description": "Visible assignments with course, due date, scheduled status and current submissionStatus (bounded to 60 status checks). Filter by courseids.", "inputSchema": { "type": "object", "properties": { "courseids": { "type": "array", "items": { "type": "integer" } } } }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_assignment_status", "description": "Submission and grading status for one assignment: coherent status, timeSubmitted, canSubmit plus canSubmitReason, and uploaded files.", "inputSchema": { "type": "object", "properties": { "assignid": { "type": "integer", "minimum": 1 } }, "required": ["assignid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_quizzes", "description": "List visible quizzes; optionally filter to specific course IDs.", "inputSchema": { "type": "object", "properties": { "courseids": { "type": "array", "items": { "type": "integer" } } } }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_quiz_status", "description": "Attempts, best grade and access info for one quiz.", "inputSchema": { "type": "object", "properties": { "quizid": { "type": "integer", "minimum": 1 } }, "required": ["quizid"] }, "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_grades", "description": "Grades the student can act on. Without courseid: current courses that have a grade. With courseid: compact items for that course (name, grade, max), not the raw Moodle usergrades blob.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } } }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_grades", "description": "Grades the student can act on. With courseid: item grades, Moodle-reported weights and course total. weightsSource says whether weights came from grade items or the user report; if Moodle reports none, weightsAvailable=false and no weight is invented.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } } }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_calendar", "description": "Get the upcoming Moodle calendar view; optionally filter to one course.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } } }, "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_deadlines", "description": "Upcoming deadlines from assignments, quizzes and the Moodle calendar, sorted by date. Prefer this for due work.", "inputSchema": { "type": "object", "properties": { "days": { "type": "integer", "minimum": 1, "maximum": 365, "description": "How many days ahead to look (default 60)." }, "courseids": { "type": "array", "items": { "type": "integer" } } } }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_deadlines", "description": "Upcoming deadlines from assignments, quizzes and the Moodle calendar, sorted by date. Prefer this for due work. include_expired also returns items already due inside the same day window.", "inputSchema": { "type": "object", "properties": { "days": { "type": "integer", "minimum": 1, "maximum": 365, "description": "How many days ahead to look (default 60)." }, "courseids": { "type": "array", "items": { "type": "integer" } }, "include_expired": { "type": "boolean", "description": "Include items already due from days ago through days ahead." } } }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_announcements", "description": "Recent posts from course announcement forums (news). Plain text, newest first.", "inputSchema": { "type": "object", "properties": { "courseids": { "type": "array", "items": { "type": "integer" } }, "limit": { "type": "integer", "minimum": 1, "maximum": 50 } } }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_forums", "description": "List forums in courses (news and discussion boards).", "inputSchema": { "type": "object", "properties": { "courseids": { "type": "array", "items": { "type": "integer" } } } }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_forum_discussions", "description": "List recent discussions in one forum.", "inputSchema": { "type": "object", "properties": { "forumid": { "type": "integer", "minimum": 1 }, "limit": { "type": "integer", "minimum": 1, "maximum": 50 } }, "required": ["forumid"] }, "annotations": { "readOnlyHint": true } },
@@ -183,18 +183,18 @@ fn definitions_for_services(
             _ => {}
         }
         if tool["name"] == "moodle_search" {
-            tool["description"] = json!("Find course files and instructions using a private account index of titles, full descriptions and section text. Searches up to 8 candidate courses per window, ranks matches and explains them. Without a course name, scans visible courses in windows. Follow continuation to finish; partial/errors mean coverage is incomplete. source=global broadens to Moodle's own search. This is not a search inside every PDF. Read instructions with moodle_course_content detail=full, files with moodle_file. Share links.download, never fileurl.");
+            tool["description"] = json!("Find course files and instructions using a private account index of titles, full descriptions and section text. Searches up to 8 candidate courses per window, ranks matches and explains them. Without a course name, scans visible courses in windows. Follow continuation to finish; partial/errors mean coverage is incomplete. source=global broadens to Moodle's own search. This is not a search inside every PDF. Read instructions with moodle_course_content detail=full, files with moodle_file. PDF contents are not searched. Never expose fileurl; share a temporary link only when the user asks for a download.");
             tool["inputSchema"]["properties"]["source"] = json!({"type":"string","enum":["auto","global"],"description":"auto: indexed metadata, with Moodle search fallback. global: Moodle search only; page is then the upstream page."});
             tool["inputSchema"]["properties"]["offset"] = json!({"type":"integer","minimum":0,"description":"Result offset within this page/window. Prefer the exact continuation arguments returned."});
         }
         if tool["name"] == "moodle_course_content" {
-            tool["description"] = json!("Bounded course navigation. detail=overview (default) returns up to 6 sections per page with direct section URLs, the student's groups, group labels and shortened previews, NOT complete instructions. Use group_only=true to hide sections plainly labelled for another group. Follow nextPage for more sections; moduleCount/fileCount show omissions. detail=full returns complete description/inline text in bounded blocks; optionally select moduleid or sectionid, then follow nextPage until null. It does not read attached PDFs/Office files: use moodle_file. query filters the overview. Metadata is cached per account for 15 minutes; refresh=true fetches current content.");
+            tool["description"] = json!("Bounded course navigation. detail=overview (default) returns up to 6 sections per page with direct section URLs, nested subsections, the student's groups, uservisible/groupRestricted flags and shortened previews, NOT complete instructions. Use group_only=true to hide what Moodle marks invisible through group restrictions. Follow nextPage for more sections; moduleCount/fileCount show omissions. detail=full returns complete description/inline text in bounded blocks; optionally select moduleid or sectionid, then follow nextPage until null. It does not read attached PDFs/Office files: use moodle_file. query filters the overview. Metadata is cached per account for 15 minutes; refresh=true fetches current content.");
             tool["inputSchema"]["properties"]["detail"] =
                 json!({"type":"string","enum":["overview","full"]});
             tool["inputSchema"]["properties"]["moduleid"] = json!({"type":"integer","minimum":1,"description":"Activity id from the overview/search, for detail=full."});
-            tool["inputSchema"]["properties"]["sectionid"] = json!({"type":"integer","minimum":1,"description":"Section id (not section number), for detail=full."});
+            tool["inputSchema"]["properties"]["sectionid"] = json!({"type":"integer","minimum":1,"description":"Section id (not section number) for overview or detail=full."});
             tool["inputSchema"]["properties"]["page"] = json!({"type":"integer","minimum":0,"description":"0-based section page in overview, or detail block page in full. Follow nextPage."});
-            tool["inputSchema"]["properties"]["group_only"] = json!({"type":"boolean","description":"Overview only: hide sections/modules plainly labelled for another group. Group data comes from Moodle and may be unavailable."});
+            tool["inputSchema"]["properties"]["group_only"] = json!({"type":"boolean","description":"Overview only: hide sections/activities Moodle marks invisible through group/grouping restrictions. Uses uservisible; never infers groups from names."});
         }
         if is_file_tool(tool["name"].as_str().unwrap_or_default()) {
             let original_required = tool["inputSchema"]
@@ -427,18 +427,19 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
             let page = nonnegative_arg(args, "page")? as usize;
             match string_arg(args, "detail", "overview")? {
                 "overview" => {
-                    if ["moduleid", "sectionid"]
-                        .iter()
-                        .any(|key| args.get(key).is_some_and(|value| !value.is_null()))
-                    {
-                        return Err("Use detail=full for moduleid or sectionid.".into());
+                    if args.get("moduleid").is_some_and(|value| !value.is_null()) {
+                        return Err("Use detail=full for moduleid.".into());
                     }
+                    let sectionid = match args.get("sectionid") {
+                        None | Some(Value::Null) => None,
+                        _ => Some(require_integer(args, "sectionid")?),
+                    };
                     let group_only = match args.get("group_only") {
                         None | Some(Value::Null) => false,
                         Some(Value::Bool(value)) => *value,
                         _ => return Err("group_only must be a boolean.".into()),
                     };
-                    client.course_content(courseid, query, group_only, page)
+                    client.course_content(courseid, query, group_only, page, sectionid)
                 }
                 "full" => {
                     if query.is_some() {
@@ -518,7 +519,12 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
         "moodle_deadlines" => moodle_tool(settings, |config| {
             let days = args.get("days").and_then(json_i64).unwrap_or(60);
             let courseids = optional_i64_list(args.get("courseids"))?;
-            MoodleClient::new(config).deadlines(days, courseids)
+            let include_expired = match args.get("include_expired") {
+                None | Some(Value::Null) => false,
+                Some(Value::Bool(value)) => *value,
+                _ => return Err("include_expired must be a boolean.".into()),
+            };
+            MoodleClient::new(config).deadlines(days, courseids, include_expired)
         }),
         "moodle_announcements" => moodle_tool(settings, |config| {
             let limit = args
@@ -715,9 +721,21 @@ fn json_positive_i64(value: &Value) -> Option<i64> {
 }
 
 fn require_integer(args: &Value, key: &str) -> Result<i64, String> {
-    args.get(key)
-        .and_then(json_positive_i64)
-        .ok_or(format!("Provide an integer {key} > 0."))
+    if let Some(value) = args.get(key).and_then(json_positive_i64) {
+        return Ok(value);
+    }
+    if key == "courseid"
+        && args
+            .get("courseids")
+            .and_then(Value::as_array)
+            .is_some_and(|ids| !ids.is_empty())
+    {
+        return Err(
+            "This tool needs one courseid; courseids is accepted by bulk tools such as moodle_assignments and moodle_quizzes. Call this tool once per course."
+                .into(),
+        );
+    }
+    Err(format!("Provide an integer {key} > 0."))
 }
 
 pub(crate) fn file_query(args: &Value) -> Result<crate::delivery::FileQuery, String> {
@@ -1784,6 +1802,8 @@ mod protocol_tests {
         let (url, worker) = crate::moodle::tests::server(vec![
             json!({"userid": 42, "functions": []}),
             json!({"usergrades": []}),
+            json!({"userid": 42, "functions": []}),
+            json!({"tables": []}),
         ]);
         let settings = Settings {
             moodle: Some(MoodleSettings {

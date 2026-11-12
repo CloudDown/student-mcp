@@ -73,7 +73,7 @@ every `readOnlyHint:false` tool also carries `destructiveHint:true`,
 | Download a document | Existing `*_file` tool with `format=file`; share `links.download` | Generic HTTP fetch of school URLs |
 | Study a PDF/Office doc | Same file tool with `text` or `images` (text + every page image); reuse `document_id` | Treating an original blob/link as proof the model saw its contents |
 | Read all Moodle instructions | `moodle_course_content` with `detail=full`; follow `nextPage`, then read relevant files | Treating an overview/search excerpt as complete instructions |
-| Choose the right TD for the student's group | `moodle_course_content` overview: read `groups`, `section.group.yourGroup`, `url`, `timemodified`; `group_only` if needed | Assuming every section applies to the student, or inferring access from a missing label |
+| Choose the right TD for the student's group | `moodle_course_content` overview: read `groups`, `uservisible`, `groupRestricted`, `url`, `timemodified`; `group_only` if needed | Inferring a group from section names, or assuming every section applies |
 | Rare Moodle action | dedicated tool, else `ws_discover` → `ws_call` | `ws_call` for everyday reads |
 | Account routing | Match the person/school in `initialize` instructions or `student_status`, then pass that `account_id` | Guessing which account, mixing course IDs across accounts |
 

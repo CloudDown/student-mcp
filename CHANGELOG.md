@@ -3,6 +3,41 @@
 Notable changes, newest first. Downloads for each release are on the
 [releases page](https://github.com/CloudDown/student-mcp/releases).
 
+## 0.8.3 — 2026-11-12
+
+### Added
+
+- **Subsections.** `moodle_course_content` nests `mod_subsection` (Moodle 4.3+)
+  delegated sections under their parent activity, and search/detail/read traverse
+  them instead of returning an empty section.
+- **Real group filtering.** `group_only` now uses Moodle's own `uservisible` and
+  availability group/grouping conditions, via the student's Moodle groups. Group
+  names are no longer used to guess membership.
+- **Section on resources.** `moodle_resources` includes each resource's
+  `sectionid` and section name, including activities inside a subsection.
+- **Expired deadlines.** `moodle_deadlines include_expired=true` returns items
+  already due inside the same day window.
+- **PDF search notice.** Search coverage says explicitly that PDF contents are
+  not searched and no PDF text cache is consulted.
+
+### Changed
+
+- **Grade weights.** `moodle_grades` falls back to the Moodle user report table
+  when grade items omit weights, reports `weightsSource`, and states when Moodle
+  provides no weights instead of returning unexplained nulls.
+- **Assignment status.** `moodle_assignments` fills `submissionStatus` (bounded
+  to 60 status checks); `moodle_assignment_status` derives a coherent `status`,
+  `timeSubmitted` (only for submitted attempts), `canSubmit` and
+  `canSubmitReason` from Moodle's booleans.
+- `moodle_course_content` accepts `sectionid` in overview mode.
+- A bulk `courseids` argument is no longer reported as a missing `courseid`.
+
+### Notes
+
+- `ws_call` remains the only write tool.
+- Group filtering reports what Moodle marks visible; it never infers access from
+  section names.
+
 ## 0.8.2 — 2026-11-12
 
 Continuous numbering with the earlier 0.8.x releases. The `v1.2.0` tag and
