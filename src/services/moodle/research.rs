@@ -924,6 +924,134 @@ fn collect_detail(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(super) fn detail_matches(
+    courseid: i64,
+    raw: &Value,
+    module_ids: &[i64],
+    section_ids: &[i64],
+    page: usize,
+    groups: &Value,
+    base_url: &str,
+) -> Result<Value, String> {
+    let modules = module_ids
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    let sections = section_ids
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    let mut window = DetailWindow {
+        from: page.saturating_mul(4),
+        total: 0,
+        blocks: Vec::new(),
+    };
+    let mut found = false;
+    collect_matches(
+        raw.as_array().map(Vec::as_slice).unwrap_or(&[]),
+        &modules,
+        &sections,
+        &mut window,
+        courseid,
+        base_url,
+        0,
+        &mut found,
+    );
+    let from = page.checked_mul(4).ok_or("page is too large.")?;
+    if from >= window.total && page > 0 {
+        return Err("page is past the last detail block.".into());
+    }
+    let total = window.total;
+    let selected = window.blocks;
+    let end = from + selected.len();
+    Ok(json!({
+        "courseid": courseid, "page": page, "blocks": selected,
+        "totalBlocks": total, "truncated": end < total,
+        "nextPage": if end < total { Some(page + 1) } else { None },
+        "groups": groups,
+        "coverage": {"mode": "detail-query", "firstBlock": from + 1, "lastBlock": end,
+            "totalBlocks": total, "matchedModules": module_ids.len(),
+            "matchedSections": section_ids.len(), "fileContentsRead": false},
+        "note": if found {
+            "Complete textual metadata for the elements matching the query; follow nextPage for all blocks. Attached files still require the file tool."
+        } else {
+            "No course element matched this query. Try the overview or a broader term; absence here is not proof that the item does not exist."
+        }
+    }))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_matches(
+    sections: &[Value],
+    modules: &std::collections::HashSet<i64>,
+    section_ids: &std::collections::HashSet<i64>,
+    window: &mut DetailWindow,
+    courseid: i64,
+    base_url: &str,
+    depth: usize,
+    found: &mut bool,
+) {
+    if depth > 8 {
+        return;
+    }
+    for section in sections {
+        if section_ids.contains(&section["id"].as_i64().unwrap_or(0)) {
+            *found = true;
+            window.append(
+                "section",
+                section,
+                &section["id"],
+                &[section["summary"].as_str().unwrap_or("")],
+                Some(&section_link(
+                    base_url,
+                    courseid,
+                    section["section"].as_i64().unwrap_or(0),
+                )),
+            );
+        }
+        for module in section["modules"].as_array().into_iter().flatten() {
+            if modules.contains(&module["id"].as_i64().unwrap_or(0)) {
+                *found = true;
+                match module["subsections"].as_array().map(Vec::as_slice) {
+                    Some(children) => collect_detail(
+                        children,
+                        None,
+                        None,
+                        window,
+                        courseid,
+                        base_url,
+                        depth + 1,
+                        found,
+                    ),
+                    None => window.append(
+                        "activity",
+                        module,
+                        &section["id"],
+                        &[
+                            module["description"].as_str().unwrap_or(""),
+                            "\n",
+                            module["contentText"].as_str().unwrap_or(""),
+                        ],
+                        None,
+                    ),
+                }
+            } else if let Some(children) = module["subsections"].as_array() {
+                collect_matches(
+                    children,
+                    modules,
+                    section_ids,
+                    window,
+                    courseid,
+                    base_url,
+                    depth + 1,
+                    found,
+                );
+            }
+        }
+    }
+}
+
 struct DetailWindow {
     from: usize,
     total: usize,

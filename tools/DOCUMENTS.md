@@ -104,7 +104,8 @@ client's image/resource handling separately.
   `mod_subsection` activities are returned under `subsections` and are searchable.
   Files include `timemodified` when Moodle reports it. `detail=full` reads
   complete metadata text in paginated blocks. Optional `moduleid`/`sectionid`
-  select a source; follow `nextPage` for all text. Media and linked resources are
+  select a source; `query` selects matching activities/sections and returns their
+  complete text in the same call. Follow `nextPage` for all text. Media and linked resources are
   not implicitly read. Recognized absolute links are listed;
   `richContentOmitted` and the source URL expose the remaining limits.
 - `moodle_grades`: with `courseid`, reports each item's Moodle weight
@@ -114,6 +115,9 @@ client's image/resource handling separately.
   the weighted total is unavailable instead of inventing one.
 - `moodle_resources`: includes `sectionid` and the section name for every item,
   including resources inside a subsection.
+- `moodle_assignment_status`: `assignid` is the assignment instance id; a course
+  module id (`cmid`) is also accepted and resolved. Unknown or non-assignment
+  modules return a clear id explanation instead of Moodle's raw error.
 - `moodle_assignments`: fills `submissionStatus` for at most 60 assignments and
   reports skipped/errored entries. `moodle_assignment_status` returns a coherent
   `status`, `timeSubmitted` only for submitted attempts, and `canSubmitReason`.

@@ -3,6 +3,18 @@
 Notable changes, newest first. Downloads for each release are on the
 [releases page](https://github.com/CloudDown/student-mcp/releases).
 
+## 0.8.4 — 2026-11-12
+
+- **Assignment id tolerance.** `moodle_assignment_status` accepts a course module
+  id (`cmid`) as well as the assignment instance id. If Moodle rejects the value as
+  `invalidrecord`, the server resolves it with
+  `core_course_get_course_module`. Non-assignment modules and unknown ids now get
+  a clear explanation instead of the raw Moodle error. The parameter description
+  states which id to use.
+- **Query with full course detail.** `moodle_course_content detail=full` accepts
+  `query` and returns the complete text of the matching activities/sections in
+  the same call, with pagination. No second call is required.
+
 ## 0.8.3 — 2026-11-12
 
 ### Added

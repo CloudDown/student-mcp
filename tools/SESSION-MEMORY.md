@@ -428,3 +428,11 @@ Retours du test réel et correctifs :
 - `sectionid` accepté en mode overview ; `courseids` ne produit plus l'erreur
   « fournir un courseid ».
 - Version 0.8.3, tests ajoutés pour chaque point.
+
+## 14. v0.8.4
+
+- `moodle_assignment_status` accepte un cmid en plus de l'id d'instance ; résolution
+  par `core_course_get_course_module`, erreurs claires pour un module non-devoir
+  ou un id inconnu, description du paramètre explicite.
+- `moodle_course_content detail=full` accepte `query` et renvoie dans le même appel
+  le texte complet des éléments trouvés, avec pagination.

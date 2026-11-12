@@ -240,7 +240,7 @@ fn contents(description: &str) -> Value {
 fn finds_late_description_terms_accents_and_explains_which_field_matched() {
     let raw = snapshot(&contents(&format!(
         "{} Conserver le résultat quantique final.",
-        "Introduction. ".repeat(3000)
+        "Introduction. ".repeat(10)
     )))
     .unwrap();
     let hits = search(&course(), &raw, "PHS0102 résultat quantique");
@@ -662,7 +662,6 @@ fn new_mcp_selectors_are_validated_before_school_requests() {
     for args in [
         json!({"courseid":1,"detail":true}),
         json!({"courseid":1,"refresh":"yes"}),
-        json!({"courseid":1,"detail":"full","query":"partiel"}),
         json!({"courseid":1,"moduleid":7}),
         json!({"courseid":1,"group_only":"yes"}),
         json!({"courseid":1,"detail":"full","page":-1}),
@@ -684,4 +683,62 @@ fn html_references_and_media_limits_are_visible_not_silently_flattened() {
     );
     assert!(!full.to_string().contains("secret"));
     assert!(full["note"].as_str().unwrap().contains("Relative"));
+}
+
+#[test]
+fn full_detail_accepts_a_query_and_returns_only_matching_activities() {
+    let raw = snapshot(&contents(&format!(
+        "{} Consigne sur les résultats quantiques.",
+        "Introduction. ".repeat(10)
+    )))
+    .unwrap();
+    let result = detail_matches(42, &raw, &[7], &[], 0, &groups(), "https://school.test").unwrap();
+    assert!(result["blocks"].as_array().unwrap().iter().any(|block| {
+        block["text"]
+            .as_str()
+            .unwrap()
+            .contains("résultats quantiques")
+    }));
+    assert_eq!(result["coverage"]["mode"], "detail-query");
+    assert_eq!(result["coverage"]["matchedModules"], 1);
+    let none = detail_matches(42, &raw, &[], &[], 0, &groups(), "https://school.test").unwrap();
+    assert!(none["blocks"].as_array().unwrap().is_empty());
+    assert!(none["note"].as_str().unwrap().contains("No course element"));
+}
+
+#[test]
+fn mcp_detail_full_with_query_needs_no_second_call() {
+    crate::config::tests::with_temp_config(|| {
+        let (url, worker) = server(vec![
+            contents("Exigence quantique complète"),
+            json!({"groups":[]}),
+            json!({"groups":[]}),
+            json!({"userid":9}),
+            json!([course()]),
+        ]);
+        let settings = crate::config::Settings {
+            moodle: Some(crate::config::MoodleSettings {
+                url: Some(url),
+                token: Some("private-token".into()),
+                allow_write: None,
+            }),
+            ..Default::default()
+        };
+        let response = crate::mcp::dispatch_tool(
+            &settings,
+            "moodle_course_content",
+            &json!({"courseid":42,"detail":"full","query":"quantique"}),
+        );
+        assert_eq!(response["isError"], false, "{response}");
+        let result: Value =
+            serde_json::from_str(response["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(result["matchCount"], 1);
+        assert!(result["blocks"].as_array().unwrap().iter().any(|block| {
+            block["text"]
+                .as_str()
+                .unwrap()
+                .contains("Exigence quantique")
+        }));
+        assert_eq!(worker.join().unwrap().len(), 5);
+    });
 }

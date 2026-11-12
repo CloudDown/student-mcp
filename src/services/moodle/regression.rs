@@ -160,3 +160,54 @@ fn assignments_malformed_reply_is_not_an_empty_success() {
     assert!(client.assignments(None).is_err());
     worker.join().unwrap();
 }
+
+#[test]
+fn assignment_status_accepts_a_course_module_id_and_resolves_it() {
+    let (url, worker) = tests::server(vec![
+        json!({"errorcode":"invalidrecord","message":"Can't find data record in database table assign."}),
+        json!({"cm":{"id":10,"modname":"assign","instance":77}}),
+        json!({"lastattempt":{"submission":{"status":"new"},"submissionsenabled":true,
+            "locked":false,"cansubmit":true}}),
+    ]);
+    let client = MoodleClient::new(&MoodleConfig {
+        base_url: url,
+        token: "fixture".into(),
+        allow_write: false,
+    });
+    let status = client.assignment_status(10, None).unwrap();
+    assert_eq!(status["assignid"], 77);
+    assert_eq!(status["requestedId"], 10);
+    assert_eq!(status["status"], "open");
+    assert_eq!(worker.join().unwrap().len(), 3);
+}
+
+#[test]
+fn assignment_status_explains_the_difference_instead_of_leaking_invalidrecord() {
+    let (url, worker) = tests::server(vec![
+        json!({"errorcode":"invalidrecord","message":"Can't find data record in database table assign."}),
+        json!({"cm":{"id":10,"modname":"quiz","instance":5}}),
+    ]);
+    let client = MoodleClient::new(&MoodleConfig {
+        base_url: url,
+        token: "fixture".into(),
+        allow_write: false,
+    });
+    let error = client.assignment_status(10, None).unwrap_err();
+    assert!(error.contains("not an assignment"), "{error}");
+    assert!(!error.contains("invalidrecord"), "{error}");
+    worker.join().unwrap();
+
+    let (url, worker) = tests::server(vec![
+        json!({"errorcode":"invalidrecord","message":"Can't find data record in database table assign."}),
+        json!({"errorcode":"invalidrecord","message":"Can't find data record in database table course_modules."}),
+    ]);
+    let client = MoodleClient::new(&MoodleConfig {
+        base_url: url,
+        token: "fixture".into(),
+        allow_write: false,
+    });
+    let error = client.assignment_status(999, None).unwrap_err();
+    assert!(error.contains("assignment instance id"), "{error}");
+    assert!(!error.contains("invalidrecord"), "{error}");
+    worker.join().unwrap();
+}

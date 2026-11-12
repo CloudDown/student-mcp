@@ -132,7 +132,7 @@ fn definitions_for_services(
             { "name": "moodle_resources", "description": "Pages, files, URLs, folders and books with their Moodle sectionid and section name. Prefer moodle_course_content for the full week/TD tree.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_file", "description": "Use fileurl from moodle_course_content or moodle_search.", "inputSchema": { "type": "object", "properties": { "fileurl": { "type": "string" }, "format": { "type": "string", "enum": ["file", "text", "images"] }, "find": { "type": "string", "description": "Phrase to find in extracted text." }, "page_from": { "type": "integer", "minimum": 1 }, "page_to": { "type": "integer", "minimum": 1 } }, "required": ["fileurl"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_assignments", "description": "Visible assignments with course, due date, scheduled status and current submissionStatus (bounded to 60 status checks). Filter by courseids.", "inputSchema": { "type": "object", "properties": { "courseids": { "type": "array", "items": { "type": "integer" } } } }, "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_assignment_status", "description": "Submission and grading status for one assignment: coherent status, timeSubmitted, canSubmit plus canSubmitReason, and uploaded files.", "inputSchema": { "type": "object", "properties": { "assignid": { "type": "integer", "minimum": 1 } }, "required": ["assignid"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_assignment_status", "description": "Submission and grading status for one assignment: coherent status, timeSubmitted, canSubmit plus canSubmitReason, and uploaded files. assignid is the assignment instance id; a course module id (cmid) is accepted and resolved.", "inputSchema": { "type": "object", "properties": { "assignid": { "type": "integer", "minimum": 1, "description": "Assignment instance id (id from moodle_assignments), not a course module id. A cmid is also accepted and resolved." }, "cmid": { "type": "integer", "minimum": 1, "description": "Optional course module id (cmid from moodle_course_content) to resolve to its assignment." } }, "required": ["assignid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_quizzes", "description": "List visible quizzes; optionally filter to specific course IDs.", "inputSchema": { "type": "object", "properties": { "courseids": { "type": "array", "items": { "type": "integer" } } } }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_quiz_status", "description": "Attempts, best grade and access info for one quiz.", "inputSchema": { "type": "object", "properties": { "quizid": { "type": "integer", "minimum": 1 } }, "required": ["quizid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_grades", "description": "Grades the student can act on. With courseid: item grades, Moodle-reported weights and course total. weightsSource says whether weights came from grade items or the user report; if Moodle reports none, weightsAvailable=false and no weight is invented.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } } }, "annotations": { "readOnlyHint": true } },
@@ -188,9 +188,10 @@ fn definitions_for_services(
             tool["inputSchema"]["properties"]["offset"] = json!({"type":"integer","minimum":0,"description":"Result offset within this page/window. Prefer the exact continuation arguments returned."});
         }
         if tool["name"] == "moodle_course_content" {
-            tool["description"] = json!("Bounded course navigation. detail=overview (default) returns up to 6 sections per page with direct section URLs, nested subsections, the student's groups, uservisible/groupRestricted flags and shortened previews, NOT complete instructions. Use group_only=true to hide what Moodle marks invisible through group restrictions. Follow nextPage for more sections; moduleCount/fileCount show omissions. detail=full returns complete description/inline text in bounded blocks; optionally select moduleid or sectionid, then follow nextPage until null. It does not read attached PDFs/Office files: use moodle_file. query filters the overview. Metadata is cached per account for 15 minutes; refresh=true fetches current content.");
+            tool["description"] = json!("Bounded course navigation. detail=overview (default) returns up to 6 sections per page with direct section URLs, nested subsections, the student's groups, uservisible/groupRestricted flags and shortened previews, NOT complete instructions. Use group_only=true to hide what Moodle marks invisible through group restrictions. Follow nextPage for more sections; moduleCount/fileCount show omissions. detail=full returns complete description/inline text in bounded blocks; optionally select moduleid or sectionid, then follow nextPage until null. It does not read attached PDFs/Office files: use moodle_file. query filters the overview, or selects matching activities for detail=full and returns their complete text in the same call. Metadata is cached per account for 15 minutes; refresh=true fetches current content.");
             tool["inputSchema"]["properties"]["detail"] =
                 json!({"type":"string","enum":["overview","full"]});
+            tool["inputSchema"]["properties"]["query"] = json!({"type":"string","description":"Filter the overview, or select matching activities for detail=full (returns their complete text)."});
             tool["inputSchema"]["properties"]["moduleid"] = json!({"type":"integer","minimum":1,"description":"Activity id from the overview/search, for detail=full."});
             tool["inputSchema"]["properties"]["sectionid"] = json!({"type":"integer","minimum":1,"description":"Section id (not section number) for overview or detail=full."});
             tool["inputSchema"]["properties"]["page"] = json!({"type":"integer","minimum":0,"description":"0-based section page in overview, or detail block page in full. Follow nextPage."});
@@ -442,19 +443,22 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
                     client.course_content(courseid, query, group_only, page, sectionid)
                 }
                 "full" => {
-                    if query.is_some() {
-                        return Err("For exhaustive detail, use moduleid/sectionid instead of query, or omit selectors to read the course.".into());
-                    }
                     let optional_id = |key| match args.get(key) {
                         None | Some(Value::Null) => Ok(None),
                         _ => require_integer(args, key).map(Some),
                     };
-                    client.course_detail(
-                        courseid,
-                        optional_id("moduleid")?,
-                        optional_id("sectionid")?,
-                        page,
-                    )
+                    let moduleid = optional_id("moduleid")?;
+                    let sectionid = optional_id("sectionid")?;
+                    if let Some(query) = query {
+                        if moduleid.is_some() || sectionid.is_some() {
+                            return Err(
+                                "Use query alone with detail=full, or moduleid/sectionid, not both."
+                                    .into(),
+                            );
+                        }
+                        return client.course_detail_matching(courseid, query, page);
+                    }
+                    client.course_detail(courseid, moduleid, sectionid, page)
                 }
                 _ => Err("detail must be overview or full.".into()),
             }
@@ -467,7 +471,12 @@ pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
             MoodleClient::new(config).assignments(courses.as_deref())
         }),
         "moodle_assignment_status" => moodle_tool(settings, |config| {
-            MoodleClient::new(config).assignment_status(require_integer(args, "assignid")?)
+            let assignid = require_integer(args, "assignid")?;
+            let cmid = match args.get("cmid") {
+                None | Some(Value::Null) => None,
+                _ => Some(require_integer(args, "cmid")?),
+            };
+            MoodleClient::new(config).assignment_status(assignid, cmid)
         }),
         "moodle_quizzes" => moodle_tool(settings, |config| {
             let client = MoodleClient::new(config);

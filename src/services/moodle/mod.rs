@@ -850,6 +850,48 @@ impl MoodleClient {
         Ok(result)
     }
 
+    /// Detail full text for the activities/sections matched by a query, in one call.
+    pub(crate) fn course_detail_matching(
+        &self,
+        courseid: i64,
+        query: &str,
+        page: usize,
+    ) -> Result<Value, String> {
+        let (raw, index) = self.content_snapshot(courseid)?;
+        let groups = self.course_groups(courseid);
+        let courses = self.my_courses(false)?;
+        let course = courses["courses"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|course| course["id"].as_i64() == Some(courseid))
+            .cloned()
+            .unwrap_or_else(|| json!({"id": courseid, "fullname": "", "shortname": ""}));
+        let hits = research::search(&course, &raw, query);
+        let module_ids = hits
+            .iter()
+            .filter_map(|hit| hit["moduleid"].as_i64())
+            .collect::<Vec<_>>();
+        let section_ids = hits
+            .iter()
+            .filter(|hit| hit["area"] == "section")
+            .filter_map(|hit| hit["sectionid"].as_i64())
+            .collect::<Vec<_>>();
+        let mut result = research::detail_matches(
+            courseid,
+            &raw,
+            &module_ids,
+            &section_ids,
+            page,
+            &groups,
+            &self.base_url,
+        )?;
+        result["query"] = json!(query);
+        result["matchCount"] = json!(hits.len());
+        result["index"] = index;
+        Ok(result)
+    }
+
     pub fn assignments(&self, courseids: Option<&[i64]>) -> Result<Value, String> {
         let raw = self.call("mod_assign_get_assignments", &courseids_payload(courseids))?;
         let courses = raw["courses"]
@@ -917,11 +959,56 @@ impl MoodleClient {
             "note":"status is the scheduled window from Moodle dates; submissionStatus is the current attempt state. Submission status was queried for at most 60 assignments; skipped/error entries say so. Use moodle_assignment_status with id as assignid for grading details. Full instructions: moodle_course_content detail=full with cmid as moduleid."}))
     }
 
-    pub fn assignment_status(&self, assignid: i64) -> Result<Value, String> {
-        let raw = self.call(
+    /// Resolve an assignment id, accepting a course module id (cmid) when Moodle
+    /// rejects the value as an assignment instance id.
+    fn resolve_assignment(&self, id: i64, cmid: Option<i64>) -> Result<(i64, Value), String> {
+        if let Some(cmid) = cmid {
+            let assignid = self.assignid_from_cmid(cmid)?;
+            let raw = self.call(
+                "mod_assign_get_submission_status",
+                &json!({ "assignid": assignid }),
+            )?;
+            return Ok((assignid, raw));
+        }
+        match self.call(
             "mod_assign_get_submission_status",
-            &json!({ "assignid": assignid }),
-        )?;
+            &json!({ "assignid": id }),
+        ) {
+            Ok(raw) => Ok((id, raw)),
+            Err(error) if looks_like_invalid_id(&error) => {
+                let assignid = self.assignid_from_cmid(id)?;
+                let raw = self.call(
+                    "mod_assign_get_submission_status",
+                    &json!({ "assignid": assignid }),
+                )?;
+                Ok((assignid, raw))
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    fn assignid_from_cmid(&self, cmid: i64) -> Result<i64, String> {
+        let raw = self
+            .call("core_course_get_course_module", &json!({ "cmid": cmid }))
+            .map_err(|_| {
+                format!(
+                    "No assignment matches {cmid}. moodle_assignment_status expects the assignment instance id (the id returned by moodle_assignments), not a course module id (cmid). Pass that id as assignid, or pass cmid={cmid}."
+                )
+            })?;
+        let module = raw.get("cm").unwrap_or(&Value::Null);
+        let modname = module["modname"].as_str().unwrap_or("");
+        if modname != "assign" {
+            return Err(format!(
+                "Course module {cmid} is '{modname}', not an assignment. Use the tool for that activity, or pass the assignment instance id from moodle_assignments."
+            ));
+        }
+        module["instance"].as_i64().filter(|id| *id > 0).ok_or_else(|| {
+            format!("Course module {cmid} has no assignment instance id; Moodle did not return a usable assignment.")
+        })
+    }
+
+    pub fn assignment_status(&self, id: i64, cmid: Option<i64>) -> Result<Value, String> {
+        let (assignid, raw) = self.resolve_assignment(id, cmid)?;
         let snapshot = submission_snapshot(&raw);
         let feedback = raw.get("feedback").cloned().unwrap_or(Value::Null);
         let submission = raw
@@ -931,6 +1018,7 @@ impl MoodleClient {
             .unwrap_or(Value::Null);
         Ok(json!({
             "assignid": assignid,
+            "requestedId": id,
             "status": snapshot["status"],
             "submissionStatus": snapshot["submissionStatus"],
             "timeSubmitted": snapshot["timeSubmitted"],
@@ -1693,6 +1781,19 @@ fn index_sections(sections: &Value, map: &mut std::collections::HashMap<i64, (i6
             }
         }
     }
+}
+
+fn looks_like_invalid_id(error: &str) -> bool {
+    let error = error.to_ascii_lowercase();
+    [
+        "invalidrecord",
+        "invalidmodule",
+        "invalidid",
+        "not found",
+        "unknown",
+    ]
+    .iter()
+    .any(|needle| error.contains(needle))
 }
 
 fn submission_snapshot(raw: &Value) -> Value {
@@ -3219,15 +3320,15 @@ pub(crate) mod tests {
             token: "fixture".into(),
             allow_write: false,
         });
-        let open = client.assignment_status(5).unwrap();
+        let open = client.assignment_status(5, None).unwrap();
         assert_eq!(open["status"], "open");
         assert_eq!(open["canSubmit"], true);
         assert!(open["timeSubmitted"].is_null());
         assert!(open["canSubmitReason"].as_str().unwrap().contains("allows"));
-        let submitted = client.assignment_status(5).unwrap();
+        let submitted = client.assignment_status(5, None).unwrap();
         assert_eq!(submitted["status"], "submitted");
         assert_eq!(submitted["timeSubmitted"], 1234);
-        let closed = client.assignment_status(5).unwrap();
+        let closed = client.assignment_status(5, None).unwrap();
         assert_eq!(closed["status"], "closed");
         assert_eq!(closed["canSubmit"], false);
         assert!(closed["canSubmitReason"]

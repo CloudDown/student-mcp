@@ -237,6 +237,9 @@ truncation. To read all textual instructions, use `detail=full`, optionally with
 `moduleid` or `sectionid`, then follow `nextPage` until null. This returns up to 4
 blocks of 8,000 characters per
 call. Omit selectors to read the course's available metadata text. Attachments
+`detail=full` can take `query` directly: it returns the complete text of the
+matching activities/sections in the same call, with `nextPage` pagination.
+
 `moodle_resources` adds the real `sectionid` and section name to each page,
 file, URL, folder and book, including resources inside a subsection. With
 `courseid`, `moodle_grades` reports Moodle item weights (from grade items or the
