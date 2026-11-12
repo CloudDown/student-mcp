@@ -161,6 +161,9 @@ pub struct Settings {
     pub canvas: Option<CanvasSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scale: Option<f32>,
+    /// Temporary `/s/` file-link lifetime in hours. Default 24; clamped to 1–168.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link_ttl_hours: Option<u64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub accounts: Vec<Account>,
     /// Connected services can be temporarily hidden from MCP without deleting credentials.
@@ -223,6 +226,10 @@ pub struct BrightspaceConfig {
 }
 
 impl Settings {
+    pub fn link_ttl_seconds(&self) -> u64 {
+        self.link_ttl_hours.unwrap_or(24).clamp(1, 168) * 60 * 60
+    }
+
     pub fn changes_allowed(&self, service: &str) -> bool {
         let id = self
             .account_scope
@@ -899,6 +906,14 @@ pub(crate) fn write_private_with_permissions(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn link_ttl_hours_defaults_to_24_and_is_clamped() {
+        let default: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(default.link_ttl_seconds(), 24 * 60 * 60);
+        let two: Settings = serde_json::from_str(r#"{"link_ttl_hours":2}"#).unwrap();
+        assert_eq!(two.link_ttl_seconds(), 2 * 60 * 60);
+    }
 
     // Process-global so worker threads spawned during a test still hit the
     // same temp file as the test body (save/load from jobs, checks, …).

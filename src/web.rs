@@ -75,6 +75,7 @@ pub fn settings_url() -> Result<String, String> {
 
 fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
     let settings = Settings::load();
+    crate::share::set_ttl_seconds(settings.link_ttl_seconds());
     if let Some(error) = settings.config_error {
         return Err(error);
     }
@@ -200,6 +201,7 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
         tunnel.poll();
         crate::share::set_origin(tunnel.origin().map(str::to_owned));
         let current = Settings::load();
+        crate::share::set_ttl_seconds(current.link_ttl_seconds());
         crate::share::set_port(if current.gateway.public_enabled() {
             tunnel_port
         } else {

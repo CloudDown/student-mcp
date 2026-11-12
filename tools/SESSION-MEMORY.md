@@ -436,3 +436,11 @@ Retours du test réel et correctifs :
   ou un id inconnu, description du paramètre explicite.
 - `moodle_course_content detail=full` accepte `query` et renvoie dans le même appel
   le texte complet des éléments trouvés, avec pagination.
+
+### v0.8.4 — suite
+
+- `moodle_assignment_status` accepte un cmid via `core_course_get_course_module`,
+  avec erreurs claires pour un module non-devoir ou un id inconnu.
+- `detail=full` accepte `query` et renvoie le détail complet des éléments trouvés.
+- Liens `/s/` : 24 h par défaut, réglable par `link_ttl_hours` (1–168), exposé en
+  secondes/minutes. Pas de tag ni release 0.8.4 (changement de processus).

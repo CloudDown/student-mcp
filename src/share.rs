@@ -1,8 +1,10 @@
 //! Bounded, expiring capability links to original files and optional plain text.
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-const TTL: Duration = Duration::from_secs(30 * 60);
+const DEFAULT_TTL_SECONDS: u64 = 24 * 60 * 60;
+static TTL_SECONDS: AtomicU64 = AtomicU64::new(DEFAULT_TTL_SECONDS);
 const MAX_BYTES: usize = 24 * 1024 * 1024;
 const MAX_FILES: usize = 128;
 static ADDRESS: Mutex<(u16, Option<String>)> = Mutex::new((0, None));
@@ -17,6 +19,15 @@ struct Artifact {
     bytes: Arc<Vec<u8>>,
     text: Arc<Vec<u8>>,
     expires: Instant,
+}
+
+/// File-link lifetime, configured by `link_ttl_hours` (1–168, default 24).
+pub(crate) fn ttl_seconds() -> u64 {
+    TTL_SECONDS.load(Ordering::Relaxed)
+}
+
+pub(crate) fn set_ttl_seconds(seconds: u64) {
+    TTL_SECONDS.store(seconds.clamp(60, 7 * 24 * 60 * 60), Ordering::Relaxed);
 }
 
 pub(crate) fn set_port(port: u16) {
@@ -90,7 +101,7 @@ fn publish_into(
         mime: mime.replace(['\r', '\n'], ""),
         bytes,
         text: Arc::new(text.as_bytes().to_vec()),
-        expires: Instant::now() + TTL,
+        expires: Instant::now() + Duration::from_secs(ttl_seconds()),
     });
     Some(id)
 }
@@ -284,5 +295,18 @@ mod tests {
             .unwrap()
             .expires = Instant::now();
         assert_eq!(route("GET", &format!("/s/{id}/notes.pdf")).unwrap().0, 410);
+    }
+
+    #[test]
+    fn link_lifetime_is_configurable_and_bounded() {
+        let _guard = LINK_LOCK.lock().unwrap();
+        let original = ttl_seconds();
+        set_ttl_seconds(2 * 60 * 60);
+        assert_eq!(ttl_seconds(), 7200);
+        set_ttl_seconds(0);
+        assert_eq!(ttl_seconds(), 60);
+        set_ttl_seconds(u64::MAX);
+        assert_eq!(ttl_seconds(), 7 * 24 * 60 * 60);
+        set_ttl_seconds(original);
     }
 }
