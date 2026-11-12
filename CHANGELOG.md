@@ -14,6 +14,9 @@ Notable changes, newest first. Downloads for each release are on the
 - **Query with full course detail.** `moodle_course_content detail=full` accepts
   `query` and returns the complete text of the matching activities/sections in
   the same call, with pagination. No second call is required.
+- **Configurable file-link lifetime.** Temporary `/s/...` links now last 24 hours
+  by default. Set `link_ttl_hours` in the config (1–168) to change it; responses
+  report `expiresInSeconds`/`expiresInMinutes`.
 
 ## 0.8.3 — 2026-11-12
 
