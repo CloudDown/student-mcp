@@ -25,6 +25,14 @@ class ReadmeTests(unittest.TestCase):
         self.assertNotIn("SPEC.md", README)
         self.assertIn("0.8.2", (ROOT / "tools" / "capture-readme.mjs").read_text(encoding="utf-8"))
 
+    def test_readme_stays_minimal(self):
+        # The landing page is a short visual walkthrough; details belong in
+        # tools/GUIDE.md and CHANGELOG.md.
+        lines = README.splitlines()
+        self.assertLessEqual(len(lines), 80, "Keep the README under 80 lines; move detail to tools/GUIDE.md")
+        self.assertLessEqual(len(README), 6000, "Keep the README under 6 kB; move detail to tools/GUIDE.md")
+        self.assertIn("[CHANGELOG.md](CHANGELOG.md)", README)
+
 
 if __name__ == "__main__":
     unittest.main()

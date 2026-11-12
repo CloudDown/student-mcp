@@ -156,6 +156,14 @@ vendu avec le projet et les images sont exclus ; les sorties restent hors git.
 Si Graphify est absent, utiliser les recherches habituelles.
 Installation et exemples : `tools/GUIDE.md`, section « Local code graph ».
 
+## Documentation
+
+`README.md` est une page d’accueil **minimale** : une intention, trois étapes,
+des captures, puis le strict nécessaire. Plafond vérifié par
+`tools/test_readme.py` (80 lignes, 6 kB). Tout détail technique, dépannage,
+limites ou historique va dans `tools/GUIDE.md` ou `CHANGELOG.md`, pas dans le
+README. Ajouter une capture plutôt qu’un paragraphe.
+
 ## Layout
 
 - `src/web.rs` / `src/resources/web/` — configuration web locale (hors tunnel) : `index.html` (coquille), `app.css`, `app.js`
