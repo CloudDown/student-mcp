@@ -52,6 +52,6 @@ Paste the complete link into the assistant's MCP connector settings, not into a 
 
 ## Privacy
 
-School passwords are not stored. The public link is a secret, and the `srv.us` relay can read traffic. Moodle metadata is cached privately for 15 minutes, without file bytes. MCP requests are logged locally with redacted paths.
+School passwords are not stored. The public link is a secret, and the `srv.us` relay can read traffic. Moodle metadata is cached privately for 15 minutes, without file bytes. MCP requests are logged locally with redacted paths. Run `student-mcp logs` to see tool calls, Moodle requests and file deliveries.
 
 Guide, changes and maintenance: [tools/GUIDE.md](tools/GUIDE.md) · [CHANGELOG.md](CHANGELOG.md) · MIT code, [GPL-3.0+ Moodle catalogue](src/services/moodle/catalog/LICENSE.md).

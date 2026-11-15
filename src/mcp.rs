@@ -334,6 +334,42 @@ fn connector_instructions(settings: &Settings) -> String {
 
 /// Dispatch one tool call; always returns a JSON-RPC tool result value.
 pub fn dispatch_tool(settings: &Settings, name: &str, args: &Value) -> Value {
+    let started = std::time::Instant::now();
+    let result = dispatch_tool_inner(settings, name, args);
+    let mut types = result["content"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|block| block["type"].as_str())
+        .collect::<Vec<_>>();
+    types.sort_unstable();
+    types.dedup();
+    let mut fields = json!({
+        "tool": name,
+        "ok": result["isError"] != true,
+        "ms": started.elapsed().as_millis() as u64,
+        "bytes": serde_json::to_vec(&result).map(|body| body.len()).unwrap_or(0),
+        "contentTypes": types,
+    });
+    if let Some(account) = args.get("account_id").and_then(Value::as_str) {
+        fields["account"] = json!(account);
+    }
+    if let Some(keys) = args
+        .as_object()
+        .map(|map| map.keys().cloned().collect::<Vec<_>>())
+    {
+        fields["argKeys"] = json!(keys);
+    }
+    if result["isError"] == true {
+        if let Some(error) = result["content"][0]["text"].as_str() {
+            fields["error"] = json!(error.chars().take(180).collect::<String>());
+        }
+    }
+    crate::request_log::activity("mcp.tool", fields);
+    result
+}
+
+fn dispatch_tool_inner(settings: &Settings, name: &str, args: &Value) -> Value {
     let service = tool_service(name);
     let mut selected = None;
     if let Some(service) = service {

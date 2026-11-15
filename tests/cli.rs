@@ -80,3 +80,41 @@ fn settings_url_is_read_only_and_checks_the_running_instance() {
     assert_eq!(std::fs::read_to_string(config).unwrap(), preserved);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn logs_command_shows_activity_and_mcp_logs() {
+    let dir = std::env::temp_dir().join(format!(
+        "student-cli-logs-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir(&dir).unwrap();
+    let config = dir.join("settings.json");
+    std::fs::write(&config, "{}").unwrap();
+    std::fs::write(
+        config.with_extension("activity.log"),
+        "{\"event\":\"first\"}\n{\"event\":\"second\"}\n",
+    )
+    .unwrap();
+    std::fs::write(config.with_extension("mcp.log"), "GET /mcp/redacted 200\n").unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_student-mcp"))
+            .args(args)
+            .env("STUDENT_MCP_CONFIG_FILE", &config)
+            .output()
+            .unwrap()
+    };
+    let activity = run(&["logs", "--lines=1"]);
+    assert!(activity.status.success());
+    let text = String::from_utf8(activity.stdout).unwrap();
+    assert!(text.contains("second"));
+    assert!(!text.contains("first"));
+    let mcp = run(&["logs", "--mcp"]);
+    assert!(String::from_utf8(mcp.stdout)
+        .unwrap()
+        .contains("GET /mcp/redacted 200"));
+    let _ = std::fs::remove_dir_all(dir);
+}

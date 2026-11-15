@@ -492,3 +492,11 @@ mémoire. Le tampon est maintenant aussi écrit dans un dossier privé.
   --all-targets` propre.
 - Limite : un lien ne répond pas pendant que l’application ou l’ordinateur est
   arrêté ; un lien `localOnly` dépend du port local courant.
+
+### v0.8.4 — journal d'activité
+
+- `~/.student-mcp.activity.log` (JSONL, 0600, rotation 1 MiB) : outil MCP, clés
+  d'arguments, compte, durée, taille/types de contenu, appels Moodle (fonction,
+  durée), livraisons de fichiers (nom, MIME, octets, pages, texte, lien).
+- `student-mcp logs [--lines=N] [--follow] [--mcp]`.
+- Jamais de valeurs d'arguments, corps, octets de fichiers, jetons ni mots de passe.

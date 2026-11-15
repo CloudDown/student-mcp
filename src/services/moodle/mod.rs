@@ -208,6 +208,24 @@ impl MoodleClient {
 
     /// One Web Service call; arrays become courseids[0]= form entries.
     pub fn call(&self, function: &str, args: &Value) -> Result<Value, String> {
+        let started = Instant::now();
+        let result = self.call_inner(function, args);
+        crate::request_log::activity(
+            "moodle.call",
+            json!({
+                "function": function,
+                "ok": result.is_ok(),
+                "ms": started.elapsed().as_millis() as u64,
+                "bytes": result.as_ref().ok()
+                    .and_then(|value| serde_json::to_vec(value).ok())
+                    .map(|body| body.len())
+                    .unwrap_or(0),
+            }),
+        );
+        result
+    }
+
+    fn call_inner(&self, function: &str, args: &Value) -> Result<Value, String> {
         if !valid_function_name(function) {
             return Err("Invalid Moodle function name.".into());
         }

@@ -211,7 +211,28 @@ fn document_result(
         result["documentId"] = json!(document.id);
         result["expiresInSeconds"] = json!(document.remaining_seconds());
     }
+    crate::request_log::activity(
+        "file.delivery",
+        json!({
+            "filename": document.filename,
+            "mime": result["mimeType"].as_str().unwrap_or(&document.mime),
+            "bytes": document.bytes.len(),
+            "format": file_format_label(query.format),
+            "pages": result["pages"].as_array().map(Vec::len).unwrap_or(0),
+            "blocks": result["blocks"].as_array().map(Vec::len).unwrap_or(0),
+            "textChars": result["text"].as_str().map(|text| text.chars().count()).unwrap_or(0),
+            "hasLinks": result.get("links").is_some(),
+        }),
+    );
     Ok(result)
+}
+
+fn file_format_label(format: FileFormat) -> &'static str {
+    match format {
+        FileFormat::File => "file",
+        FileFormat::Text => "text",
+        FileFormat::Images => "images",
+    }
 }
 
 fn original_file(document: &store::Document) -> Value {

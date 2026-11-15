@@ -23,6 +23,7 @@ use services::moodle::catalog;
 use services::{brightspace, canvas, moodle, omnivox};
 
 pub use config::VERSION;
+pub use request_log::{activity_log_path, mcp_log_path};
 pub use stdio::run as run_stdio;
 pub use web::run as run_web;
 pub use web::run_background as run_web_background;

@@ -26,6 +26,10 @@ Notable changes, newest first. Downloads for each release are on the
 - **Configurable file-link lifetime.** Temporary `/s/...` links now last 24 hours
   by default. Set `link_ttl_hours` in the config (1–168) to change it; responses
   report `expiresInSeconds`/`expiresInMinutes`.
+- **Local activity log.** `~/.student-mcp.activity.log` records MCP tool names,
+  argument keys, timings, payload sizes, Moodle Web Service calls and file
+  deliveries without content, file bytes or tokens. `student-mcp logs [--mcp]
+  [--follow]` prints it. `~/.student-mcp.mcp.log` still records inbound requests.
 - **Lighter assignment status.** `moodle_assignments` queries submission status
   only for open assignments and those due within 14 days by default, with a
   3-minute cache and a 10-second budget. `full_status=true` requests every status.

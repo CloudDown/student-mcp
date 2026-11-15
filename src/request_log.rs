@@ -1,4 +1,5 @@
 //! Privacy-bounded MCP request log. Never records tokens, cookies or bodies.
+use serde_json::{json, Value};
 use std::{
     fs::{self, OpenOptions},
     io::Write,
@@ -41,30 +42,64 @@ pub(crate) fn now_seconds() -> u64 {
         .unwrap_or(0)
 }
 
-fn log_path() -> Option<PathBuf> {
-    // Unit tests must not write next to the real configuration.
+/// Structured local activity log: MCP tools, Moodle calls and file deliveries.
+/// Metadata only; never arguments values, message bodies, tokens or file bytes.
+pub fn activity_log_path() -> PathBuf {
     #[cfg(test)]
     {
-        std::env::var_os("STUDENT_MCP_TEST_LOG").map(PathBuf::from)
+        std::env::var_os("STUDENT_MCP_TEST_LOG")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| std::env::temp_dir().join("student-mcp.activity.log"))
+            .with_extension("activity.log")
     }
     #[cfg(not(test))]
     {
-        Some(crate::config::config_path().with_extension("mcp.log"))
+        crate::config::config_path().with_extension("activity.log")
     }
+}
+
+pub fn mcp_log_path() -> PathBuf {
+    #[cfg(test)]
+    {
+        std::env::var_os("STUDENT_MCP_TEST_LOG")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| std::env::temp_dir().join("student-mcp.mcp.log"))
+    }
+    #[cfg(not(test))]
+    {
+        crate::config::config_path().with_extension("mcp.log")
+    }
+}
+
+pub(crate) fn activity_line(event: &str, fields: Value) -> String {
+    json!({
+        "ts": now_seconds(),
+        "event": clean_field(event),
+        "fields": fields,
+    })
+    .to_string()
+        + "\n"
+}
+
+pub(crate) fn activity(event: &str, fields: Value) {
+    #[cfg(test)]
+    if std::env::var_os("STUDENT_MCP_TEST_LOG").is_none() {
+        return;
+    }
+    append(&activity_log_path(), &activity_line(event, fields));
 }
 
 /// Best effort: logging must never fail or slow down an MCP request.
 pub(crate) fn record(method: &str, path: &str, status: u16, user_agent: Option<&str>) {
-    let Some(file) = log_path() else { return };
     let line = format!(
         "{} {} {} {} ua=\"{}\"\n",
-        crate::request_log::now_seconds(),
+        now_seconds(),
         clean_field(method),
         status,
         sanitize_path(path),
         clean_field(user_agent.unwrap_or("-"))
     );
-    append(&file, &line);
+    append(&mcp_log_path(), &line);
 }
 
 pub(crate) fn append(path: &Path, line: &str) {
@@ -127,5 +162,14 @@ mod tests {
         );
         assert_eq!(fs::read_to_string(&path).unwrap(), "second\n");
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn activity_lines_are_single_json_records() {
+        let line = activity_line("mcp.tool", json!({"tool":"moodle_courses","ok":true}));
+        assert_eq!(line.matches('\n').count(), 1);
+        let value: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
+        assert_eq!(value["event"], "mcp.tool");
+        assert_eq!(value["fields"]["tool"], "moodle_courses");
     }
 }

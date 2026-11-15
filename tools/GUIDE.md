@@ -439,12 +439,24 @@ student-mcp up         # browser page + local HTTP server
 student-mcp up --port=9000
 student-mcp install    # reopens the page (used by the installer)
 student-mcp settings-url  # prints the running settings URL
+student-mcp logs           # recent local activity (tools, Moodle calls, files)
+student-mcp logs --mcp     # inbound MCP requests only
+student-mcp logs --follow  # keep printing new activity
 student-mcp version
 ```
 
-Incoming MCP requests are appended to `~/.student-mcp.mcp.log` (mode 0600,
-rotated at 1 MiB). Each line has the time, method, **redacted** path, status and
-user-agent; headers, bodies and connector tokens are never written. Set
+Two private logs help diagnose what the app does:
+
+- `~/.student-mcp.activity.log` (JSON Lines): MCP tool name, argument **keys**,
+  account id, duration, result size/content types, each Moodle Web Service
+  function and duration, and file deliveries (filename, MIME, bytes, pages,
+  text size, whether a link was issued). Values, message bodies, file bytes,
+  tokens and passwords are never written.
+- `~/.student-mcp.mcp.log`: inbound HTTP method, **redacted** path, status and
+  user-agent. Headers, bodies and connector tokens are never written.
+
+Both are mode 0600 and rotated at 1 MiB. `student-mcp logs` prints the activity
+log; add `--mcp` for inbound requests or `--follow` to watch live. Set
 `STUDENT_MCP_TEST_LOG` only in tests to redirect unit-test writes.
 
 `up` prints the settings URL on startup and in `~/.student-mcp/window.log`
