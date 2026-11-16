@@ -153,6 +153,7 @@ class MCP:
                 results[ident - 100] = {
                     "name": calls[ident - 100][0],
                     "text": text,
+                    "types": [p.get("type") for p in result.get("content") or [] if isinstance(p, dict)],
                     "is_error": bool(result.get("isError")),
                     "error": (message.get("error") or {}).get("message"),
                     "missing": False,
@@ -475,10 +476,12 @@ def parse_mcp_json(result: dict[str, Any]) -> Any:
 
 
 def intents(binary: Path, account: dict[str, Any] | None) -> list[dict[str, Any]]:
-    """Real student questions, checked against what the school actually holds.
+    """Twenty real student questions, graded against the school API.
 
-    Each row answers: could a student get this right through the MCP alone, and
-    what did it cost? Failure here means an assistant must guess or invent.
+    Every row is a question an assistant would receive. PASS means the tools carry
+    enough correct data for a right answer, PARTIAL means a plausible answer would
+    be incomplete, FAIL means the model must guess or invent, SKIP means this
+    account does not hold the data the question needs.
     """
     mcp = MCP(binary)
     school = School(account) if account else None
@@ -486,34 +489,57 @@ def intents(binary: Path, account: dict[str, Any] | None) -> list[dict[str, Any]
 
     def row(question: str, verdict: str, evidence: str, tool: str = "-", payload: int = 0) -> None:
         rows.append(
-            {"question": question, "verdict": verdict, "evidence": evidence, "tool": tool, "bytes": payload}
+            {
+                "n": len(rows) + 1,
+                "question": question,
+                "verdict": verdict,
+                "evidence": evidence,
+                "tool": tool,
+                "bytes": payload,
+            }
         )
 
-    # 1. Which courses am I enrolled in?
-    result, seconds = mcp.one("moodle_my_courses", {})
-    data = parse_mcp_json(result) or {}
-    listed = data.get("courses") or []
-    evidence = f"{len(listed)} cours listés"
-    verdict = "PASS" if listed else "FAIL"
+    def call(name: str, args: dict[str, Any]) -> tuple[dict[str, Any], Any, float]:
+        result, seconds = mcp.one(name, args)
+        return result, parse_mcp_json(result), seconds
+
+    # --- context -----------------------------------------------------------
+    result, data, _ = call("moodle_my_courses", {})
+    courses = (data or {}).get("courses") or []
+    by_code: dict[str, dict[str, Any]] = {}
+    for course in courses:
+        code = (course.get("shortname") or "").split(" ")[0]
+        if code:
+            by_code.setdefault(code, course)
+    now = int(time.time())
+
+    # 1 — courses ------------------------------------------------------------
+    evidence = f"{len(courses)} cours listés"
+    verdict = "PASS" if courses else "FAIL"
     if school:
         try:
-            truth = school.ws("core_enrol_get_users_courses", userid=school.ws("core_webservice_get_site_info")["userid"])
+            info = school.ws("core_webservice_get_site_info")
+            truth = school.ws("core_enrol_get_users_courses", userid=info["userid"])
             evidence += f", école {len(truth)}"
-            if len(truth) != len(listed):
-                verdict = "PARTIAL"
+            if len(truth) != len(courses):
+                disclosed = any(
+                    word in result["text"].lower()
+                    for word in ("past", "ended", "excluded", "archiv", "ancien")
+                )
+                verdict = "PASS" if disclosed else "PARTIAL"
+                evidence += " | filtre annoncé" if disclosed else " | filtre silencieux"
         except Exception as exc:
             evidence += f" (vérité indisponible: {type(exc).__name__})"
     row("« Quels cours j'ai cette session ? »", verdict, evidence, "moodle_my_courses", len(result["text"]))
 
-    # 2. What is due in the next 7 days?
-    result, seconds = mcp.one("moodle_deadlines", {"days": 7})
-    data = parse_mcp_json(result) or {}
-    names = [d.get("name") for d in data.get("deadlines") or [] if d.get("name")]
-    evidence = f"{len(names)} échéance(s): " + "; ".join(names[:3])
+    # 2 — due in the next 7 days --------------------------------------------
+    result, data, _ = call("moodle_deadlines", {"days": 7})
+    items = (data or {}).get("deadlines") or []
+    names = [item.get("name") for item in items if item.get("name")]
+    evidence = f"{len(names)} élément(s)" + (f": {names[0]}" if names else "")
     verdict = "PASS"
     if school:
         try:
-            now = int(time.time())
             events = school.ws(
                 "core_calendar_get_action_events_by_timesort",
                 limitnum=50,
@@ -529,160 +555,347 @@ def intents(binary: Path, account: dict[str, Any] | None) -> list[dict[str, Any]
             evidence += f" (vérité indisponible: {type(exc).__name__})"
     row("« Qu'est-ce que je dois remettre cette semaine ? »", verdict, evidence, "moodle_deadlines", len(result["text"]))
 
+    # 3 — what is already overdue -------------------------------------------
+    result, data, _ = call("moodle_deadlines", {"days": 14, "include_expired": True})
+    expired = [
+        item
+        for item in (data or {}).get("deadlines") or []
+        if (item.get("time") or 0) and (item.get("time") or 0) < now
+    ]
+    row(
+        "« Qu'est-ce qui est déjà en retard ? »",
+        "PASS" if expired else "SKIP",
+        f"{len(expired)} élément(s) échu(s) dans la fenêtre" if expired else "aucun échu dans la fenêtre",
+        "moodle_deadlines include_expired",
+        len(result["text"]),
+    )
+
     if not school:
+        for question, tool in (
+            ("« Le dernier TD du cours ? »", "moodle_search"),
+            ("« Donne-moi le corrigé du TD3 »", "moodle_search"),
+            ("« Trouve le plan de cours »", "moodle_search"),
+        ):
+            row(question, "SKIP", "vérité terrain indisponible (--offline)", tool)
         return rows
 
-    courses = listed or []
-    by_code: dict[str, dict[str, Any]] = {}
-    for course in courses:
-        code = (course.get("shortname") or "").split(" ")[0]
-        if code:
-            by_code[code] = course
-
-    # 3. Current-session TD files: can one be seen without reading every row?
-    for code in ("MTH0102", "PHS0102", "CHE0501"):
-        course = by_code.get(code)
-        if not course:
-            continue
+    # 4 — discovery of a recent exercise sheet, per course -------------------
+    audited = 0
+    best = 0
+    best_code = ""
+    best_recent = 0
+    payload = 0
+    for code, course in list(by_code.items())[:3]:
         try:
-            tds = course_files(school, course["id"], r"\bTD\b|TD\d|_TD")
+            sheets = course_files(school, course["id"], r"\bTD\b|TD\d|_TD")
         except Exception:
             continue
-        recent = [f for f in tds if f["timemodified"] >= int(time.time()) - 180 * 86400]
+        recent = [f for f in sheets if f["timemodified"] >= now - 180 * 86400]
         if not recent:
             continue
-        newest = max(recent, key=lambda f: f["timemodified"])
-        result, _ = mcp.one("moodle_search", {"query": f"{code} TD"})
-        data = parse_mcp_json(result) or {}
-        found = [r.get("filename") for r in data.get("results") or []]
+        audited += 1
+        result, data, _ = call("moodle_search", {"query": f"{code} TD"})
+        found = [r.get("filename") for r in (data or {}).get("results") or []]
         ranks = [found.index(f["filename"]) + 1 for f in recent if f["filename"] in found]
-        best = min(ranks) if ranks else 0
+        rank = min(ranks) if ranks else 0
+        if rank and (not best or rank < best):
+            best, best_code, best_recent, payload = rank, code, len(recent), len(result["text"])
+    if audited:
         verdict = "PASS" if best and best <= 3 else ("PARTIAL" if best and best <= 8 else "FAIL")
         row(
-            f"« C'est quoi le dernier TD de {code} ? »",
+            "« C'est quoi le dernier TD de mon cours ? »",
             verdict,
-            f"{len(recent)} TD de la session, {len(found)} résultats"
-            f" | meilleur rang {best or 'absent'}"
-            f" | le plus récent: {newest['filename']} ({time.strftime('%Y-%m-%d', time.localtime(newest['timemodified']))})",
+            f"{audited} cours inspecté(s), meilleur rang {best or 'absent'}"
+            + (f" ({best_code}, {best_recent} TD récents)" if best_code else ""),
+            "moodle_search",
+            payload,
+        )
+    else:
+        row("« C'est quoi le dernier TD de mon cours ? »", "SKIP", "aucun TD daté récent détecté", "moodle_search")
+
+    # 5 — a correction, by type --------------------------------------------
+    emitted = False
+    for course in list(by_code.values())[:3]:
+        try:
+            corrections = course_files(school, course["id"], r"corrig|correction")
+        except Exception:
+            continue
+        if not corrections:
+            continue
+        result, data, _ = call("moodle_search", {"query": "corrigé exercices"})
+        found = [r.get("filename") for r in (data or {}).get("results") or []]
+        hit = next((f for f in corrections if f["filename"] in found), None)
+        row(
+            "« Donne-moi le corrigé des exercices »",
+            "PASS" if hit else "FAIL",
+            f"{len(corrections)} corrigé(s) dans ce cours | trouvé: {hit['filename'] if hit else 'aucun'}",
             "moodle_search",
             len(result["text"]),
         )
+        emitted = True
+        break
+    if not emitted:
+        row("« Donne-moi le corrigé des exercices »", "SKIP", "aucun corrigé dans les cours inspectés", "moodle_search")
 
-    # 4. A date that only lives inside a long description: does it survive?
-    course = by_code.get("PHS0102") or (courses[0] if courses else None)
-    if course:
-        months = "janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre"
-        date_re = re.compile(r"\d{1,2}(?:er)?\s+(?:" + months + r")", re.I)
-        overview, _ = mcp.one("moodle_course_content", {"courseid": course["id"]})
-        data = parse_mcp_json(overview) or {}
-        preview: dict[int, dict[str, Any]] = {}
-        for section in data.get("sections") or []:
-            for module in section.get("modules") or []:
-                preview[module.get("id")] = module
-        leaked = None
+    # 6 — course outline ----------------------------------------------------
+    emitted = False
+    for course in list(by_code.values())[:3]:
         try:
-            for section in course_contents(school, course["id"]):
-                for module in section.get("modules") or []:
-                    description = module.get("description") or ""
-                    match = date_re.search(description)
-                    if not match:
-                        continue
-                    shown = preview.get(module.get("id"))
-                    if shown is None:
-                        continue
-                    if not date_re.search(shown.get("description") or ""):
-                        leaked = (module.get("name"), match.group(0), shown.get("descriptionTruncated"))
-                        break
-                if leaked:
-                    break
+            candidates = course_files(school, course["id"], r"plan|syllabus|entente")
         except Exception:
-            leaked = None
-        if leaked:
-            name, date, truncated = leaked
-            row(
-                f"« Quand est mon examen de {course.get('shortname', '').split(' ')[0]} ? »",
-                "FAIL",
-                f"activité « {name} »: l'école donne « {date} », la vue par défaut la coupe"
-                f" (descriptionTruncated={truncated}) — il faut detail=full",
-                "moodle_course_content",
-                len(overview["text"]),
-            )
-        else:
-            row(
-                f"« Quand est mon examen de {course.get('shortname', '').split(' ')[0]} ? »",
-                "PASS",
-                "aucune date présente dans une description n'est coupée par la vue par défaut",
-                "moodle_course_content",
-                len(overview["text"]),
-            )
+            continue
+        if not candidates:
+            continue
+        result, data, _ = call("moodle_search", {"query": "plan de cours", "courseid": course["id"]})
+        found = [r.get("filename") for r in (data or {}).get("results") or []]
+        outline = next((f for f in candidates if f["filename"] in found), None)
+        row(
+            "« Trouve le plan de cours »",
+            "PASS" if outline else "FAIL",
+            f"{len(candidates)} candidat(s) dans ce cours | trouvé: {outline['filename'] if outline else 'aucun'}",
+            "moodle_search",
+            len(result["text"]),
+        )
+        emitted = True
+        break
+    if not emitted:
+        row("« Trouve le plan de cours »", "SKIP", "aucun plan de cours dans les cours inspectés", "moodle_search")
 
-    # 5. A grade the student knows.
-    result, _ = mcp.one("moodle_grades", {})
-    data = parse_mcp_json(result) or {}
-    grades = data.get("grades") or []
+    # --- the heaviest course: reading, pagination, files -------------------
+    target = courses[0]
+    try:
+        best_files = -1
+        for course in courses[:6]:
+            count = len(course_files(school, course["id"]))
+            if count > best_files:
+                target, best_files = course, count
+        contents = school.ws("core_course_get_contents", courseid=target["id"]) or []
+        school_sections = len(contents)
+        modules = [m for s in contents for m in (s.get("modules") or [])]
+    except Exception:
+        school_sections, modules = 0, []
+
+    # 7 — overview page -----------------------------------------------------
+    result, data, _ = call("moodle_course_content", {"courseid": target["id"]})
+    sections = (data or {}).get("sections") or []
+    total = ((data or {}).get("coverage") or {}).get("totalSections")
+    has_next = bool((data or {}).get("nextPage"))
+    verdict = "PASS" if sections and (not total or total <= len(sections) or has_next) else "FAIL"
+    row(
+        "« Montre-moi le contenu du cours »",
+        verdict,
+        f"{len(sections)} section(s) sur {total or '?'} | nextPage {'oui' if has_next else 'non'}"
+        + (" | pas de nextPage alors que tout n'est pas là" if total and total > len(sections) and not has_next else ""),
+        "moodle_course_content",
+        len(result["text"]),
+    )
+
+    # 8 — full instructions -------------------------------------------------
+    module_id = next((m.get("id") for m in modules if m.get("description")), None) or (modules[0].get("id") if modules else None)
+    full_text = ""
+    if module_id:
+        result, data, _ = call(
+            "moodle_course_content",
+            {"courseid": target["id"], "detail": "full", "moduleid": module_id},
+        )
+        full_text = result["text"]
+        verdict = "PASS" if len(full_text) > 400 and not result["is_error"] else "PARTIAL"
+        row(
+            "« Donne-moi les consignes complètes de l'activité »",
+            verdict,
+            f"{len(full_text)} octets de texte complet, erreur={result['is_error']}",
+            "moodle_course_content detail=full",
+            len(full_text),
+        )
+
+    # 9 — read a PDF as text ------------------------------------------------
+    pdf = None
+    for module in modules:
+        for content in module.get("contents") or []:
+            if (content.get("mimetype") or "").startswith("application/pdf"):
+                pdf = content
+                break
+        if pdf:
+            break
+    if pdf:
+        result, _, seconds = call("moodle_file", {"fileurl": pdf["fileurl"], "format": "text"})
+        text = result["text"]
+        has_text = any(ch.isalpha() for ch in text) and len(text) > 200
+        row(
+            "« Lis-moi ce PDF et résume-le »",
+            "PASS" if has_text and not result["is_error"] else "FAIL",
+            f"{len(text)} octets extraits en {seconds:.1f}s, erreur={result['is_error']}",
+            "moodle_file format=text",
+            len(text),
+        )
+        # 10 — same PDF, visual pages
+        result, _, seconds = call(
+            "moodle_file", {"fileurl": pdf["fileurl"], "format": "images", "page_from": 1, "page_to": 1}
+        )
+        visual = "image" in (result.get("types") or [])
+        row(
+            "« Montre-moi la figure de la première page »",
+            "PASS" if visual else "FAIL",
+            f"blocs image={visual}, {seconds:.1f}s, erreur={result['is_error']}",
+            "moodle_file format=images",
+            len(result["text"]),
+        )
+    else:
+        row("« Lis-moi ce PDF et résume-le »", "SKIP", "aucun PDF dans le cours audité", "moodle_file")
+        row("« Montre-moi la figure de la première page »", "SKIP", "aucun PDF dans le cours audité", "moodle_file")
+
+    # 11 — grades overview --------------------------------------------------
+    result, data, _ = call("moodle_grades", {})
+    shown = len((data or {}).get("grades") or [])
+    graded = []
     try:
         raw = school.ws("gradereport_overview_get_course_grades").get("grades") or []
-        truth = [
-            g for g in raw if str(g.get("grade") or "").strip() not in ("", "-")
-        ]
+        graded = [g for g in raw if str(g.get("grade") or "").strip() not in ("", "-")]
     except Exception:
-        truth = []
-    shown_names = " ".join(json.dumps(g) for g in grades)
-    covered = [g for g in truth if str(g.get("rawgrade") or "")[:4] in shown_names.replace(".", ",")]
-    verdict = "PASS" if truth and len(covered) == len(truth) else ("PARTIAL" if grades else "FAIL")
+        pass
+    if graded:
+        disclosed = any(word in result["text"].lower() for word in ("past", "archiv", "not current", "ancien"))
+        verdict = "PASS" if shown >= len(graded) else ("PARTIAL" if disclosed else "FAIL")
+        row(
+            "« Quelles notes j'ai eues ? »",
+            verdict,
+            f"{shown} cours affiché(s), {len(graded)} noté(s) au carnet" + ("" if disclosed else ", filtre non annoncé"),
+            "moodle_grades",
+            len(result["text"]),
+        )
+    else:
+        row("« Quelles notes j'ai eues ? »", "SKIP", "carnet sans note publiée", "moodle_grades", len(result["text"]))
+
+    # 12 — one course, item level ------------------------------------------
+    course_id = graded[0]["courseid"] if graded else (courses[0]["id"] if courses else 0)
+    code = next((c.get("shortname", "").split(" ")[0] for c in courses if c.get("id") == course_id), "")
+    result, data, _ = call("moodle_grades", {"courseid": course_id})
+    count = len((data or {}).get("grades") or [])
     row(
-        "« Quelles notes j'ai eues ? »",
-        verdict,
-        f"MCP {len(grades)} cours | carnet {len(truth)} cours notés | non annoncé si filtré",
+        f"« J'ai combien dans mon cours {code} ? »" if code else "« J'ai combien dans ce cours ? »",
+        "PASS" if count else ("SKIP" if not graded else "PARTIAL"),
+        f"{count} élément(s) noté(s) détaillés",
+        "moodle_grades courseid",
+        len(result["text"]),
+    )
+
+    # 13 — weights honesty --------------------------------------------------
+    weights_disclosed = '"weightsAvailable"' in result["text"] or '"weightsSource"' in result["text"]
+    row(
+        "« Quelle est la pondération du final ? »",
+        "PASS" if weights_disclosed else "PARTIAL",
+        "la réponse dit si les poids sont disponibles" if weights_disclosed else "aucun champ de pondération dans la réponse",
         "moodle_grades",
         len(result["text"]),
     )
 
-    # 6. A specific document by name, in a specific course.
-    course = by_code.get("CHE0501")
-    if course:
-        expected = course_files(school, course["id"], r"plan|syllabus|entente")
-        result, _ = mcp.one("moodle_search", {"query": f"plan de cours {course['shortname'].split(' ')[0]}"})
-        data = parse_mcp_json(result) or {}
-        found = [r.get("filename") for r in data.get("results") or []]
-        hit = next((f for f in expected if f["filename"] in found), None)
-        verdict = "PASS" if hit else ("FAIL" if expected else "SKIP")
-        row(
-            "« Trouve le plan de cours de CHE0501 »",
-            verdict,
-            f"école: {len(expected)} candidat(s) ({', '.join(f['filename'] for f in expected[:2])})"
-            f" | trouvé: {hit['filename'] if hit else 'aucun'}",
-            "moodle_search",
-            len(result["text"]),
-        )
-
-    # 7. Follow-up work: the correction of an exercise.
-    course = by_code.get("MTH0102")
-    if course:
-        expected = course_files(school, course["id"], r"corrig|correction|solution")
-        td3 = [f for f in expected if re.search(r"TD\s*3", f["filename"], re.I)]
-        result, _ = mcp.one("moodle_search", {"query": "corrigé TD3 MTH0102"})
-        data = parse_mcp_json(result) or {}
-        found = [r.get("filename") for r in data.get("results") or []]
-        hit = next((f for f in (td3 or expected) if f["filename"] in found), None)
-        verdict = "PASS" if hit else ("FAIL" if (td3 or expected) else "SKIP")
-        row(
-            "« Trouve le corrigé du TD3 de MTH0102 »",
-            verdict,
-            f"école: {len(td3)} corrigé(s) TD3, {len(expected)} corrigés | trouvé: {hit['filename'] if hit else 'aucun'}",
-            "moodle_search",
-            len(result["text"]),
-        )
-
-    # 8. Anything new for me?
-    result, _ = mcp.one("moodle_notifications", {})
-    data = parse_mcp_json(result) or {}
-    count = data.get("count") or len(data.get("notifications") or [])
+    # 14 — announcements ----------------------------------------------------
+    result, data, _ = call("moodle_announcements", {"limit": 5})
+    count = len((data or {}).get("announcements") or data or [])
     row(
-        "« J'ai des nouvelles annonces ou notifications ? »",
-        "PASS" if result["text"] and not result["is_error"] else "FAIL",
-        f"count={count}",
-        "moodle_notifications",
+        "« Quelles annonces le prof a postées ? »",
+        "PASS" if count else "PARTIAL",
+        f"{count} annonce(s) lisible(s)",
+        "moodle_announcements",
+        len(result["text"]),
+    )
+
+    # 15 — forum thread -----------------------------------------------------
+    result, data, _ = call("moodle_forums", {"courseids": [target["id"]]})
+    forums = (data or {}).get("forums") or []
+    if forums:
+        result, data, _ = call(
+            "moodle_forum_discussions", {"forumid": forums[0]["id"], "limit": 3}
+        )
+        discussions = (data or {}).get("discussions") or []
+        row(
+            "« Quelles discussions sur le forum du cours ? »",
+            "PASS" if not result["is_error"] else "FAIL",
+            f"{len(forums)} forum(s), {len(discussions)} discussion(s) lue(s)",
+            "moodle_forums → moodle_forum_discussions",
+            len(result["text"]),
+        )
+    else:
+        row("« Quelles discussions sur le forum du cours ? »", "SKIP", "aucun forum dans ce cours", "moodle_forums")
+
+    # 16 — private messages -------------------------------------------------
+    result, data, _ = call("moodle_messages", {"limit": 5})
+    conversations = (data or {}).get("conversations") or []
+    row(
+        "« J'ai des messages non lus ? »",
+        "PASS" if not result["is_error"] else "FAIL",
+        f"{len(conversations)} conversation(s)", 
+        "moodle_messages",
+        len(result["text"]),
+    )
+
+    # 17 — a date that lives in a description ------------------------------
+    months = "janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre"
+    date_re = re.compile(r"\d{1,2}(?:er)?\s+(?:" + months + ")", re.I)
+    dated = next(
+        (
+            (m.get("id"), m.get("name"), date_re.search(m.get("description") or "").group(0))
+            for m in modules
+            if date_re.search(m.get("description") or "")
+        ),
+        None,
+    )
+    if dated:
+        module_id, name, date = dated
+        result, _, _ = call(
+            "moodle_course_content",
+            {"courseid": target["id"], "detail": "full", "moduleid": module_id},
+        )
+        row(
+            "« Quand est mon examen ? »",
+            "PASS" if date in result["text"] else "FAIL",
+            f"activité « {name} »: date « {date} » {'transmise' if date in result['text'] else 'perdue'}",
+            "moodle_course_content detail=full",
+            len(result["text"]),
+        )
+    else:
+        row("« Quand est mon examen ? »", "SKIP", "aucune date dans les descriptions du cours", "moodle_course_content")
+
+    # 18 — timetable --------------------------------------------------------
+    result, data, _ = call("moodle_calendar", {})
+    events = (data or {}).get("events") or []
+    row(
+        "« Mon horaire de la semaine »",
+        "PASS" if not result["is_error"] else "FAIL",
+        f"{len(events)} événement(s) à venir",
+        "moodle_calendar",
+        len(result["text"]),
+    )
+
+    # 19 — completion -------------------------------------------------------
+    result, data, _ = call("moodle_completion", {"courseid": target["id"]})
+    activities = (data or {}).get("activities") or []
+    tracked = None
+    try:
+        tracked = len(
+            school.ws("core_completion_get_activities_completion_status", courseid=target["id"]).get(
+                "statuses"
+            )
+            or []
+        )
+    except Exception:
+        pass
+    if not result["is_error"] and not activities and tracked == 0:
+        verdict, evidence = "SKIP", "achèvement non activé dans ce cours (école: 0 aussi)"
+    elif result["is_error"]:
+        verdict, evidence = "FAIL", "erreur de l'outil"
+    else:
+        verdict, evidence = ("PASS", f"{len(activities)} activité(s) suivie(s)") if activities else ("PARTIAL", "liste vide sans explication")
+    row("« Où j'en suis dans ce cours ? »", verdict, evidence, "moodle_completion", len(result["text"]))
+
+    # 20 — a service this account does not hold ----------------------------
+    result, _ = mcp.one("omnivox_deadlines", {"days": 14})
+    honest = result["is_error"] and len(result["text"]) < 400
+    row(
+        "« Et sur Omnivox, mes échéances ? »",
+        "PASS" if honest else ("SKIP" if not result["is_error"] else "PARTIAL"),
+        "refus explicite" if honest else ("service connecté" if not result["is_error"] else "erreur confuse"),
+        "omnivox_deadlines",
         len(result["text"]),
     )
     return rows
@@ -692,13 +905,21 @@ def render_intents(rows: list[dict[str, Any]]) -> str:
     if not rows:
         return "no intent rows"
     width = max(len(r["question"]) for r in rows)
-    lines = [f"{'question':{width}}  verdict  tool"]
+    lines = [f"{'#':>2}  {'question':{width}}  verdict  tool"]
     for r in rows:
-        lines.append(f"{r['question']:{width}}  {r['verdict']:7}  {r['tool']}")
-        lines.append(f"{'':{width}}  -> {r['evidence']}")
+        lines.append(f"{r['n']:>2}  {r['question']:{width}}  {r['verdict']:7}  {r['tool']}")
+        lines.append(f"{'':>2}  {'':{width}}  -> {r['evidence']}")
     passed = sum(1 for r in rows if r["verdict"] == "PASS")
+    partial = sum(1 for r in rows if r["verdict"] == "PARTIAL")
+    failed = sum(1 for r in rows if r["verdict"] == "FAIL")
+    skipped = sum(1 for r in rows if r["verdict"] == "SKIP")
+    graded = passed + partial + failed
+    score = (100 * passed / graded) if graded else 0
     lines.append("")
-    lines.append(f"{passed}/{len(rows)} demandes étudiantes obtiennent une réponse correcte via le MCP")
+    lines.append(
+        f"Score: {passed} PASS · {partial} PARTIAL · {failed} FAIL · {skipped} SKIP"
+        f" — {score:.0f}% des questions évaluables ({passed}/{graded})"
+    )
     return "\n".join(lines)
 
 

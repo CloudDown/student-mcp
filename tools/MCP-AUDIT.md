@@ -85,28 +85,52 @@ Cours audité : COURS101 — 14 sections, 214 activités, 235 fichiers.
 - Un compte Moodle est nécessaire pour la vérité terrain ; en `--offline` les
   comparaisons disparaissent.
 
-## Questions de référence (exécutables)
+## Vingt questions étudiantes
 
 ```bash
 python3 tools/mcp-audit.py --intents
 ```
 
-Chaque ligne est une vraie demande (« le dernier TD de ce cours », « mes notes »,
-« quand est mon examen ») et le verdict compare la réponse à ce que l'école
-contient réellement. `FAIL` = un assistant doit deviner ou inventer.
+Chaque question est une demande réelle. `PASS` = les outils portent assez
+d'information juste pour répondre ; `PARTIAL` = une réponse plausible serait
+incomplète ; `FAIL` = le modèle doit deviner ; `SKIP` = ce compte n'a pas la
+donnée (forum absent, achèvement désactivé…), ce n'est pas un défaut.
 
-Résultat du 2026-11-15, v0.8.4 : **7/9 correctes**, 2 `PARTIAL` :
+| # | Question | Outil | Ce que ça teste |
+|---|----------|-------|-----------------|
+| 1 | Quels cours j'ai cette session ? | `moodle_my_courses` | filtrage annoncé |
+| 2 | Qu'est-ce que je dois remettre cette semaine ? | `moodle_deadlines` | dates exactes |
+| 3 | Qu'est-ce qui est déjà en retard ? | `include_expired` | échus vs à venir |
+| 4 | C'est quoi le dernier TD de mon cours ? | `moodle_search` | rang du bon fichier |
+| 5 | Donne-moi le corrigé des exercices | `moodle_search` | vocabulaire réel |
+| 6 | Trouve le plan de cours | `moodle_search` | alias de document |
+| 7 | Montre-moi le contenu du cours | `moodle_course_content` | pagination suivie |
+| 8 | Consignes complètes de l'activité | `detail=full` | lecture exhaustive |
+| 9 | Lis-moi ce PDF | `moodle_file format=text` | couche texte |
+| 10 | Montre-moi la figure de la première page | `format=images` | blocs image |
+| 11 | Quelles notes j'ai eues ? | `moodle_grades` | filtre silencieux |
+| 12 | J'ai combien dans ce cours ? | `moodle_grades courseid` | détail par cours |
+| 13 | Quelle est la pondération du final ? | `moodle_grades` | poids ou refus honnête |
+| 14 | Quelles annonces le prof a postées ? | `moodle_announcements` | tri, texte |
+| 15 | Quelles discussions sur le forum ? | `moodle_forums` → `_discussions` | chaîne d'ids |
+| 16 | J'ai des messages non lus ? | `moodle_messages` | compte |
+| 17 | Quand est mon examen ? | `detail=full` | date dans une description |
+| 18 | Mon horaire de la semaine | `moodle_calendar` | événements |
+| 19 | Où j'en suis dans ce cours ? | `moodle_completion` | achèvement |
+| 20 | Et sur Omnivox, mes échéances ? | `omnivox_deadlines` | refus explicite |
 
-| demande | verdict | ce qui manque |
-|---------|---------|----------------|
-| mes cours | PARTIAL | 19 listés, 26 à l'école : les 7 cours terminés sont filtrés sans le dire |
-| cette semaine | PASS | la remise à venir, avec date et heure |
-| dernier TD de deux cours | PASS | meilleur rang 1 |
-| date d'examen | PASS | aucune date coupée par la vue par défaut |
-| mes notes | PARTIAL | 1 cours affiché, 5 notés au carnet, sans mention du filtre |
-| plan de cours | PASS | |
-| corrigé d'un TD | PASS | |
-| annonces / notifications | PASS | 14 |
+### Score du 2026-11-15 (v0.8.4)
+
+**14 PASS · 1 PARTIAL · 2 FAIL · 3 SKIP — 82 % des questions évaluables.**
+
+- **FAIL #5** — `moodle_search` ne fait ni racinisation ni repli : « corrigé »
+  ne trouve pas `correction probleme doptimisation.pdf`, et « TD corrigé »
+  renvoie 0 résultat alors que les TD existent (tous les mots sont exigés).
+  C'est le défaut le plus coûteux pour un étudiant qui parle naturellement.
+- **FAIL #11** — `moodle_grades` affiche 1 cours noté sur 5 sans dire qu'il a
+  filtré les cours passés. ChatGPT s'arrête à ce seul cours.
+- **PARTIAL #1** — `moodle_my_courses` liste 19 cours sur 26, filtre non annoncé.
+- Les 3 `SKIP` sont des données absentes du compte, pas des erreurs d'outil.
 
 ## Ce que font vraiment Claude et ChatGPT
 
