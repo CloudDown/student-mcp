@@ -5,6 +5,15 @@ Notable changes, newest first. Downloads for each release are on the
 
 ## Unreleased
 
+- **Clearer escape-hatch names.** The three low-level Moodle tools now follow the
+  same `moodle_*` naming as every other tool: `moodle_api_call` (was `ws_call`),
+  `moodle_api_functions` (was `ws_discover`) and `moodle_api_schema` (was
+  `ws_schema`). The parameter is `function` instead of `name`, which collided with
+  the tool name. The old tool names and the old `name` argument are still accepted,
+  so a conversation whose client cached the previous tool list keeps working. The
+  descriptions now state when to prefer a dedicated tool, what `moodle_api_schema`
+  does and does not know, and that `moodle_api_call` can change school data.
+
 - **File links survive restarts.** Temporary `/s/...` links are also saved in the
   private folder `~/.student-mcp.links/` (`0700`, one `0600` file per link) and
   restored at startup, so restarting the app or installing an update no longer

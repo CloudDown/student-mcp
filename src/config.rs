@@ -1069,7 +1069,7 @@ pub(crate) mod tests {
             assert_eq!(Settings::load().moodle().unwrap().token, "fixture");
             assert!(crate::mcp::tool_definitions(&Settings::load())
                 .iter()
-                .any(|tool| tool["name"] == "ws_call"));
+                .any(|tool| tool["name"] == "moodle_api_call"));
         });
     }
 
@@ -1085,7 +1085,7 @@ pub(crate) mod tests {
             assert_eq!(loaded.moodle().unwrap().token, "fixture");
             assert!(crate::mcp::tool_definitions(&loaded)
                 .iter()
-                .any(|tool| tool["name"] == "ws_call"));
+                .any(|tool| tool["name"] == "moodle_api_call"));
             loaded.save().unwrap();
             assert!(!std::fs::read_to_string(config_path())
                 .unwrap()

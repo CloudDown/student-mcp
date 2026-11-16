@@ -195,7 +195,7 @@ and upcoming-events, and de-duplicates assignment calendar rows.
 `moodle_deadlines` reports `partial` and per-source `errors` when some sources
 fail. `include_expired=true` returns items already due inside the same day
 window (for example, this week's past items). Action events are paged (up to 500 per call); a remaining cursor is returned
-as `actionEventsNextAfterEventId` for `ws_call` with
+as `actionEventsNextAfterEventId` for `moodle_api_call` with
 `core_calendar_get_action_events_by_timesort`. The upcoming-calendar source
 remains subject to the school's own calendar window.
 

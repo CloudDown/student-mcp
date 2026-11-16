@@ -12,7 +12,8 @@ clients over cosmetic renames.
 ```
 
 - Platforms: `moodle_`, `omnivox_`, `brightspace_`.
-- Escape hatch only: Moodle `ws_discover` / `ws_schema` / `ws_call`.
+- Escape hatch only: `moodle_api_functions` / `moodle_api_schema` / `moodle_api_call`
+  (the old `ws_*` names are still accepted as input aliases for cached clients).
 - Cross-service discovery: `student_status` (no platform prefix).
 - Prefer verbs for writes and multi-step actions (`_submit`, `_create`, `_delete`).
 - Prefer nouns for reads (`_grades`, `_deadlines`, `_course_content`).
@@ -74,7 +75,7 @@ every `readOnlyHint:false` tool also carries `destructiveHint:true`,
 | Study a PDF/Office doc | Same file tool with `text` or `images` (text + every page image); reuse `document_id` | Treating an original blob/link as proof the model saw its contents |
 | Read all Moodle instructions | `moodle_course_content` with `detail=full`; follow `nextPage`, then read relevant files | Treating an overview/search excerpt as complete instructions |
 | Choose the right TD for the student's group | `moodle_course_content` overview: read `groups`, `uservisible`, `groupRestricted`, `url`, `timemodified`; `group_only` if needed | Inferring a group from section names, or assuming every section applies |
-| Rare Moodle action | dedicated tool, else `ws_discover` → `ws_call` | `ws_call` for everyday reads |
+| Rare Moodle action | dedicated tool, else `moodle_api_functions` → `moodle_api_call` | `moodle_api_call` for everyday reads |
 | Account routing | Match the person/school in `initialize` instructions or `student_status`, then pass that `account_id` | Guessing which account, mixing course IDs across accounts |
 
 ## Results
@@ -95,7 +96,7 @@ risk; the MCP client decides whether to ask for confirmation or run the action.
 student-mcp still enforces technical boundaries:
 
 1. Dedicated student tools first; no open URL/path proxy.
-2. `ws_call` accepts only functions the token advertises. Moodle still enforces
+2. `moodle_api_call` accepts only functions the token advertises. Moodle still enforces
    the token's own capabilities and role permissions.
 3. Brightspace writes use fixed routes owned by the server, never caller URLs.
 4. Omnivox writes use fixed mobile endpoints with explicit payload validation.
@@ -120,6 +121,6 @@ student-mcp still enforces technical boundaries:
 | News | `moodle_announcements` | `brightspace_news` | calendar/docs only |
 | Search | cross-course materials | TOC titles/URLs in one course | none yet |
 | File read | `moodle_file` + `fileurl` | `brightspace_file` + topic id | `omnivox_file` + category/id |
-| Escape hatch | `ws_*` | fixed `student_tools` routes | none |
-| Writes | dedicated tools + `ws_call` (token capabilities) | fixed routes, method from the route | fixed mobile endpoints |
+| Escape hatch | `moodle_api_*` | fixed `student_tools` routes | none |
+| Writes | dedicated tools + `moodle_api_call` (token capabilities) | fixed routes, method from the route | fixed mobile endpoints |
 | Write result | Moodle JSON exception/errorcode | empty 2xx or JSON without error fields | explicit confirmation fields |

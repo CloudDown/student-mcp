@@ -227,7 +227,7 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
             tools = json.loads(body)["tools"]
             assert tools
             assert all(tool["name"].startswith(service + "_") or
-                       (service == "moodle" and tool["name"].startswith("ws_"))
+                       (service == "moodle" and tool["name"].startswith("moodle_api_"))
                        for tool in tools)
             assert {tool["name"].encode() for tool in tools} <= translated_tool_names, service
         assert request("/state", origin="https://untrusted.invalid")[0] == 401
@@ -263,7 +263,7 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         names = [tool["name"] for tool in json.loads(body)["result"]["tools"]]
         assert names[0] == "student_status"
         assert "moodle_search" in names and "moodle_deadlines" in names
-        assert "ws_call" in names and "ws_discover" in names
+        assert "moodle_api_call" in names and "moodle_api_functions" in names
         status, body = request("/action", {"action": "allow_changes", "service": "moodle",
                                              "id": "moodle", "enabled": True})
         assert status == 400

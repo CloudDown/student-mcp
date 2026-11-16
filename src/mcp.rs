@@ -146,9 +146,9 @@ fn definitions_for_services(
             { "name": "moodle_messages", "description": "Private message conversations and unread counts.", "inputSchema": { "type": "object", "properties": { "limit": { "type": "integer", "minimum": 1, "maximum": 50 } } }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_conversation_messages", "description": "Messages inside one private conversation.", "inputSchema": { "type": "object", "properties": { "conversationid": { "type": "integer", "minimum": 1 }, "limit": { "type": "integer", "minimum": 1, "maximum": 100 } }, "required": ["conversationid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_completion", "description": "Activity completion status for a course.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
-            { "name": "ws_discover", "description": "Search Moodle Web Service functions this token can call, with description and access type.", "inputSchema": { "type": "object", "properties": { "query": { "type": "string" }, "limit": { "type": "integer", "minimum": 1, "maximum": 100 } } }, "annotations": { "readOnlyHint": true } },
-            { "name": "ws_schema", "description": "Show bundled Moodle catalogue metadata for one Web Service function by exact name (parameters, read/write type). Does not prove the connected token can call it; use ws_discover or site_info for availability.", "inputSchema": { "type": "object", "properties": { "name": { "type": "string" } }, "required": ["name"] }, "annotations": { "readOnlyHint": true } },
-            { "name": "ws_call", "description": "Call a Moodle Web Service function by exact name. Prefer dedicated moodle_* tools first. Find candidates with ws_discover. This function may change school data; confirm write actions with the user before calling. Moodle still enforces the token's permissions.", "inputSchema": crate::catalog::ws_call_schema(), "annotations": { "readOnlyHint": false } }
+            { "name": "moodle_api_functions", "description": "List the Moodle Web Service functions this account's token may call: exact name, one-line description, read or write. Use it only when no dedicated moodle_* tool covers the task. Then check parameters with moodle_api_schema before calling moodle_api_call.", "inputSchema": { "type": "object", "properties": { "query": { "type": "string", "description": "Words found in the function name or description, e.g. \"group members\". Empty lists the first functions." }, "limit": { "type": "integer", "minimum": 1, "maximum": 100 } } }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_api_schema", "description": "Describe one Moodle Web Service function from the bundled catalogue: parameters, required or optional, and read or write type. It describes the function, not this school: the catalogue may differ from the site's Moodle version and says nothing about token permissions. Confirm availability with moodle_api_functions.", "inputSchema": { "type": "object", "properties": { "function": { "type": "string", "description": "Exact function name, e.g. core_course_get_courses. Old clients may send it as name." } }, "required": ["function"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_api_call", "description": "Escape hatch: call any Moodle Web Service function by its exact name. Use the dedicated moodle_* tools first; they summarise results, paginate and check ids for you. Find a name with moodle_api_functions, inspect its parameters with moodle_api_schema. Some functions change school data: say what will change and get the user's confirmation before calling. Moodle still enforces this token's permissions.", "inputSchema": crate::catalog::api_call_schema(), "annotations": { "readOnlyHint": false } }
         ]);
         tools.extend(moodle.as_array().cloned().unwrap_or_default());
         tools.extend([
@@ -214,8 +214,8 @@ fn definitions_for_services(
             tool["inputSchema"]["properties"]["format"]["description"] = json!("file: original download; text/images: study window with text AND every page image. Office falls back to text blocks if isolated conversion is unavailable.");
         }
         // Hints for host-side approval, never a server authorization gate.
-        // ws_call is conservatively a write-capable tool, including when a
-        // particular invocation selects a read-only Moodle function.
+        // moodle_api_call is conservatively a write-capable tool, including when
+        // a particular invocation selects a read-only Moodle function.
         let annotations = tool["annotations"]
             .as_object_mut()
             .expect("tool definitions carry annotations");
@@ -404,6 +404,15 @@ fn dispatch_tool_inner(settings: &Settings, name: &str, args: &Value) -> Value {
         }
     }
     let settings = selected.as_ref().unwrap_or(settings);
+    // The escape hatch used to be called ws_call / ws_discover / ws_schema. Old
+    // clients may still have that list cached mid-conversation, so the names are
+    // accepted as input aliases even though tools/list no longer offers them.
+    let name = match name {
+        "ws_call" => "moodle_api_call",
+        "ws_discover" => "moodle_api_functions",
+        "ws_schema" => "moodle_api_schema",
+        other => other,
+    };
     let outcome = match name {
         name if is_file_tool(name) => document_tool(settings, service.unwrap(), args),
         "student_status" => student_status(settings),
@@ -628,7 +637,7 @@ fn dispatch_tool_inner(settings: &Settings, name: &str, args: &Value) -> Value {
         "moodle_completion" => moodle_tool(settings, |config| {
             MoodleClient::new(config).completion(require_integer(args, "courseid")?)
         }),
-        "ws_discover" => moodle_tool(settings, |config| {
+        "moodle_api_functions" => moodle_tool(settings, |config| {
             let client = MoodleClient::new(config);
             let info = client.site_info()?;
             let available: Vec<String> = info
@@ -660,11 +669,12 @@ fn dispatch_tool_inner(settings: &Settings, name: &str, args: &Value) -> Value {
                 .collect();
             Ok(json!({ "totalAvailable": available.len(), "results": results }))
         }),
-        "ws_schema" => moodle_tool(settings, |_config| {
+        "moodle_api_schema" => moodle_tool(settings, |_config| {
             let name = args
-                .get("name")
+                .get("function")
+                .or_else(|| args.get("name"))
                 .and_then(Value::as_str)
-                .ok_or("Provide name.")?;
+                .ok_or("Provide function.")?;
             let catalog = Catalog::load();
             let entry = catalog.get(name).ok_or(format!(
                 "Function {name} does not exist in the Moodle catalogue."
@@ -675,15 +685,16 @@ fn dispatch_tool_inner(settings: &Settings, name: &str, args: &Value) -> Value {
                 "type": if entry.write { "write" } else { "read" },
                 "parameters": entry.parameters,
                 "availableOnToken": "unknown",
-                "note": "Bundled catalogue metadata only; it may differ from your site's Moodle version and does not prove this token can call the function. Use ws_discover for token-available names. Optional/nullable flags are included; unresolved structures have a note. Confirm writes with the user before calling.",
+                "note": "Bundled catalogue metadata only; it may differ from your site's Moodle version and does not prove this token can call the function. Use moodle_api_functions for token-available names. Optional/nullable flags are included; unresolved structures have a note. Confirm writes with the user before calling.",
                 "catalogRelease": catalog.release()
             }))
         }),
-        "ws_call" => moodle_tool(settings, |config| {
+        "moodle_api_call" => moodle_tool(settings, |config| {
             let name = args
-                .get("name")
+                .get("function")
+                .or_else(|| args.get("name"))
                 .and_then(Value::as_str)
-                .ok_or("Provide name.")?;
+                .ok_or("Provide function.")?;
             let client = MoodleClient::new(config);
             let payload = args.get("args").cloned().unwrap_or_else(|| json!({}));
             let info = client.site_info()?;
@@ -1509,7 +1520,7 @@ mod protocol_tests {
     }
 
     #[test]
-    fn ws_call_checks_token_authorization_even_for_unclassified_functions() {
+    fn moodle_api_call_checks_token_authorization_even_for_unclassified_functions() {
         let info = json!({"userid":1,"functions":[{"name":"local_example_change_record"}]});
         let (url, worker) = crate::moodle::tests::server(vec![info, json!({"ok":true})]);
         let settings = Settings {
@@ -1522,8 +1533,8 @@ mod protocol_tests {
         };
         let reply = dispatch_tool(
             &settings,
-            "ws_call",
-            &json!({"name": "local_example_change_record"}),
+            "moodle_api_call",
+            &json!({"function": "local_example_change_record"}),
         );
         assert_eq!(reply["isError"], false);
         let requests = worker.join().unwrap();
@@ -1531,7 +1542,7 @@ mod protocol_tests {
     }
 
     #[test]
-    fn ws_call_allows_writes_for_existing_accounts_and_preserves_valid_calls() {
+    fn moodle_api_call_allows_writes_and_keeps_the_legacy_ws_call_alias() {
         let info = json!({"userid": 1, "functions": [
             {"name": "core_course_get_contents"}, {"name": "core_course_delete_courses"}
         ]});
@@ -1700,8 +1711,8 @@ mod protocol_tests {
                         | "moodle_forum_posts"
                         | "moodle_conversation_messages"
                         | "moodle_completion"
-                        | "ws_schema"
-                        | "ws_call"
+                        | "moodle_api_schema"
+                        | "moodle_api_call"
                         | "brightspace_course_content"
                         | "brightspace_file"
                         | "brightspace_grades"
@@ -1884,14 +1895,17 @@ mod protocol_tests {
             for tool in &tools {
                 let name = tool["name"].as_str().unwrap();
                 assert!(
-                    name.starts_with(&format!("{service}_"))
-                        || (service == "moodle" && name.starts_with("ws_")),
+                    name.starts_with(&format!("{service}_")),
                     "unexpected {name} in {service}"
                 );
                 assert!(tool["description"].is_string());
             }
             if service == "moodle" {
-                for name in ["ws_discover", "ws_schema", "ws_call"] {
+                for name in [
+                    "moodle_api_functions",
+                    "moodle_api_schema",
+                    "moodle_api_call",
+                ] {
                     assert!(tools.iter().any(|tool| tool["name"] == name));
                 }
             }
@@ -1935,9 +1949,9 @@ mod protocol_tests {
         for extra in [
             "moodle_recent_grades",
             "moodle_course_updates",
-            "ws_call",
-            "ws_discover",
-            "ws_schema",
+            "moodle_api_call",
+            "moodle_api_functions",
+            "moodle_api_schema",
         ] {
             assert!(names.iter().any(|name| name == extra), "missing {extra}");
         }
@@ -2108,7 +2122,10 @@ mod live_moodle_poly {
             ("moodle_grades", json!({"courseid": courseid})),
             ("moodle_calendar", json!({})),
             ("moodle_completion", json!({"courseid": courseid})),
-            ("ws_discover", json!({"query": "forum", "limit": 5})),
+            (
+                "moodle_api_functions",
+                json!({"query": "forum", "limit": 5}),
+            ),
         ] {
             let result = dispatch_tool(&settings, name, &args);
             assert_eq!(result["isError"], false, "{name} {args} => {result}");

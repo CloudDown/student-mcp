@@ -98,14 +98,20 @@ impl Catalog {
 }
 
 /// JSON schema for tools that accept Web Service parameters by exact name.
-pub fn ws_call_schema() -> Value {
+pub fn api_call_schema() -> Value {
     json!({
         "type": "object",
         "properties": {
-            "name": { "type": "string" },
-            "args": { "type": "object", "description": "Exact parameter names of the Web Service function" }
+            "function": {
+                "type": "string",
+                "description": "Exact Moodle Web Service function name, for example core_course_get_courses or core_group_add_group_members. Old clients may send it as name."
+            },
+            "args": {
+                "type": "object",
+                "description": "Exact parameter names of that Web Service function, as listed by moodle_api_schema."
+            }
         },
-        "required": ["name"]
+        "required": ["function"]
     })
 }
 
