@@ -59,7 +59,7 @@ try{
    const branches=[...document.querySelectorAll('[data-map-assistant]')];
    const root=document.querySelector('.mind-map').getBoundingClientRect(),link=document.querySelector('.link-card').getBoundingClientRect();
    return {count:branches.length,trunk:!!document.querySelector('[data-map-trunk]'),
-    attached:branches.every(branch=>{const from=branch.getPointAtLength(0),to=branch.getPointAtLength(branch.getTotalLength()),button=document.querySelector('.assistant-entry').getBoundingClientRect();return Math.abs(from.x-(link.left-root.left+link.width/2))<1&&Math.abs(from.y-(link.bottom-root.top))<1&&Math.abs(to.x-(button.left-root.left+button.width/2))<1&&Math.abs(to.y-(button.top-root.top))<1&&branch.hasAttribute('marker-end')})};
+    attached:branches.every(branch=>{const from=branch.getPointAtLength(0),to=branch.getPointAtLength(branch.getTotalLength()),button=document.querySelector('.assistant-entry').getBoundingClientRect();return Math.abs(from.x-(link.left-root.left+link.width/2))<1&&Math.abs(from.y-(link.bottom-root.top))<1&&Math.abs(to.x-(button.left-root.left+button.width/2))<1&&Math.abs(to.y-(button.top-root.top))<1&&!branch.hasAttribute('marker-end')})};
   });
   assert.deepEqual(branching,{count:1,trunk:false,attached:true},'Home must have one arrow to a single assistant button');
   await noOverflow();

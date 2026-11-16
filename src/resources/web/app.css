@@ -190,7 +190,7 @@ button{transition:background 140ms ease-out,transform 140ms ease-out}button:acti
 .map-halo,.map-branch{fill:none;stroke-linecap:round;stroke-linejoin:round}
 .map-halo{stroke:#fff;stroke-width:4.5;opacity:.72}
 .map-branch{stroke:url(#map-branch-gradient);stroke-width:1.65}
-.map-port{fill:#91accb;stroke:#f5f5f7;stroke-width:1.5}
+.map-branch.is-connected{stroke:var(--green);stroke-width:2.4;stroke-dasharray:.01 7}
 .ais{display:flex;justify-content:center;gap:.75rem}
 .mind-map .ais{grid-column:2;grid-row:3;z-index:1;margin-top:.25rem}
 .ai{display:grid;place-items:center;width:3.25rem;height:3.25rem;padding:0;border-radius:1rem;background:#fff;border:1px solid var(--border);box-shadow:var(--shadow)}
