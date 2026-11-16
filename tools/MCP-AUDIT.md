@@ -116,72 +116,34 @@ Cours audité : COURS101 — 14 sections, 214 activités, 235 fichiers.
 - Un compte Moodle est nécessaire pour la vérité terrain ; en `--offline` les
   comparaisons disparaissent.
 
-## Cinquante questions étudiantes
+## Questions étudiantes (dérivées du compte)
 
 ```bash
 python3 tools/mcp-audit.py --intents
 ```
 
-Chaque question est une demande réelle. `PASS` = les outils portent assez
-d'information juste pour répondre ; `PARTIAL` = une réponse plausible serait
-incomplète ; `FAIL` = le modèle doit deviner ; `SKIP` = ce compte n'a pas la
-donnée (forum absent, achèvement désactivé…), ce n'est pas un défaut.
+Les questions ne sont **pas** une liste figée. Au runtime, le harnais lit le
+Moodle connecté (cours de la session, fichiers récents, devoirs datés, items
+notés, quiz) et pose des demandes précises : « quand est dû *ce* devoir »,
+« trouve *ce* fichier », « j'ai combien à *cet* item ». Rien de ça n'est
+codé en dur dans le dépôt.
 
-| # | Question | Outil | Ce que ça teste |
-|---|----------|-------|-----------------|
-| 1 | Quels cours j'ai cette session ? | `moodle_my_courses` | filtrage annoncé |
-| 2 | Qu'est-ce que je dois remettre cette semaine ? | `moodle_deadlines` | dates exactes |
-| 3 | Qu'est-ce qui est déjà en retard ? | `include_expired` | échus vs à venir |
-| 4 | C'est quoi le dernier TD de mon cours ? | `moodle_search` | rang du bon fichier |
-| 5 | Donne-moi le corrigé des exercices | `moodle_search` | vocabulaire réel |
-| 6 | Trouve le plan de cours | `moodle_search` | alias de document |
-| 7 | Montre-moi le contenu du cours | `moodle_course_content` | pagination suivie |
-| 8 | Consignes complètes de l'activité | `detail=full` | lecture exhaustive |
-| 9 | Lis-moi ce PDF | `moodle_file format=text` | couche texte |
-| 10 | Montre-moi la figure de la première page | `format=images` | blocs image |
-| 11 | Quelles notes j'ai eues ? | `moodle_grades` | filtre silencieux |
-| 12 | J'ai combien dans ce cours ? | `moodle_grades courseid` | détail par cours |
-| 13 | Quelle est la pondération du final ? | `moodle_grades` | poids ou refus honnête |
-| 14 | Quelles annonces le prof a postées ? | `moodle_announcements` | tri, texte |
-| 15 | Quelles discussions sur le forum ? | `moodle_forums` → `_discussions` | chaîne d'ids |
-| 16 | J'ai des messages non lus ? | `moodle_messages` | compte |
-| 17 | Quand est mon examen ? | `detail=full` | date dans une description |
-| 18 | Mon horaire de la semaine | `moodle_calendar` | événements |
-| 19 | Où j'en suis dans ce cours ? | `moodle_completion` | achèvement |
-| 20 | Et sur Omnivox, mes échéances ? | `omnivox_deadlines` | refus explicite |
+`PASS` = les outils portent assez d'information juste pour répondre ;
+`PARTIAL` = une réponse plausible serait incomplète ; `FAIL` = le modèle
+doit deviner ; `SKIP` = ce compte n'a pas la donnée.
 
-### Deuxième lot (21–50)
+### Score du 2026-11-16 (compte réel, binaire current)
 
-| # | Question | Ce que ça teste |
-|---|----------|-----------------|
-| 21-25 | prochain devoir, devoir déjà rendu, fermeture de remise, quiz ouverts, tentatives restantes | statuts et fenêtres de remise |
-| 26-29 | document précis, mot dans un PDF, lien de téléchargement, Word/PowerPoint | livraison de fichiers |
-| 30-32 | fichiers du cours, changements de la semaine, cours trouvé par son nom | navigation |
-| 33-35 | dernières notes, note d'un élément, moyenne pondérée | notes et pondérations |
-| 36-38 | notifications, dernière annonce, message du prof | communication |
-| 39-40 | cours inexistant, recherche sans résultat | robustesse : erreur claire, pas d'invention |
-| 41-43 | notes d'un ami, dépôt de devoir, compte connecté | vie privée et annotations |
-| 44-47 | nombre de sections, cours terminés, 30 jours à venir, dû aujourd'hui | pagination et fenêtres |
-| 48-50 | recherche en majuscules, image lue comme du texte, texte d'une section | casse/accents, limites honnêtes |
+**44 PASS · 0 PARTIAL · 0 FAIL · 0 SKIP — 100 % des questions évaluables.**
 
-### Score du 2026-11-16 (50 questions, v0.8.4)
+Les outils portent les noms, dates, notes et fichiers demandés. Ça ne dit
+pas encore si Claude/GPT *choisissent* le bon outil — seulement que la
+donnée est dans la réponse.
 
-**42 PASS · 1 PARTIAL · 2 FAIL · 5 SKIP — 93 % des questions évaluables.**
-
-- **FAIL #5** — `moodle_search` ne fait ni racinisation ni repli : « corrigé »
-  ne trouve pas `correction …pdf`, et « TD corrigé » renvoie 0 résultat alors que
-  les TD existent (tous les mots sont exigés).
-- **FAIL #11** — `moodle_grades` affiche 1 cours noté sur 5 sans dire qu'il a
-  filtré les cours passés. ChatGPT s'arrête à ce seul cours.
-- **PARTIAL #1** — `moodle_my_courses` liste 19 cours sur 26 ; `include_hidden`
-  donne bien les 26, mais le défaut ne le dit pas.
-- Les 5 `SKIP` sont des données absentes du compte (forum, date d'examen,
-  achèvement désactivé, dernière annonce vide, aucune image), pas des erreurs.
-
-Progression mesurée par `benchmark/run.py` : identique de 0.6.2 à 0.8.0 (85 %),
-puis **93 % dès 0.8.1** (pondérations, statut de remise, cutoff, document exact,
-nombre de sections) et un gain de plus en 0.8.3 (`include_expired`). Aucune
-régression mesurée sur les 50 questions.
+L'ancienne batterie générique (50 questions, v0.8.4) restait à 93 % :
+recherche trop large (« le corrigé »), `moodle_grades` qui cachait des
+cours passés. Elle reste comparable via `benchmark/run.py` jusqu'à ce que
+la matrice soit relancée.
 
 Le même passage mesure le coût : 0.8.1 divise le temps par 1,9 (50,9 s → 27,0 s)
 et les tokens lus par 2,4 (170 201 → 70 135) sur ces mêmes questions, pendant que

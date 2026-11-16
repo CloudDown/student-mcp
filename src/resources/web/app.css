@@ -356,7 +356,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 .local-scan:disabled{opacity:.5}
 .local-app-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 2.5rem;border:0;margin:.5rem 0 0;padding:0}
 .local-app-list.is-muted{margin-top:0;border-top:0}
-.local-app-card{position:relative;display:grid;grid-template-columns:2rem minmax(0,1fr) auto 1rem;align-items:center;gap:.75rem;min-height:3.25rem;padding:.5rem .5rem;border:0;border-radius:var(--radius-sm);background:transparent;text-align:left;color:var(--ink);transition:background 140ms ease-out,box-shadow 140ms ease-out,transform 140ms ease-out;touch-action:manipulation}
+.local-app-card{position:relative;display:grid;grid-template-columns:2rem minmax(0,1fr) auto;align-items:center;gap:.75rem;min-height:3.25rem;padding:.5rem .5rem;border:0;border-radius:var(--radius-sm);background:transparent;text-align:left;color:var(--ink);transition:background 140ms ease-out,box-shadow 140ms ease-out,transform 140ms ease-out;touch-action:manipulation}
 .local-app-card .local-app-logo,.local-app-card .local-app-mark{width:2rem;height:2rem}
 .local-app-card .local-app-mark{border-radius:.5rem}
 .local-app-copy{min-width:0}
@@ -365,10 +365,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 .local-app-card.is-ready .local-app-state{color:var(--green)}
 .local-app-card.is-ready{box-shadow:inset 0 0 14px #2f8a4d0a}
 .local-app-card.is-ready .local-app-state::before{content:"";width:.375rem;height:.375rem;flex:none;border-radius:50%;background:var(--green)}
-.local-app-arrow{color:var(--muted);font-size:1.125rem;line-height:1;text-align:right}
 .local-app-card:disabled{opacity:.55;background:transparent;border-style:solid}
 .local-app-card:disabled .local-app-logo{filter:grayscale(1)}
-.local-app-card:disabled .local-app-arrow{visibility:hidden}
 .local-app-card[aria-pressed="true"]{background:color-mix(in srgb,var(--blue) 5%,var(--white));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--blue) 18%,transparent)}
 .local-app-card:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
 @media(hover:hover) and (pointer:fine){.local-app-card:not(:disabled):hover{background:var(--hover)}.local-app-card[aria-pressed="true"]:hover{background:color-mix(in srgb,var(--blue) 7%,var(--white))}.local-scan:hover{color:var(--ink)}}
@@ -417,3 +415,27 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 .local-apps .assistant-actions .local-close{align-self:center;padding:.5rem .875rem;min-height:44px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--white);font-size:.8125rem;font-weight:550}
 @media(hover:hover) and (pointer:fine){.local-apps .assistant-actions .text-button[data-assistant-remove]:hover{background:var(--red-soft)}.local-apps .assistant-actions .local-close:hover{background:var(--hover)}}
 @media(max-width:52rem){.local-apps .assistant-local:has(.assistant-actions){flex-direction:column;align-items:stretch;gap:.625rem}.local-apps .assistant-actions{justify-content:flex-start;padding-left:1.125rem}}
+
+/* Configured assistants use the same open layout as setup confirmation. */
+.local-app-card.is-ready{background:#edf8f0;box-shadow:none}
+.local-app-card.is-ready .local-app-state{color:#226d3c;font-weight:600}
+.local-app-card.is-ready[aria-pressed="true"]{background:#e4f4e9;box-shadow:inset 0 0 0 1px #9dcaaa}
+@media(hover:hover) and (pointer:fine){.local-app-card.is-ready:not(:disabled):hover{background:#e4f4e9}.local-app-card.is-ready[aria-pressed="true"]:hover{background:#dcefe2}}
+.local-apps .assistant-local:has(.assistant-actions){display:grid;gap:1rem;padding:1rem 0 0;margin-top:1rem;border:0;border-top:1px solid var(--border);border-radius:0;background:transparent}
+.local-apps .assistant-local:has(.assistant-actions) .assistant-local-copy{gap:.625rem}
+.local-apps .assistant-local:has(.assistant-actions) .assistant-local-copy strong{font-size:.9375rem;font-weight:600;line-height:1.4}
+.local-apps .assistant-local:has(.assistant-actions) .assistant-local-copy p{margin:.5rem 0 0;font-size:.9375rem;line-height:1.55}
+.local-apps .assistant-local:has(.assistant-actions) .status-dot{width:.625rem;height:.625rem;margin-top:.4em}
+.local-apps .assistant-actions{display:flex;align-items:stretch;gap:.75rem;padding:0}
+.local-apps .assistant-actions .text-button[data-assistant-remove],.local-apps .assistant-actions .local-close{flex:1;min-width:0;min-height:44px;padding:.625rem 1rem;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--white);font-size:.875rem;font-weight:600;text-align:center}
+.local-apps .assistant-actions .text-button[data-assistant-remove]{color:var(--red)}
+@media(hover:hover) and (pointer:fine){.local-apps .assistant-actions .text-button[data-assistant-remove]:hover{background:var(--red-soft)}.local-apps .assistant-actions .local-close:hover{background:var(--hover)}}
+
+/* Inline action for the selected local assistant. */
+.local-app-item{position:relative;min-width:0}
+.local-app-item.is-selected .local-app-card{padding-right:8.5rem;grid-template-columns:2rem minmax(0,1fr)}
+.local-inline-action{position:absolute;right:.5rem;top:50%;transform:translateY(-50%);min-height:36px;padding:.4rem .75rem;border:0;border-radius:var(--radius-sm);font-size:.8125rem;font-weight:600;white-space:nowrap}
+.local-inline-action.is-setup{background:var(--blue);color:white}
+.local-inline-action.is-remove{background:var(--red);color:var(--white);box-shadow:none}
+.local-inline-action:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+@media(max-width:22rem){.local-app-item.is-selected .local-app-card{padding-right:7.5rem}.local-inline-action{padding:.4rem .5rem;font-size:.75rem}}

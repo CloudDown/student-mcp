@@ -67,7 +67,7 @@ assert.equal(requests.filter(r=>r.path==='/action').length,1,'Double-clicking mu
 assert.match(ui.assistantScreen(),/Connecting…|Connexion…/);
 releaseSetup();releaseSetup=null;await setup;
 assert.equal(ui.state.assistantStatus.configured,true);
-assert.match(ui.assistantScreen(),/Les réglages s’appliquent automatiquement dans OpenCode/);
+assert.match(ui.assistantScreen(),/data-assistant-remove="opencode"/);
 assert.equal(ui.localAssistants.items.find(app=>app.assistant==='cursor').configured,false);
 await click('assistant-cancel');
 setupError=true;
@@ -86,6 +86,6 @@ scanError=false;apps.forEach(app=>{app.detected=false});await ui.scanAssistants(
 const empty=ui.assistantScreen();
 assert.match(empty,/Aucune application locale compatible/);
 assert.equal((empty.match(/data-local-assistant=/g)||[]).length,apps.length,'Missing apps stay in the dimmed gallery');
-assert.equal((empty.match(/aria-controls="assistant-local" disabled>/g)||[]).length,apps.length,'Every undetected card is disabled');
+assert.equal((empty.match(/disabled>/g)||[]).length,apps.length,'Every undetected card is disabled');
 assert.equal(empty.includes('data-assistant-confirm'),false,'No confirmation panel without a detected app');
 console.log('Local assistants passed: separate web/local views, read-only scan, selection/confirmation, duplicate-click protection, native setup status, errors, retry and empty state.');

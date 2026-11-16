@@ -159,16 +159,11 @@ try{
    assert.equal(await page.locator('.local-app-card .local-app-mark').count(),0,'Bundled logos replace monogram marks');
    await page.locator('[data-local-assistant="claude"]').click();
  assert.equal(actions.length,0,'The first setup click must not write configuration');
- await page.getByRole('button',{name:'Annuler',exact:true}).click();
- assert.equal(actions.length,0);
-  await page.locator('[data-local-assistant="claude"]').click();
  await page.getByRole('button',{name:'Confirmer la configuration',exact:true}).click();
-  await page.getByText('Claude Desktop · Configuré',{exact:true}).waitFor();
- assert.ok((await page.locator('.assistant-local .local-close').boundingBox()).height<64,'Configured status must remain a compact button');
-  assert.equal(await page.locator('.assistant-local svg').count(),0,'No oversized status illustration');
- assert.deepEqual(actions,[{action:'assistant_setup',assistant:'claude'}]);
+  await page.locator('[data-assistant-remove="claude"]').waitFor();
+  assert.deepEqual(actions,[{action:'assistant_setup',assistant:'claude'}]);
  await snapshot('claude-local-configured');
-   await page.getByRole('button',{name:'Fermer',exact:true}).click();
+   await page.locator('[data-local-assistant="claude"]').click();
   for(const width of [1440,768,390,320]){await page.setViewportSize({width,height:1000});await noOverflow();await snapshot('local-apps-'+width)}
   await page.locator('[data-assistant-mode="web"]').click();
   assert.equal(await page.locator('[aria-current="step"]').getAttribute('data-guide-step'),'2','Switching views preserves the web step');

@@ -68,7 +68,7 @@ state.public=true;
 state.link='https://example.srv.us/mcp/your-link';
 await page.getByRole('button',{name:'Back to services',exact:true}).click();
 await page.evaluate(()=>refresh());
-await page.locator('.link-open').click();
+await page.locator('.copy-home[data-screen="links"]').click();
 await page.waitForSelector('[data-link-card="public"] .link-detail');
 await shot('link.png');
 await page.getByRole('button',{name:'Back to services',exact:true}).click();

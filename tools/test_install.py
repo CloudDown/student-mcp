@@ -61,6 +61,8 @@ class InstallTests(unittest.TestCase):
             environment = dict(os.environ, HOME=str(home), FIXTURE_ROOT=str(root),
                                PATH=f"{tools}{os.pathsep}{str(cli.parent) + os.pathsep if in_path else ''}{os.environ['PATH']}")
             environment.pop("XDG_DATA_HOME", None)
+            state_home = root / "state"
+            environment["XDG_STATE_HOME"] = str(state_home)
             environment.pop("MOODLE_INSTALL_CHECK_ONLY", None)
             if not install:
                 environment["MOODLE_INSTALL_CHECK_ONLY"] = "1"
@@ -84,7 +86,8 @@ class InstallTests(unittest.TestCase):
                     self.assertIn(b"fixture CLI --version", version.stdout)
                 self.assertEqual(b'Add ~/.local/bin to PATH' in result.stderr, not in_path)
                 self.assertIn(b"settings-url", result.stdout)
-                self.assertEqual((home / ".student-mcp/window.log").stat().st_mode & 0o077, 0)
+                log = state_home / "student-mcp/window.log"
+                self.assertEqual(log.stat().st_mode & 0o077, 0)
                 data = pathlib.Path(environment.get("XDG_DATA_HOME", home / ".local/share"))
                 launcher = data / "applications/student-mcp.desktop"
                 icon = data / "icons/hicolor/256x256/apps/student-mcp.png"

@@ -232,10 +232,15 @@ def matrix(results: list[dict]) -> str:
 
 
 def write_scores(results: list[dict], config_source: Path) -> None:
+    n_questions = 0
+    for entry in results:
+        counts = entry.get("counts") or {}
+        n_questions = max(n_questions, len(counts.get("rows") or []), counts.get("graded", 0) + counts.get("SKIP", 0))
+    n_label = f"{n_questions} questions" if n_questions else "questions"
     lines = [
         "# MCP benchmark across releases",
         "",
-        "50 questions étudiantes identiques, même compte, même correcteur "
+        f"{n_label} étudiantes identiques, même compte, même correcteur "
         "(`tools/mcp-audit.py --intents`). Chaque ligne est un binaire publié.",
         "",
         "| release | score | PASS | PART | FAIL | SKIP | temps total | temps médian | tokens/question | tokens totaux | tools/list | binaire | src MCP |",
@@ -255,9 +260,9 @@ def write_scores(results: list[dict], config_source: Path) -> None:
         )
     lines += [
         "",
-        "**Colonnes.** *temps total* = somme des 50 appels d'outils ; *temps médian* = "
+        "**Colonnes.** *temps total* = somme des appels d'outils ; *temps médian* = "
         "l'appel typique ; *tokens/question* = médiane des octets de réponse divisée par 4 ; "
-        "*tokens totaux* = tout ce qu'un modèle lirait pour ces 50 questions ; "
+        f"*tokens totaux* = tout ce qu'un modèle lirait pour ces {n_questions or 'N'} questions ; "
         "*tools/list* = ce que coûte la liste d'outils avant le premier appel ; "
         "*src MCP* = `mcp.rs` + `src/services/` au tag.",
         "",
@@ -292,6 +297,9 @@ def main() -> int:
     print(matrix(results))
     if args.update:
         write_scores(results, source)
+        from benchmark import site as site_mod  # noqa: E402
+
+        site_mod.main()
     return 0
 
 

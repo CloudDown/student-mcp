@@ -7,7 +7,8 @@ compile aujourd'hui.
 ```bash
 python3 benchmark/run.py                      # de v0.6.2 à current
 python3 benchmark/run.py --versions v0.8.3,current
-python3 benchmark/run.py --update             # réécrit SCORES.md
+python3 benchmark/run.py --update             # réécrit SCORES.md + site/
+python3 benchmark/site.py                     # page visuelle (file://benchmark/site/index.html)
 python3 benchmark/surfaces.py                 # surface MCP de chaque release
 ```
 
@@ -49,6 +50,8 @@ benchmark/
     moodle.py           50 questions + audit de charge utile
     _template.py        squelette pour Brightspace / Omnivox / Canvas
   run.py                releases × services → matrice et SCORES.md
+  site.py               page unique file:// (questions, réponses, métriques)
+  site/index.html       généré, hors git (réponses scolaires)
   results/              JSON brut par version (hors git)
   .bin/                 binaires téléchargés (hors git)
 ```
