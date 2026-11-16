@@ -185,3 +185,16 @@ Même question, même MCP, un vrai agent (OpenCode, `claude-haiku-5-5` et
 Deux coûts visibles côté client : Claude a dû appeler un méta-outil
 `search(namespace)` pour trouver le bon outil parmi 27, et les deux modèles ont
 enchaîné 3 à 7 appels pour des questions simples.
+
+## Où vit quoi
+
+```
+tools/mcp-audit.py        CLI : --service, --intents, --baseline
+benchmark/harness.py      client MCP stdio + client école + métriques
+benchmark/services/*.py   un fichier par plateforme (moodle aujourd'hui)
+benchmark/run.py          mêmes questions sur les binaires de release
+```
+
+Ajouter Brightspace, Omnivox ou Canvas = un fichier dans
+`benchmark/services/` (copier `_template.py`), pas un second harnais.
+Détails : `benchmark/README.md`.
