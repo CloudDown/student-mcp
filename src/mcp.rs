@@ -70,6 +70,52 @@ pub fn header_mismatch(id: &Value, message: &str) -> Value {
 }
 
 /// Tool list for the current settings: always student_status, plus enabled services.
+/// Text every tool pays for before a model can choose. A bare `limit` or
+/// `courseid` forces a guess, and a wrong guess costs a round trip.
+fn describe_parameters(tool: &mut Value) {
+    const CANONICAL: &[(&str, &str)] = &[
+        ("courseid", "Course id from this platform's course list."),
+        ("courseids", "Restrict to these course ids; omit for every current course."),
+        ("query", "Words to look for. Empty lists everything the tool can return."),
+        (
+            "detail",
+            "overview: navigation previews, paginated. full: complete description and inline text.",
+        ),
+        (
+            "page",
+            "0-based page. Follow nextPage from the previous response instead of guessing.",
+        ),
+        (
+            "fileurl",
+            "fileurl from moodle_search, moodle_resources or moodle_course_content. Internal; never share it.",
+        ),
+        ("page_from", "First page of the window, 1-based."),
+        (
+            "page_to",
+            "Last page of the window, 1-based; a wider window costs more tokens.",
+        ),
+        ("limit", "Maximum number of items to return."),
+        ("quizid", "Quiz id from the quiz list of this course."),
+        ("forumid", "Forum id from this platform's forum list."),
+        ("discussionid", "Discussion id from the discussion list of that forum."),
+        ("conversationid", "Conversation id from the private message list."),
+    ];
+    let Some(properties) = tool
+        .get_mut("inputSchema")
+        .and_then(|schema| schema.get_mut("properties"))
+        .and_then(Value::as_object_mut)
+    else {
+        return;
+    };
+    for (key, text) in CANONICAL {
+        if let Some(spec) = properties.get_mut(*key) {
+            if spec.is_object() && spec.get("description").is_none() {
+                spec["description"] = json!(text);
+            }
+        }
+    }
+}
+
 pub fn tool_definitions(settings: &Settings) -> Vec<Value> {
     let mut tools = definitions_for_services(
         !settings.enabled_account_list("moodle").is_empty(),
@@ -134,18 +180,18 @@ fn definitions_for_services(
             { "name": "moodle_assignments", "description": "Visible assignments with course, due date, scheduled status and current submissionStatus. By default, status is fetched only for open assignments and those due within 14 days (3-minute cache, 10-second budget); pass full_status=true for every assignment. statusesMissing explains how to get omitted ones.", "inputSchema": { "type": "object", "properties": { "courseids": { "type": "array", "items": { "type": "integer" } }, "full_status": { "type": "boolean", "description": "Fetch submission status for every assignment, not only open or due within 14 days." } } }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_assignment_status", "description": "Submission and grading status for one assignment: coherent status, timeSubmitted, canSubmit plus canSubmitReason, and uploaded files. assignid is the assignment instance id; a course module id (cmid) is accepted and resolved.", "inputSchema": { "type": "object", "properties": { "assignid": { "type": "integer", "minimum": 1, "description": "Assignment instance id (id from moodle_assignments), not a course module id. A cmid is also accepted and resolved." }, "cmid": { "type": "integer", "minimum": 1, "description": "Optional course module id (cmid from moodle_course_content) to resolve to its assignment." } }, "required": ["assignid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_quizzes", "description": "List visible quizzes; optionally filter to specific course IDs.", "inputSchema": { "type": "object", "properties": { "courseids": { "type": "array", "items": { "type": "integer" } } } }, "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_quiz_status", "description": "Attempts, best grade and access info for one quiz.", "inputSchema": { "type": "object", "properties": { "quizid": { "type": "integer", "minimum": 1 } }, "required": ["quizid"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_quiz_status", "description": "Attempts, best grade, time limit and access window for one quiz. Use quizid from moodle_quizzes; it does not return the question text.", "inputSchema": { "type": "object", "properties": { "quizid": { "type": "integer", "minimum": 1 } }, "required": ["quizid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_grades", "description": "Grades the student can act on. With courseid: item grades, Moodle-reported weights and course total. weightsSource says whether weights came from grade items or the user report; if Moodle reports none, weightsAvailable=false and no weight is invented.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } } }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_calendar", "description": "Get the upcoming Moodle calendar view; optionally filter to one course.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } } }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_deadlines", "description": "Upcoming deadlines from assignments, quizzes and the Moodle calendar, sorted by date. Prefer this for due work. include_expired also returns items already due inside the same day window.", "inputSchema": { "type": "object", "properties": { "days": { "type": "integer", "minimum": 1, "maximum": 365, "description": "How many days ahead to look (default 60)." }, "courseids": { "type": "array", "items": { "type": "integer" } }, "include_expired": { "type": "boolean", "description": "Include items already due from days ago through days ahead." } } }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_announcements", "description": "Recent posts from course announcement forums (news). Plain text, newest first.", "inputSchema": { "type": "object", "properties": { "courseids": { "type": "array", "items": { "type": "integer" } }, "limit": { "type": "integer", "minimum": 1, "maximum": 50 } } }, "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_forums", "description": "List forums in courses (news and discussion boards).", "inputSchema": { "type": "object", "properties": { "courseids": { "type": "array", "items": { "type": "integer" } } } }, "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_forum_discussions", "description": "List recent discussions in one forum.", "inputSchema": { "type": "object", "properties": { "forumid": { "type": "integer", "minimum": 1 }, "limit": { "type": "integer", "minimum": 1, "maximum": 50 } }, "required": ["forumid"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_forums", "description": "Forums in the given courses, announcement boards included. Then read a thread with moodle_forum_discussions; prefer moodle_announcements for course news.", "inputSchema": { "type": "object", "properties": { "courseids": { "type": "array", "items": { "type": "integer" } } } }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_forum_discussions", "description": "Recent discussions in one forum, newest first. Use forumid from moodle_forums, then discussionid with moodle_forum_posts to read a thread.", "inputSchema": { "type": "object", "properties": { "forumid": { "type": "integer", "minimum": 1 }, "limit": { "type": "integer", "minimum": 1, "maximum": 50 } }, "required": ["forumid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_forum_posts", "description": "Read all posts in a forum discussion. Use discussionid from moodle_announcements or moodle_forum_discussions.", "inputSchema": { "type": "object", "properties": { "discussionid": { "type": "integer", "minimum": 1 } }, "required": ["discussionid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_notifications", "description": "Unread notification count and recent Moodle popup notifications.", "inputSchema": { "type": "object", "properties": { "limit": { "type": "integer", "minimum": 1, "maximum": 50 } } }, "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_messages", "description": "Private message conversations and unread counts.", "inputSchema": { "type": "object", "properties": { "limit": { "type": "integer", "minimum": 1, "maximum": 50 } } }, "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_conversation_messages", "description": "Messages inside one private conversation.", "inputSchema": { "type": "object", "properties": { "conversationid": { "type": "integer", "minimum": 1 }, "limit": { "type": "integer", "minimum": 1, "maximum": 100 } }, "required": ["conversationid"] }, "annotations": { "readOnlyHint": true } },
-            { "name": "moodle_completion", "description": "Activity completion status for a course.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_messages", "description": "Private message conversations with unread counts. Read one with moodle_conversation_messages; this is not course news or announcements.", "inputSchema": { "type": "object", "properties": { "limit": { "type": "integer", "minimum": 1, "maximum": 50 } } }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_conversation_messages", "description": "Messages inside one private conversation, oldest first. Use conversationid from moodle_messages.", "inputSchema": { "type": "object", "properties": { "conversationid": { "type": "integer", "minimum": 1 }, "limit": { "type": "integer", "minimum": 1, "maximum": 100 } }, "required": ["conversationid"] }, "annotations": { "readOnlyHint": true } },
+            { "name": "moodle_completion", "description": "Activity completion for one course: what the student finished. An empty list means the course does not track completion, not that nothing was done.", "inputSchema": { "type": "object", "properties": { "courseid": { "type": "integer", "minimum": 1 } }, "required": ["courseid"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_api_functions", "description": "List the Moodle Web Service functions this account's token may call: exact name, one-line description, read or write. Use it only when no dedicated moodle_* tool covers the task. Then check parameters with moodle_api_schema before calling moodle_api_call.", "inputSchema": { "type": "object", "properties": { "query": { "type": "string", "description": "Words found in the function name or description, e.g. \"group members\". Empty lists the first functions." }, "limit": { "type": "integer", "minimum": 1, "maximum": 100 } } }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_api_schema", "description": "Describe one Moodle Web Service function from the bundled catalogue: parameters, required or optional, and read or write type. It describes the function, not this school: the catalogue may differ from the site's Moodle version and says nothing about token permissions. Confirm availability with moodle_api_functions.", "inputSchema": { "type": "object", "properties": { "function": { "type": "string", "description": "Exact function name, e.g. core_course_get_courses. Old clients may send it as name." } }, "required": ["function"] }, "annotations": { "readOnlyHint": true } },
             { "name": "moodle_api_call", "description": "Escape hatch: call any Moodle Web Service function by its exact name. Use the dedicated moodle_* tools first; they summarise results, paginate and check ids for you. Find a name with moodle_api_functions, inspect its parameters with moodle_api_schema. Some functions change school data: say what will change and get the user's confirmation before calling. Moodle still enforces this token's permissions.", "inputSchema": crate::catalog::api_call_schema(), "annotations": { "readOnlyHint": false } }
@@ -176,6 +222,7 @@ fn definitions_for_services(
     // inputSchema is required by MCP even when a tool takes no arguments.
     // A strict client can reject the entire tools/list result if one is missing.
     for tool in &mut tools {
+        describe_parameters(tool);
         match tool["name"].as_str().unwrap_or_default() {
             "moodle_my_courses" | "moodle_search" | "moodle_course_content" => {
                 tool["inputSchema"]["properties"]["refresh"] = json!({"type":"boolean", "description":"Fetch current school metadata instead of the private 15-minute account index."});
@@ -189,8 +236,8 @@ fn definitions_for_services(
         }
         if tool["name"] == "moodle_course_content" {
             tool["description"] = json!("Bounded course navigation. detail=overview (default) returns up to 6 sections per page with direct section URLs, nested subsections, the student's groups, uservisible/groupRestricted flags and shortened previews, NOT complete instructions. Use group_only=true to hide what Moodle marks invisible through group restrictions. Follow nextPage for more sections; moduleCount/fileCount show omissions. detail=full returns complete description/inline text in bounded blocks; optionally select moduleid or sectionid, then follow nextPage until null. It does not read attached PDFs/Office files: use moodle_file. query filters the overview, or selects matching activities for detail=full and returns their complete text in the same call. Metadata is cached per account for 15 minutes; refresh=true fetches current content.");
-            tool["inputSchema"]["properties"]["detail"] =
-                json!({"type":"string","enum":["overview","full"]});
+            tool["inputSchema"]["properties"]["detail"] = json!({"type":"string","enum":["overview","full"],
+                    "description":"overview: navigation previews, paginated. full: complete description and inline text."});
             tool["inputSchema"]["properties"]["query"] = json!({"type":"string","description":"Filter the overview, or select matching activities for detail=full (returns their complete text)."});
             tool["inputSchema"]["properties"]["moduleid"] = json!({"type":"integer","minimum":1,"description":"Activity id from the overview/search, for detail=full."});
             tool["inputSchema"]["properties"]["sectionid"] = json!({"type":"integer","minimum":1,"description":"Section id (not section number) for overview or detail=full."});

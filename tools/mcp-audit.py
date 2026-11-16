@@ -269,6 +269,53 @@ def audit(binary: Path, account: dict[str, Any] | None) -> dict[str, Any]:
         ((len(t.get("description") or ""), t["name"]) for t in tools), reverse=True
     )[:5]
 
+    # Tool-surface lint: the text a model pays for before it can choose.
+    seen: set[str] = set()
+    undescribed: list[str] = []
+    for tool in tools:
+        name = tool.get("name") or "?"
+        annotations = tool.get("annotations") or {}
+        if "readOnlyHint" not in annotations:
+            report["findings"].append(
+                {"severity": "medium", "message": f"{name}: no readOnlyHint annotation."}
+            )
+        if annotations.get("readOnlyHint") is False and "destructiveHint" not in annotations:
+            report["findings"].append(
+                {"severity": "medium", "message": f"{name}: write tool without destructiveHint."}
+            )
+        if name in seen:
+            report["findings"].append(
+                {"severity": "high", "message": f"duplicate tool name {name} in tools/list."}
+            )
+        seen.add(name)
+        description = tool.get("description") or ""
+        if len(description) < 60:
+            report["findings"].append(
+                {
+                    "severity": "medium",
+                    "message": f"{name}: description is {len(description)} chars, too short to guide a choice.",
+                }
+            )
+        for param, spec in ((tool.get("inputSchema") or {}).get("properties") or {}).items():
+            if not (spec or {}).get("description"):
+                undescribed.append(f"{name}.{param}")
+    if undescribed:
+        report["findings"].append(
+            {
+                "severity": "medium",
+                "message": f"{len(undescribed)} parameter(s) without description: "
+                + ", ".join(undescribed[:8])
+                + ("..." if len(undescribed) > 8 else ""),
+            }
+        )
+    if report["tools_list_bytes"] > 25_000:
+        report["findings"].append(
+            {
+                "severity": "medium",
+                "message": f"tools/list is {report['tools_list_bytes']} bytes; every call pays for it.",
+            }
+        )
+
     baseline_calls: list[tuple[str, dict[str, Any]]] = [
         ("student_status", {}),
         ("moodle_my_courses", {}),
