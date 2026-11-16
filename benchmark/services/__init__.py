@@ -14,10 +14,18 @@ one line in `AVAILABLE`, not a second harness. Copy `_template.py`.
 
 from importlib import import_module
 
-AVAILABLE = ("moodle", "brightspace", "omnivox", "canvas")
+# Implemented services. Adding one means a module here and a line below.
+AVAILABLE = ("moodle",)
+# Services the harness is designed for; their module does not exist yet.
+PLANNED = ("brightspace", "omnivox", "canvas")
 
 
 def load(name: str):
+    if name in PLANNED:
+        raise SystemExit(
+            f"{name} is planned: copy benchmark/services/_template.py to "
+            f"benchmark/services/{name}.py and implement surface() and questions()."
+        )
     if name not in AVAILABLE:
-        raise SystemExit(f"unknown service {name!r}; known: {', '.join(AVAILABLE)}")
+        raise SystemExit(f"unknown service {name!r}; known: {', '.join(AVAILABLE + PLANNED)}")
     return import_module(f"benchmark.services.{name}")

@@ -4,12 +4,15 @@ Same 20 student questions, same account, same grader (`tools/mcp-audit.py --inte
 
 | release | PASS | PARTIAL | FAIL | SKIP | score |
 |---|---|---|---|---|---|
-| v0.8.0 | 12 | 2 | 2 | 4 | **75 %** |
-| v0.8.1 | 13 | 1 | 2 | 4 | **81 %** |
-| v0.8.2 | 13 | 1 | 2 | 4 | **81 %** |
-| v0.8.3 | 14 | 1 | 2 | 3 | **82 %** |
-| v0.8.4 | 14 | 1 | 2 | 3 | **82 %** |
-| current | 14 | 1 | 2 | 3 | **82 %** |
+| v0.6.2 | 35 | 3 | 3 | 9 | **85 %** |
+| v0.6.4 | 35 | 3 | 3 | 9 | **85 %** |
+| v0.6.6 | 35 | 3 | 3 | 9 | **85 %** |
+| v0.6.9 | 35 | 3 | 3 | 9 | **85 %** |
+| v0.8.0 | 35 | 3 | 3 | 9 | **85 %** |
+| v0.8.1 | 41 | 1 | 2 | 6 | **93 %** |
+| v0.8.3 | 42 | 1 | 2 | 5 | **93 %** |
+| v0.8.4 | 42 | 1 | 2 | 5 | **93 %** |
+| current | 42 | 1 | 2 | 5 | **93 %** |
 
 Les colonnes `PARTIAL` et `FAIL` comptent : une release peut gagner en
 rapidité et perdre une réponse correcte. Les `SKIP` sont des données absentes

@@ -689,6 +689,395 @@ def questions(binary: Path, account: dict[str, Any] | None) -> list[dict[str, An
         "omnivox_deadlines",
         len(result["text"]),
     )
+
+    # --- 21..50 : second batch -------------------------------------------
+    tools, _ = mcp.batch([])
+    tool_names = {tool.get("name") for tool in tools}
+    schemas = {tool.get("name"): tool.get("inputSchema") or {} for tool in tools}
+    annotations = {tool.get("name"): (tool.get("annotations") or {}) for tool in tools}
+
+    def add(question: str, tool: str, verdict: str, evidence: str, payload: int = 0) -> None:
+        row(question, verdict, evidence, tool, payload)
+
+    # one assignments call feeds four questions (it fans out to Moodle statuses)
+    result, data, _ = call("moodle_assignments", {})
+    items = (data or {}).get("assignments") or []
+    upcoming = sorted(
+        (item for item in items if (item.get("dueDate") or 0) > now), key=lambda i: i["dueDate"]
+    )
+    if upcoming:
+        soonest = upcoming[0]
+        has_date = bool(soonest.get("dueDate"))
+        add(
+            "« Quel est le prochain devoir à rendre ? »",
+            "moodle_assignments",
+            "PASS" if has_date and soonest.get("title") else "PARTIAL",
+            f"{soonest.get('title')} ({soonest.get('course')}), échéance {soonest.get('dueDate')}",
+            len(result["text"]),
+        )
+    else:
+        add("« Quel est le prochain devoir à rendre ? »", "moodle_assignments", "SKIP", "aucun devoir à venir")
+
+    first = items[0] if items else None
+    if first and first.get("id"):
+        result, data, _ = call("moodle_assignment_status", {"assignid": first["id"]})
+        status = (data or {}).get("submissionStatus")
+        add(
+            "« Est-ce que j'ai déjà rendu ce devoir ? »",
+            "moodle_assignment_status",
+            "PASS" if not result["is_error"] and status is not None else "FAIL",
+            f"submissionStatus={status!r}",
+            len(result["text"]),
+        )
+    else:
+        add("« Est-ce que j'ai déjà rendu ce devoir ? »", "moodle_assignment_status", "SKIP", "aucun devoir")
+
+    if first is not None:
+        cutoff = "cutoffDate" in first
+        add(
+            "« Quand ferme la remise ? »",
+            "moodle_assignments",
+            "PASS" if cutoff else "PARTIAL",
+            "cutoffDate présent" if cutoff else "aucun champ cutoffDate",
+            len(result["text"]),
+        )
+    else:
+        add("« Quand ferme la remise ? »", "moodle_assignments", "SKIP", "aucun devoir dans la réponse")
+
+    result, data, _ = call("moodle_quizzes", {})
+    quizzes = (data or {}).get("quizzes") or []
+    opened = [q for q in quizzes if (q.get("timeopen") or 0) <= now and (q.get("timeclose") or 0) > now]
+    add(
+        "« Quels quiz sont ouverts en ce moment ? »",
+        "moodle_quizzes",
+        "PASS" if not result["is_error"] and quizzes else ("SKIP" if not result["is_error"] else "FAIL"),
+        f"{len(opened)} ouvert(s) sur {len(quizzes)}",
+        len(result["text"]),
+    )
+    if quizzes:
+        result, data, _ = call("moodle_quiz_status", {"quizid": quizzes[0]["id"]})
+        add(
+            "« Combien de tentatives il me reste ? »",
+            "moodle_quiz_status",
+            "PASS" if not result["is_error"] else "FAIL",
+            "tentatives lisibles" if not result["is_error"] else result["text"][:80],
+            len(result["text"]),
+        )
+    else:
+        add("« Combien de tentatives il me reste ? »", "moodle_quiz_status", "SKIP", "aucun quiz")
+
+    # exact filename search, then the same file through three delivery modes
+    if pdf:
+        name = pdf.get("filename") or ""
+        result, data, _ = call("moodle_search", {"query": name})
+        found = [r.get("filename") for r in (data or {}).get("results") or []]
+        add(
+            "« Trouve-moi ce document précis »",
+            "moodle_search",
+            "PASS" if name in found else ("PARTIAL" if found else "FAIL"),
+            f"rang {found.index(name) + 1 if name in found else 'absent'} sur {len(found)}",
+            len(result["text"]),
+        )
+        result, data, _ = call("moodle_file", {"fileurl": pdf["fileurl"], "find": "page"})
+        add(
+            "« Cherche un mot dans ce PDF »",
+            "moodle_file find",
+            "PASS" if not result["is_error"] else "FAIL",
+            "recherche texte exécutée" if not result["is_error"] else result["text"][:80],
+            len(result["text"]),
+        )
+        result, data, _ = call("moodle_file", {"fileurl": pdf["fileurl"], "format": "file"})
+        has_link = "links" in (data or {}) or "download" in result["text"].lower()
+        add(
+            "« Donne-moi le lien de téléchargement »",
+            "moodle_file format=file",
+            "PASS" if has_link and not result["is_error"] else "PARTIAL",
+            "lien présent" if has_link else "aucun lien dans la réponse",
+            len(result["text"]),
+        )
+    else:
+        for question, tool in (
+            ("« Trouve-moi ce document précis »", "moodle_search"),
+            ("« Cherche un mot dans ce PDF »", "moodle_file find"),
+            ("« Donne-moi le lien de téléchargement »", "moodle_file format=file"),
+        ):
+            add(question, tool, "SKIP", "aucun PDF dans le cours audité")
+
+    office = None
+    for module in modules:
+        for content in module.get("contents") or []:
+            if (content.get("mimetype") or "").startswith(("application/vnd.openxml", "application/msword")):
+                office = content
+                break
+        if office:
+            break
+    if office:
+        result, data, _ = call("moodle_file", {"fileurl": office["fileurl"], "format": "text"})
+        add(
+            "« Lis-moi ce document Word ou PowerPoint »",
+            "moodle_file office",
+            "PASS" if not result["is_error"] and len(result["text"]) > 200 else "PARTIAL",
+            f"{len(result['text'])} octets extraits",
+            len(result["text"]),
+        )
+    else:
+        add("« Lis-moi ce document Word ou PowerPoint »", "moodle_file office", "SKIP", "aucun document Office")
+
+    result, data, _ = call("moodle_resources", {"courseid": target["id"]})
+    resources = (data or {}).get("resources") or []
+    with_section = [r for r in resources if r.get("sectionid")]
+    add(
+        "« Combien de fichiers dans ce cours ? »",
+        "moodle_resources",
+        "PASS" if not result["is_error"] and resources else ("SKIP" if not result["is_error"] else "FAIL"),
+        f"{len(resources)} ressource(s), {len(with_section)} avec section",
+        len(result["text"]),
+    )
+
+    result, data, _ = call("moodle_course_updates", {"courseid": target["id"], "since": now - 7 * 86400})
+    add(
+        "« Qu'est-ce qui a changé cette semaine dans le cours ? »",
+        "moodle_course_updates",
+        "PASS" if not result["is_error"] else "FAIL",
+        f"{len((data or {}).get('updates') or [])} changement(s)",
+        len(result["text"]),
+    )
+
+    if by_code:
+        word = (next(iter(by_code.values())).get("fullname") or "").split(" - ")[-1]
+        word = word.split()[0] if word else ""
+        result, data, _ = call("moodle_search", {"query": word})
+        hits = (data or {}).get("results") or []
+        add(
+            "« Trouve le cours dont le nom contient ce mot »",
+            "moodle_search",
+            "PASS" if hits else "PARTIAL",
+            f"« {word} » → {len(hits)} résultat(s)",
+            len(result["text"]),
+        )
+    else:
+        add(
+            "« Trouve le cours dont le nom contient ce mot »",
+            "moodle_search",
+            "SKIP",
+            "aucun sigle de cours lisible dans la liste",
+        )
+
+    result, data, _ = call("moodle_recent_grades", {"limit": 5})
+    recent = (data or {}).get("grades") or []
+    add(
+        "« Quelles sont mes dernières notes ? »",
+        "moodle_recent_grades",
+        "PASS" if recent else ("SKIP" if not result["is_error"] else "FAIL"),
+        f"{len(recent)} note(s) datée(s)",
+        len(result["text"]),
+    )
+
+    if graded:
+        course_id = graded[0]["courseid"]
+        result, data, _ = call("moodle_grades", {"courseid": course_id})
+        items = (data or {}).get("grades") or []
+        named = [item for item in items if item.get("item") or item.get("name")]
+        add(
+            "« Quelle note j'ai eue à cet élément ? »",
+            "moodle_grades",
+            "PASS" if named else ("PARTIAL" if items else "SKIP"),
+            f"{len(named)} élément(s) nommé(s)",
+            len(result["text"]),
+        )
+        result, data, _ = call("moodle_grades", {"courseid": course_id})
+        has_total = any(k in result["text"] for k in ("total", "weight", "weightsAvailable"))
+        add(
+            "« Quelle est ma moyenne pondérée ? »",
+            "moodle_grades",
+            "PASS" if has_total else "PARTIAL",
+            "poids ou total exposé" if has_total else "aucune pondération ni explication",
+            len(result["text"]),
+        )
+    else:
+        add("« Quelle note j'ai eue à cet élément ? »", "moodle_grades", "SKIP", "aucune note publiée")
+        add("« Quelle est ma moyenne pondérée ? »", "moodle_grades", "SKIP", "aucune note publiée")
+
+    result, data, _ = call("moodle_notifications", {"limit": 5})
+    add(
+        "« Combien de notifications non lues ? »",
+        "moodle_notifications",
+        "PASS" if not result["is_error"] and "count" in (data or {}) else "FAIL",
+        f"count={(data or {}).get('count')}",
+        len(result["text"]),
+    )
+
+    result, data, _ = call("moodle_announcements", {"limit": 1})
+    text_len = sum(len(str(a)) for a in (data or {}).get("announcements") or [])
+    add(
+        "« Lis la dernière annonce en entier »",
+        "moodle_announcements",
+        "PASS" if text_len > 100 else ("PARTIAL" if text_len else "SKIP"),
+        f"{text_len} caractères de texte",
+        len(result["text"]),
+    )
+
+    result, data, _ = call("moodle_messages", {"limit": 5})
+    conversations = (data or {}).get("conversations") or []
+    add(
+        "« Y a-t-il un message du prof ? »",
+        "moodle_messages",
+        "PASS" if not result["is_error"] else "FAIL",
+        f"{len(conversations)} conversation(s)",
+        len(result["text"]),
+    )
+
+    # robustness: the tool must answer, not crash or invent
+    result, data, _ = call("moodle_course_content", {"courseid": 999_999_999})
+    add(
+        "« Ouvre le cours 999999999 »",
+        "moodle_course_content",
+        "PASS" if result["is_error"] and len(result["text"]) < 400 else "FAIL",
+        "erreur claire" if result["is_error"] else "aucune erreur pour un cours inexistant",
+        len(result["text"]),
+    )
+
+    result, data, _ = call("moodle_search", {"query": "ZZZ9999 inexistant"})
+    empty = not ((data or {}).get("results") or [])
+    add(
+        "« Cherche le cours ZZZ9999 »",
+        "moodle_search",
+        "PASS" if not result["is_error"] and empty else "PARTIAL",
+        "aucun résultat, pas d'invention" if empty else "réponse inattendue",
+        len(result["text"]),
+    )
+
+    # privacy: no tool may accept another user's id
+    leaks = [
+        name
+        for name, schema in schemas.items()
+        if name.startswith(("moodle_", "ws_"))
+        and any(param in (schema.get("properties") or {}) for param in ("userid", "user_id", "studentid"))
+    ]
+    add(
+        "« Regarde les notes de mon ami »",
+        "surface MCP",
+        "PASS" if not leaks else "FAIL",
+        "aucun outil n'accepte un identifiant d'élève" if not leaks else f"paramètre utilisateur exposé: {leaks}",
+    )
+
+    write_tools = [
+        name
+        for name, ann in annotations.items()
+        if name.startswith(("moodle_", "ws_")) and ann.get("readOnlyHint") is False
+    ]
+    add(
+        "« Dépose mon devoir à ma place »",
+        "annotations",
+        "PASS" if write_tools else "PARTIAL",
+        f"{len(write_tools)} outil(s) marqué(s) comme modifiant les données",
+    )
+
+    add(
+        "« C'est quoi mon compte connecté ? »",
+        "student_status",
+        "PASS" if "student_status" in tool_names else "FAIL",
+        f"{len(tool_names)} outils, student_status {'présent' if 'student_status' in tool_names else 'absent'}",
+    )
+
+    # --- 44..50 : pagination, calendrier, cas limites ---------------------
+    result, data, _ = call("moodle_course_content", {"courseid": target["id"]})
+    total = ((data or {}).get("coverage") or {}).get("totalSections")
+    try:
+        truth_sections = len(school.ws("core_course_get_contents", courseid=target["id"]))
+    except Exception:
+        truth_sections = None
+    add(
+        "« Combien de sections a ce cours ? »",
+        "moodle_course_content",
+        "PASS" if total and truth_sections == total else ("PARTIAL" if total else "FAIL"),
+        f"{total} annoncée(s), {truth_sections} à l'école",
+        len(result["text"]),
+    )
+
+    result, data, _ = call("moodle_my_courses", {"include_hidden": True})
+    all_courses = (data or {}).get("courses") or []
+    try:
+        truth_courses = len(school.ws("core_enrol_get_users_courses", userid=school.ws("core_webservice_get_site_info")["userid"]))
+    except Exception:
+        truth_courses = None
+    add(
+        "« Montre aussi mes cours terminés »",
+        "moodle_my_courses include_hidden",
+        "PASS" if truth_courses and len(all_courses) >= truth_courses else "PARTIAL",
+        f"{len(all_courses)} cours avec les terminés, {truth_courses} à l'école",
+        len(result["text"]),
+    )
+
+    result, data, _ = call("moodle_calendar", {"days": 30})
+    events = (data or {}).get("events") or []
+    add(
+        "« Qu'est-ce qui s'en vient dans les 30 jours ? »",
+        "moodle_calendar",
+        "PASS" if not result["is_error"] and events else ("SKIP" if not result["is_error"] else "FAIL"),
+        f"{len(events)} événement(s)",
+        len(result["text"]),
+    )
+
+    result, data, _ = call("moodle_deadlines", {"days": 1})
+    add(
+        "« Qu'est-ce qui est dû aujourd'hui ? »",
+        "moodle_deadlines days=1",
+        "PASS" if not result["is_error"] else "FAIL",
+        f"{len((data or {}).get('deadlines') or [])} élément(s) dans la journée",
+        len(result["text"]),
+    )
+
+    result, data, _ = call("moodle_search", {"query": "ÉLECTRICITÉ"})
+    hits = (data or {}).get("results") or []
+    add(
+        "« Cherche ÉLECTRICITÉ en majuscules »",
+        "moodle_search",
+        "PASS" if hits else ("PARTIAL" if not result["is_error"] else "FAIL"),
+        f"{len(hits)} résultat(s) avec accents et casse",
+        len(result["text"]),
+    )
+
+    image = None
+    for module in modules:
+        for content in module.get("contents") or []:
+            if (content.get("mimetype") or "").startswith("image/"):
+                image = content
+                break
+        if image:
+            break
+    if image:
+        result, data, _ = call("moodle_file", {"fileurl": image["fileurl"], "format": "text"})
+        honest = result["is_error"] and len(result["text"]) < 400
+        add(
+            "« Lis-moi cette image comme du texte »",
+            "moodle_file image",
+            "PASS" if honest or not result["is_error"] else "FAIL",
+            "limite annoncée" if honest else f"{len(result['text'])} octets",
+            len(result["text"]),
+        )
+    else:
+        add("« Lis-moi cette image comme du texte »", "moodle_file image", "SKIP", "aucune image dans le cours")
+
+    try:
+        first_section = (school.ws("core_course_get_contents", courseid=target["id"]) or [{}])[0].get("id")
+    except Exception:
+        first_section = None
+    if first_section:
+        result, data, _ = call(
+            "moodle_course_content",
+            {"courseid": target["id"], "detail": "full", "sectionid": first_section},
+        )
+        add(
+            "« Donne-moi le texte complet de la première section »",
+            "moodle_course_content detail=full sectionid",
+            "PASS" if not result["is_error"] and len(result["text"]) > 200 else "PARTIAL",
+            f"{len(result['text'])} octets",
+            len(result["text"]),
+        )
+    else:
+        add("« Donne-moi le texte complet de la première section »", "moodle_course_content", "SKIP", "section illisible")
+
     return rows
 
 

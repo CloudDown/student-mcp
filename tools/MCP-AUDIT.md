@@ -116,7 +116,7 @@ Cours audité : COURS101 — 14 sections, 214 activités, 235 fichiers.
 - Un compte Moodle est nécessaire pour la vérité terrain ; en `--offline` les
   comparaisons disparaissent.
 
-## Vingt questions étudiantes
+## Cinquante questions étudiantes
 
 ```bash
 python3 tools/mcp-audit.py --intents
@@ -150,41 +150,38 @@ donnée (forum absent, achèvement désactivé…), ce n'est pas un défaut.
 | 19 | Où j'en suis dans ce cours ? | `moodle_completion` | achèvement |
 | 20 | Et sur Omnivox, mes échéances ? | `omnivox_deadlines` | refus explicite |
 
-### Score du 2026-11-15 (v0.8.4)
+### Deuxième lot (21–50)
 
-**14 PASS · 1 PARTIAL · 2 FAIL · 3 SKIP — 82 % des questions évaluables.**
+| # | Question | Ce que ça teste |
+|---|----------|-----------------|
+| 21-25 | prochain devoir, devoir déjà rendu, fermeture de remise, quiz ouverts, tentatives restantes | statuts et fenêtres de remise |
+| 26-29 | document précis, mot dans un PDF, lien de téléchargement, Word/PowerPoint | livraison de fichiers |
+| 30-32 | fichiers du cours, changements de la semaine, cours trouvé par son nom | navigation |
+| 33-35 | dernières notes, note d'un élément, moyenne pondérée | notes et pondérations |
+| 36-38 | notifications, dernière annonce, message du prof | communication |
+| 39-40 | cours inexistant, recherche sans résultat | robustesse : erreur claire, pas d'invention |
+| 41-43 | notes d'un ami, dépôt de devoir, compte connecté | vie privée et annotations |
+| 44-47 | nombre de sections, cours terminés, 30 jours à venir, dû aujourd'hui | pagination et fenêtres |
+| 48-50 | recherche en majuscules, image lue comme du texte, texte d'une section | casse/accents, limites honnêtes |
+
+### Score du 2026-11-16 (50 questions, v0.8.4)
+
+**42 PASS · 1 PARTIAL · 2 FAIL · 5 SKIP — 93 % des questions évaluables.**
 
 - **FAIL #5** — `moodle_search` ne fait ni racinisation ni repli : « corrigé »
-  ne trouve pas `correction probleme doptimisation.pdf`, et « TD corrigé »
-  renvoie 0 résultat alors que les TD existent (tous les mots sont exigés).
-  C'est le défaut le plus coûteux pour un étudiant qui parle naturellement.
+  ne trouve pas `correction …pdf`, et « TD corrigé » renvoie 0 résultat alors que
+  les TD existent (tous les mots sont exigés).
 - **FAIL #11** — `moodle_grades` affiche 1 cours noté sur 5 sans dire qu'il a
   filtré les cours passés. ChatGPT s'arrête à ce seul cours.
-- **PARTIAL #1** — `moodle_my_courses` liste 19 cours sur 26, filtre non annoncé.
-- Les 3 `SKIP` sont des données absentes du compte, pas des erreurs d'outil.
+- **PARTIAL #1** — `moodle_my_courses` liste 19 cours sur 26 ; `include_hidden`
+  donne bien les 26, mais le défaut ne le dit pas.
+- Les 5 `SKIP` sont des données absentes du compte (forum, date d'examen,
+  achèvement désactivé, dernière annonce vide, aucune image), pas des erreurs.
 
-## Ce que font vraiment Claude et ChatGPT
-
-Même question, même MCP, un vrai agent (OpenCode, `claude-haiku-5-5` et
-`gpt-6-luna`), sur le compte réel :
-
-- **« Qu'est-ce que je dois remettre cette semaine ? »** — réponses identiques et
-  exactes (titre du travail, cours, date et heure). Le MCP suffit.
-- **« Quelles notes ? »** — Claude énumère 5 cours (il est allé chercher
-  `moodle_recent_grades`) ; ChatGPT répond **un seul cours et une seule note**, et
-  s'arrête. La cause est côté serveur : `moodle_grades` renvoie 1 cours sur 5
-  sans dire qu'il a filtré. Un modèle pressé conclut que c'est tout.
-- **« Quand est mon examen ? »** — les deux trouvent la date,
-  mais **dans un PDF** du cours : aucune réponse d'outil ne porte cette date.
-  Comme la recherche n'indexe pas les PDF, ils ont choisi le PDF au hasard.
-- **« Le dernier TD du cours ? »** — Claude propose deux fichiers TD différents
-  selon le groupe. Le fichier le plus récemment modifié est autre. La
-  question est ambiguë (groupe, semaine) et **aucun champ ne permet de
-  trancher** : ni groupe, ni « semaine en cours ».
-
-Deux coûts visibles côté client : Claude a dû appeler un méta-outil
-`search(namespace)` pour trouver le bon outil parmi 27, et les deux modèles ont
-enchaîné 3 à 7 appels pour des questions simples.
+Progression mesurée par `benchmark/run.py` : identique de 0.6.2 à 0.8.0 (85 %),
+puis **93 % dès 0.8.1** (pondérations, statut de remise, cutoff, document exact,
+nombre de sections) et un gain de plus en 0.8.3 (`include_expired`). Aucune
+régression mesurée sur les 50 questions.
 
 ## Où vit quoi
 

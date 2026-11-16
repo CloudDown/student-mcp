@@ -30,7 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from benchmark import harness, report as render  # noqa: E402
-from benchmark.services import AVAILABLE, load  # noqa: E402
+from benchmark.services import AVAILABLE, PLANNED, load  # noqa: E402
 
 
 def merge(reports: list[tuple[str, dict]]) -> dict:
@@ -66,7 +66,7 @@ def main() -> int:
     parser.add_argument(
         "--service",
         action="append",
-        choices=list(AVAILABLE),
+        choices=list(AVAILABLE + PLANNED),
         help="audit one service (repeatable); default: every connected one",
     )
     parser.add_argument("--config", default=None, help="default: the XDG config, else the legacy file")

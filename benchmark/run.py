@@ -30,7 +30,21 @@ ROOT = Path(__file__).resolve().parent.parent
 AUDIT = ROOT / "tools" / "mcp-audit.py"
 BIN_DIR = ROOT / "benchmark" / ".bin"
 RESULTS = ROOT / "benchmark" / "results"
-DEFAULT_VERSIONS = ["v0.8.0", "v0.8.1", "v0.8.2", "v0.8.3", "v0.8.4", "current"]
+# One version per distinct MCP definition. `benchmark/surfaces.py` shows that
+# every release since 0.6.2 exposes the same 27 tool names, but the definitions
+# grow from 13.8 KB to 24.4 KB and the behaviour changes; versions sharing an
+# identical surface are skipped.
+DEFAULT_VERSIONS = [
+    "v0.6.2",
+    "v0.6.4",
+    "v0.6.6",
+    "v0.6.9",
+    "v0.8.0",
+    "v0.8.1",
+    "v0.8.3",
+    "v0.8.4",
+    "current",
+]
 
 
 def release_asset() -> str:
@@ -94,6 +108,7 @@ def config_copy() -> tuple[Path, Path]:
 
 def run_version(version: str, binary: Path, config: Path) -> dict:
     output = RESULTS / f"{version}.json"
+    output.unlink(missing_ok=True)  # a stale report must never mask a failure
     env = dict(os.environ)
     env["STUDENT_MCP_CONFIG_FILE"] = str(config)
     print(f"  {version}: {binary.name}, questions in flight…")
@@ -140,16 +155,18 @@ def matrix(results: list[dict]) -> str:
             continue
         delta = ""
         if previous:
-            before = {r["n"]: r["verdict"] for r in previous["counts"]["rows"]}
+            # Compare by question text, never by row number: an older release
+            # can emit a different number of rows and the numbers shift.
+            before = {r["question"]: r["verdict"] for r in previous["counts"]["rows"]}
             gained = [
                 r["n"]
                 for r in counts["rows"]
-                if r["verdict"] == "PASS" and before.get(r["n"]) not in (None, "PASS")
+                if r["verdict"] == "PASS" and before.get(r["question"]) not in (None, "PASS")
             ]
             lost = [
                 r["n"]
                 for r in counts["rows"]
-                if r["verdict"] != "PASS" and before.get(r["n"]) == "PASS"
+                if r["verdict"] != "PASS" and before.get(r["question"]) == "PASS"
             ]
             if gained:
                 delta += f" +{','.join(map(str, gained))}"

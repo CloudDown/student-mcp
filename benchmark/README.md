@@ -5,10 +5,17 @@ différents. Ça mesure ce qu'un étudiant installe réellement, pas ce que le d
 compile aujourd'hui.
 
 ```bash
-python3 benchmark/run.py                      # v0.8.0 … v0.8.4 + current
+python3 benchmark/run.py                      # de v0.6.2 à current
 python3 benchmark/run.py --versions v0.8.3,current
 python3 benchmark/run.py --update             # réécrit SCORES.md
+python3 benchmark/surfaces.py                 # surface MCP de chaque release
 ```
+
+Les versions testées sont celles qui changent vraiment le MCP : depuis 0.6.2 les
+27 noms d'outils sont identiques, mais leurs définitions passent de 13,8 Ko à
+24,4 Ko et leur comportement change. Les releases qui partagent une surface
+identique (0.6.5/0.6.7/0.6.8 = 0.6.6, 0.7.0 = 0.6.9, 0.8.2 = 0.8.1) sont
+sautées. `surfaces.py` régénère cette liste.
 
 Les binaires sont téléchargés depuis GitHub (`gh release download`), mis en
 cache dans `benchmark/.bin/` (ignoré par git), et chaque exécution reçoit une
@@ -26,7 +33,7 @@ benchmark/
   report.py             rendu texte et comparaison à une baseline
   services/
     __init__.py         registre AVAILABLE + load()
-    moodle.py           20 questions + audit de charge utile
+    moodle.py           50 questions + audit de charge utile
     _template.py        squelette pour Brightspace / Omnivox / Canvas
   run.py                releases × services → matrice et SCORES.md
   results/              JSON brut par version (hors git)
