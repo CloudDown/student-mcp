@@ -25,6 +25,19 @@ lisible via `STUDENT_MCP_CONFIG_FILE`.
 
 Résultat actuel : `SCORES.md`.
 
+Ce que la matrice mesure, au-delà du score :
+
+| colonne | sens |
+|---|---|
+| temps total / médian | somme des 50 appels, et l'appel typique — un outil lent est un outil abandonné |
+| tokens/question, tokens totaux | octets de réponse ÷ 4 : ce qu'un modèle doit lire pour ces 50 questions |
+| tools/list | ce que coûte la liste d'outils avant le premier appel |
+| binaire | taille installée par l'étudiant |
+| src MCP | `mcp.rs` + `src/services/` au tag : le poids du code qu'on maintient |
+
+Un gain de score qui double les tokens ou la latence n'est pas un gain : les
+trois colonnes se lisent ensemble.
+
 ## Structure
 
 ```

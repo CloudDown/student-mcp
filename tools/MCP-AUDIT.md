@@ -183,6 +183,12 @@ puis **93 % dès 0.8.1** (pondérations, statut de remise, cutoff, document exac
 nombre de sections) et un gain de plus en 0.8.3 (`include_expired`). Aucune
 régression mesurée sur les 50 questions.
 
+Le même passage mesure le coût : 0.8.1 divise le temps par 1,9 (50,9 s → 27,0 s)
+et les tokens lus par 2,4 (170 201 → 70 135) sur ces mêmes questions, pendant que
+le score monte de 85 à 93 %. Depuis, `tools/list` passe de 3 462 à 6 089 tokens
+(descriptions de paramètres) et la source MCP de 724 Ko à 1 015 Ko : c'est le
+prix de la compréhension, à surveiller à chaque release.
+
 ## Où vit quoi
 
 ```

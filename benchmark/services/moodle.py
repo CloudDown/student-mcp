@@ -278,7 +278,9 @@ def questions(binary: Path, account: dict[str, Any] | None) -> list[dict[str, An
     school = School(account) if account else None
     rows: list[dict[str, Any]] = []
 
-    def row(question: str, verdict: str, evidence: str, tool: str = "-", payload: int = 0) -> None:
+    def row(
+        question: str, verdict: str, evidence: str, tool: str = "-", payload: int = 0
+    ) -> None:
         rows.append(
             {
                 "n": len(rows) + 1,
@@ -287,11 +289,15 @@ def questions(binary: Path, account: dict[str, Any] | None) -> list[dict[str, An
                 "evidence": evidence,
                 "tool": tool,
                 "bytes": payload,
+                "seconds": round(last.get("seconds", 0.0), 3),
             }
         )
 
+    last = {"seconds": 0.0}
+
     def call(name: str, args: dict[str, Any]) -> tuple[dict[str, Any], Any, float]:
         result, seconds = mcp.one(name, args)
+        last["seconds"] = seconds
         return result, parse_mcp_json(result), seconds
 
     # --- context -----------------------------------------------------------

@@ -270,3 +270,35 @@ def parse_mcp_json(result: dict[str, Any]) -> Any:
         return json.loads(result["text"])
     except Exception:
         return None
+
+def tools_surface(binary: str, config: str | None = None) -> dict[str, Any]:
+    """Tool count and tools/list size for one binary, without touching the account."""
+    env = dict(os.environ)
+    if config:
+        env["STUDENT_MCP_CONFIG_FILE"] = config
+    messages = [
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "surface", "version": "0"}}},
+        {"jsonrpc": "2.0", "method": "notifications/initialized"},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+    ]
+    run = subprocess.run(
+        [binary],
+        input="\n".join(json.dumps(m) for m in messages) + "\n",
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=env,
+    )
+    tools: list[dict[str, Any]] = []
+    for line in run.stdout.splitlines():
+        try:
+            data = json.loads(line)
+        except Exception:
+            continue
+        if data.get("id") == 2:
+            tools = data["result"]["tools"]
+    return {
+        "count": len(tools),
+        "bytes": len(json.dumps(tools)),
+        "names": sorted(tool.get("name", "") for tool in tools),
+    }
