@@ -1,0 +1,14 @@
+[
+  {
+    "id": "prochaines-echeances",
+    "question": "Quelles sont mes prochaines échéances dans les deux prochaines semaines ?"
+  },
+  {
+    "id": "cours-session",
+    "question": "Quels cours ai-je cette session ?"
+  },
+  {
+    "id": "recherche-document",
+    "question": "Retrouve le document du cours qui parle du prochain travail à remettre et dis-moi quoi préparer."
+  }
+]

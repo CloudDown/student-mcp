@@ -5,6 +5,32 @@ edition = "2021"
 default-run = "student-mcp"
 description = "Local MCP for student services with browser configuration and a stable HTTPS link."
 license = "MIT AND GPL-3.0-or-later"
+exclude = [
+    "benchmark/**",
+    "AGENTS.md",
+    ".github/**",
+    ".graphifyignore",
+    "deny.toml",
+    "tools/SESSION-MEMORY.md",
+    "tools/MCP-AUDIT.md",
+    "tools/OMNIVOX-LIVE-TESTS.md",
+    "tools/PERFORMANCE.md",
+    "tools/assistant-guides.html",
+    "tools/capture-readme.mjs",
+    "tools/compact-catalog.py",
+    "tools/graphify.sh",
+    "tools/inspector.json",
+    "tools/mcp-audit.py",
+    "tools/package-desktop.py",
+    "tools/render-assistant-guides.mjs",
+    "tools/render-icons.py",
+    "tools/smoke-web.py",
+    "tools/stage-release.py",
+    "tools/test-*",
+    "tools/test_*.py",
+    "tools/packaging/signing-*",
+    "tools/packaging/windows.iss",
+]
 
 [dependencies]
 tiny_http = "0.12"

@@ -81,8 +81,9 @@ def default_config() -> Path:
 class MCP:
     """One stdio MCP session per batch, so each timing is honest."""
 
-    def __init__(self, binary: Path):
+    def __init__(self, binary: Path, env: dict[str, str] | None = None):
         self.binary = binary
+        self.env = env
 
     def batch(
         self, calls: list[tuple[str, dict[str, Any]]], timeout: int = 240
@@ -117,6 +118,7 @@ class MCP:
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=self.env,
         )
         if proc.returncode != 0:
             raise SystemExit(f"MCP exited {proc.returncode}: {proc.stderr[:400]}")

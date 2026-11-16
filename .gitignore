@@ -38,3 +38,4 @@ node_modules/
 
 # Local Graphify index (regenerate with sh tools/graphify.sh)
 /graphify-out/
+/benchmark/student-results/

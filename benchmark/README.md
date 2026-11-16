@@ -12,6 +12,27 @@ python3 benchmark/site.py                     # page visuelle (file://benchmark/
 python3 benchmark/surfaces.py                 # surface MCP de chaque release
 ```
 
+## Parcours étudiant avec un modèle
+
+`student.py` donne une question libre au modèle, lui expose les outils Moodle
+en lecture seule, exécute ses appels sur le binaire local, puis sauvegarde sa
+réponse et sa trace pour une revue humaine. Il n'effectue aucune écriture Moodle.
+
+```bash
+cargo build --release
+export OPENCODE_API_KEY='…'  # clé OpenCode Zen; ne pas la mettre dans le dépôt
+python3 benchmark/student.py --scenarios benchmark/scenarios.example.json --repeat 3
+```
+
+Par défaut, il compare `gpt-6-luna` et `claude-haiku-5-5` via l'API Responses
+d'OpenCode Zen. Résultats privés dans `benchmark/student-results/` (ignoré par
+Git) : ils contiennent les réponses et données Moodle retournées par les outils.
+Les questions et résultats Moodle sont transmis à OpenCode Zen pour l'inférence ;
+ne lance le test qu'avec des données que tu acceptes de transmettre. Ne publie
+pas les résultats. L'exécution consomme le quota/crédit OpenCode configuré.
+Le runner collecte les traces et métriques, mais ne prétend pas noter
+automatiquement la justesse de la réponse.
+
 Les versions testées sont celles qui changent vraiment le MCP : depuis 0.6.2 les
 27 noms d'outils sont identiques, mais leurs définitions passent de 13,8 Ko à
 24,4 Ko et leur comportement change. Les releases qui partagent une surface
@@ -50,6 +71,8 @@ benchmark/
     moodle.py           50 questions + audit de charge utile
     _template.py        squelette pour Brightspace / Omnivox / Canvas
   run.py                releases × services → matrice et SCORES.md
+  student.py            parcours étudiant via OpenCode Zen + outils MCP
+  scenarios.example.json exemples de questions libres
   site.py               page unique file:// (questions, réponses, métriques)
   site/index.html       généré, hors git (réponses scolaires)
   results/              JSON brut par version (hors git)
