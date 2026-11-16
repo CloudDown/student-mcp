@@ -9,7 +9,10 @@ static SAVE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 // Keep this file in place: unlinking it would let two processes lock different inodes.
 fn lock_config() -> std::io::Result<std::fs::File> {
+    #[cfg(test)]
     let path = config_path().with_extension("lock");
+    #[cfg(not(test))]
+    let path = crate::paths::layout().lock();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -737,17 +740,12 @@ pub fn config_path() -> PathBuf {
         .expect("config access requires with_temp_config in tests");
     #[cfg(not(test))]
     {
-        for variable in ["STUDENT_MCP_CONFIG_FILE", "MOODLE_CONFIG_FILE"] {
-            if let Ok(path) = std::env::var(variable) {
-                if !path.trim().is_empty() {
-                    return PathBuf::from(path);
-                }
+        if let Some(path) = crate::paths::current_env().config_override {
+            if !path.trim().is_empty() {
+                return PathBuf::from(path);
             }
         }
-        let home = std::env::var("HOME")
-            .or_else(|_| std::env::var("USERPROFILE"))
-            .unwrap_or_else(|_| ".".to_string());
-        Path::new(&home).join(".student-mcp.json")
+        crate::paths::layout().config_file
     }
 }
 

@@ -39,7 +39,7 @@ impl Index {
         #[cfg(test)]
         let root = crate::config::tests::override_config_path()?.with_extension("index");
         #[cfg(not(test))]
-        let root = crate::config::config_path().with_extension("index");
+        let root = crate::paths::layout().index_dir();
         let digest = Sha256::digest(serde_json::to_vec(&(base, token, account)).ok()?);
         let key = digest.iter().map(|byte| format!("{byte:02x}")).collect();
         let mut index = Self {

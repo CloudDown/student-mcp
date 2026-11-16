@@ -54,7 +54,7 @@ pub fn activity_log_path() -> PathBuf {
     }
     #[cfg(not(test))]
     {
-        crate::config::config_path().with_extension("activity.log")
+        crate::paths::layout().activity_log()
     }
 }
 
@@ -67,7 +67,7 @@ pub fn mcp_log_path() -> PathBuf {
     }
     #[cfg(not(test))]
     {
-        crate::config::config_path().with_extension("mcp.log")
+        crate::paths::layout().mcp_log()
     }
 }
 

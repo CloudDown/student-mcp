@@ -5,6 +5,14 @@ Notable changes, newest first. Downloads for each release are on the
 
 ## Unreleased
 
+- **XDG file locations.** Settings moved to `~/.config/student-mcp/config.json`
+  (`$XDG_CONFIG_HOME` is honoured), the private index, browser profiles and file
+  links to `~/.local/share/student-mcp/`, and both logs to
+  `~/.local/state/student-mcp/`. Windows uses `%APPDATA%` and `%LOCALAPPDATA%`.
+  On first start the old `~/.student-mcp.*` files are moved into place once, and an
+  existing destination is never overwritten. `STUDENT_MCP_CONFIG_FILE` still selects
+  one explicit config file and keeps every side file in that directory.
+
 - **Clearer escape-hatch names.** The three low-level Moodle tools now follow the
   same `moodle_*` naming as every other tool: `moodle_api_call` (was `ws_call`),
   `moodle_api_functions` (was `ws_discover`) and `moodle_api_schema` (was

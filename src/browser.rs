@@ -39,9 +39,13 @@ fn profile_path(token: &str) -> Result<PathBuf, String> {
     if id.len() != 32 || !id.bytes().all(|c| c.is_ascii_hexdigit()) {
         return Err("Invalid browser profile.".into());
     }
-    Ok(crate::config::config_path()
-        .with_extension("browsers")
-        .join(id))
+    #[cfg(not(test))]
+    let root = crate::paths::layout().browsers_dir();
+    #[cfg(test)]
+    let root = crate::config::tests::override_config_path()
+        .ok_or("Invalid browser profile.")?
+        .with_extension("browsers");
+    Ok(root.join(id))
 }
 
 fn private_dir(path: &Path) -> io::Result<()> {

@@ -95,11 +95,11 @@ fn logs_command_shows_activity_and_mcp_logs() {
     let config = dir.join("settings.json");
     std::fs::write(&config, "{}").unwrap();
     std::fs::write(
-        config.with_extension("activity.log"),
+        dir.join("activity.log"),
         "{\"event\":\"first\"}\n{\"event\":\"second\"}\n",
     )
     .unwrap();
-    std::fs::write(config.with_extension("mcp.log"), "GET /mcp/redacted 200\n").unwrap();
+    std::fs::write(dir.join("mcp.log"), "GET /mcp/redacted 200\n").unwrap();
     let run = |args: &[&str]| {
         Command::new(env!("CARGO_BIN_EXE_student-mcp"))
             .args(args)

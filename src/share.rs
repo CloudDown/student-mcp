@@ -197,7 +197,7 @@ pub(crate) fn default_root() -> Option<PathBuf> {
     }
     #[cfg(not(test))]
     {
-        Some(crate::config::config_path().with_extension("links"))
+        Some(crate::paths::layout().links_dir())
     }
 }
 

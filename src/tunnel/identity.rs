@@ -12,7 +12,8 @@ pub(super) struct Identity {
 
 impl Identity {
     pub fn load(config_path: &Path) -> Result<Self, String> {
-        let path = config_path.with_extension("srvus-key");
+        let dir = config_path.parent().unwrap_or_else(|| Path::new("."));
+        let path = dir.join("srvus-key");
         let seed = read_or_create(&path, || {
             let mut seed = vec![0; 32];
             getrandom::getrandom(&mut seed).map_err(|_| io::Error::other("OS randomness unavailable"))?;
@@ -37,7 +38,7 @@ impl Identity {
         Ok(Self {
             key,
             origin: format!("https://{name}.srv.us"),
-            host_file: config_path.with_extension("srvus-host"),
+            host_file: dir.join("srvus-host"),
         })
     }
 }

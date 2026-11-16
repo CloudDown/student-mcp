@@ -21,13 +21,15 @@ fn identity_persists_and_does_not_depend_on_the_local_port_or_mcp_token() {
         assert_eq!(first.key.public_key(), second.key.public_key());
         assert!(first.origin.starts_with("https://"));
         assert!(first.origin.ends_with(".srv.us"));
-        let other = Identity::load(&path.with_file_name("other.json")).unwrap();
+        let other_dir = path.parent().unwrap().join("other");
+        std::fs::create_dir_all(&other_dir).unwrap();
+        let other = Identity::load(&other_dir.join("config.json")).unwrap();
         assert_ne!(first.origin, other.origin);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             assert_eq!(
-                std::fs::metadata(path.with_extension("srvus-key"))
+                std::fs::metadata(path.with_file_name("srvus-key"))
                     .unwrap()
                     .permissions()
                     .mode()
@@ -42,7 +44,7 @@ fn identity_persists_and_does_not_depend_on_the_local_port_or_mcp_token() {
 fn corrupted_identity_is_never_silently_replaced() {
     crate::config::tests::with_temp_config(|| {
         let path = crate::config::config_path();
-        let key = path.with_extension("srvus-key");
+        let key = path.with_file_name("srvus-key");
         std::fs::write(&key, b"invalid").unwrap();
         assert!(Identity::load(&path).is_err());
         assert_eq!(std::fs::read(key).unwrap(), b"invalid");
@@ -57,7 +59,7 @@ fn identity_refuses_symlinks_without_touching_their_targets() {
         let path = crate::config::config_path();
         let target = path.with_file_name("unrelated");
         std::fs::write(&target, b"leave unchanged").unwrap();
-        symlink(&target, path.with_extension("srvus-key")).unwrap();
+        symlink(&target, path.with_file_name("srvus-key")).unwrap();
         assert!(Identity::load(&path).is_err());
         assert_eq!(std::fs::read(target).unwrap(), b"leave unchanged");
     });
@@ -66,7 +68,7 @@ fn identity_refuses_symlinks_without_touching_their_targets() {
 #[test]
 fn host_key_is_pinned_and_changes_are_refused_without_overwriting() {
     crate::config::tests::with_temp_config(|| {
-        let path = crate::config::config_path().with_extension("srvus-host");
+        let path = crate::config::config_path().with_file_name("srvus-host");
         verify_host(&path, b"original").unwrap();
         verify_host(&path, b"original").unwrap();
         assert!(verify_host(&path, b"replacement").is_err());

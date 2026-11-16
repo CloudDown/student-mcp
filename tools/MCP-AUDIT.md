@@ -24,7 +24,7 @@ python3 tools/mcp-audit.py --offline        # sans compte, sans vérité terrain
 
 Code de sortie `1` dès qu'un constat `high` ou `blocker` apparaît : utilisable
 comme garde avant un commit. Rapports dans `~/.student-mcp.eval/` (hors dépôt).
-Le jeton scolaire est lu dans `~/.student-mcp.json` et n'est jamais affiché.
+Le jeton scolaire est lu dans `~/.config/student-mcp/config.json` (ou l'ancien `~/.student-mcp.json`) et n'est jamais affiché.
 
 ## Ce qu'il vérifie
 

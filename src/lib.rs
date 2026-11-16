@@ -7,6 +7,7 @@ mod delivery;
 mod document;
 mod http;
 mod mcp;
+pub mod paths;
 mod pdf;
 mod redact;
 mod request_log;

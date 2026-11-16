@@ -160,8 +160,12 @@ EOF
     fi
   fi
   # The local settings URL carries a private UI key. Keep its log user-only.
-  (umask 077; touch "$HOME/.student-mcp/window.log"; chmod 600 "$HOME/.student-mcp/window.log")
-  nohup "$install_dir/student-mcp" up > "$HOME/.student-mcp/window.log" 2>&1 &
+  state_dir="${XDG_STATE_HOME:-$HOME/.local/state}"
+  case "$state_dir" in /*) ;; *) state_dir="$HOME/.local/state" ;; esac
+  state_dir="$state_dir/student-mcp"
+  mkdir -p "$state_dir"
+  (umask 077; touch "$state_dir/window.log"; chmod 600 "$state_dir/window.log")
+  nohup "$install_dir/student-mcp" up > "$state_dir/window.log" 2>&1 &
   printf "The student-mcp window is opening. Installed file: %s\n" "$install_dir/student-mcp"
   for attempt in 1 2 3 4 5; do
     if settings_url="$("$install_dir/student-mcp" settings-url 2>/dev/null)"; then
@@ -170,5 +174,5 @@ EOF
     fi
     sleep 1
   done
-  printf 'Find the settings URL again: "%s" settings-url\nLog: %s\n' "$install_dir/student-mcp" "$HOME/.student-mcp/window.log"
+  printf 'Find the settings URL again: "%s" settings-url\nLog: %s\n' "$install_dir/student-mcp" "$state_dir/window.log"
 fi

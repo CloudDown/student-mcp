@@ -75,6 +75,20 @@ def load_account(path: Path) -> dict[str, Any] | None:
     return None
 
 
+def default_config() -> Path:
+    """XDG location first, then the pre-XDG file, so the audit works either way."""
+    candidates = []
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    if xdg:
+        candidates.append(Path(xdg) / "student-mcp" / "config.json")
+    candidates.append(Path.home() / ".config" / "student-mcp" / "config.json")
+    candidates.append(Path.home() / ".student-mcp.json")
+    for path in candidates:
+        if path.is_file():
+            return path
+    return candidates[0]
+
+
 class MCP:
     """One stdio MCP session per batch, so each timing is honest."""
 
@@ -758,7 +772,7 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--bin", default="target/release/student-mcp", help="stdio MCP binary")
-    parser.add_argument("--config", default=str(Path.home() / ".student-mcp.json"))
+    parser.add_argument("--config", default=None, help="default: the XDG config, else the legacy file")
     parser.add_argument("--baseline", help="earlier JSON report to compare against")
     parser.add_argument("--write-baseline", action="store_true", help="save this run as the baseline")
     parser.add_argument("--json", help="report path (default ~/.student-mcp.eval/last.json)")
@@ -774,7 +788,8 @@ def main() -> int:
     if not binary.exists() or not os.access(binary, os.X_OK):
         print(f"missing binary: {binary}", file=sys.stderr)
         return 2
-    account = None if args.offline else load_account(Path(args.config))
+    config_path = Path(args.config) if args.config else default_config()
+    account = None if args.offline else load_account(config_path)
     if not account and not args.offline:
         print("no connected Moodle account; continuing without ground truth", file=sys.stderr)
 

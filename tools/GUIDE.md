@@ -183,7 +183,7 @@ close it afterwards. Concurrent calls for the same profile wait up to two
 minutes for its OS lock, without launching competing browsers. Cancelling a
 browser sign-in also interrupts its lock wait.
 
-Document links last 24 hours by default while the app is running (`link_ttl_hours` in `~/.student-mcp.json`, 1–168 hours). Unexpired links are also saved in the private folder `~/.student-mcp.links/` (mode `0700`, one `0600` file per link), so restarting the app or updating it no longer invalidates them; each link keeps its original deadline and its files are deleted at expiry. The store is bounded to 128 links and 24 MiB; when full, new files are attached inline rather than evicting links that were already issued.
+Document links last 24 hours by default while the app is running (`link_ttl_hours` in `~/.config/student-mcp/config.json`, 1–168 hours). Unexpired links are also saved in the private folder `~/.local/share/student-mcp/links/` (mode `0700`, one `0600` file per link), so restarting the app or updating it no longer invalidates them; each link keeps its original deadline and its files are deleted at expiry. The store is bounded to 128 links and 24 MiB; when full, new files are attached inline rather than evicting links that were already issued.
 
 `omnivox_deadlines` and `canvas_deadlines` match the Moodle/Brightspace due-work
 tools: a sorted window (default 60 days), `partial`/`errors` when a course
@@ -257,7 +257,7 @@ references that require the school page or source files.
 The account's course list and metadata are indexed locally for 15 minutes.
 `refresh=true` on these tools bypasses the index; failed refreshes do not return
 stale data as current. Changing credentials/account changes the index namespace.
-Metadata persists beside the configuration in `~/.student-mcp.index/` (or the
+Metadata persists in `~/.local/share/student-mcp/index/` (or the
 configuration path with an `.index` extension). It contains course text and file
 references, not downloaded PDF/Office bytes or login credentials. It is private
 to the local user, is not part of git and can be removed while the app is closed.
@@ -407,9 +407,9 @@ tools, so do not share it or include it in screenshots. Prefer local stdio if
 you do not accept this third-party trust.
 
 **The hostname stays the same across app restarts and port changes.** The app
-generates a dedicated SSH key in `~/.student-mcp.srvus-key`; back it up privately.
+generates a dedicated SSH key in `~/.config/student-mcp/srvus-key`; back it up privately.
 Deleting that file means a new hostname. The key is not your school login or MCP
-token. `~/.student-mcp.srvus-host` records the relay's host key on first use;
+token. `~/.config/student-mcp/srvus-host` records the relay's host key on first use;
 unexpected changes stop public access instead of reconnecting to a different key.
 These paths follow any custom configuration file location. A corrupted identity
 is left unchanged and reported rather than silently resetting your address.
@@ -428,7 +428,7 @@ remain local, but tool results are disclosed to the AI provider and the relay.
 See [srv.us documentation](https://docs.srv.us/).
 
 The token protects the URL: without it you get a 401. You can rotate the token
-by quitting the app, deleting `gateway.token` in `~/.student-mcp.json`, then
+by quitting the app, deleting `gateway.token` in `~/.config/student-mcp/config.json`, then
 restarting. Copy the new full connector URL; its hostname stays the same.
 
 ## 5. Commands
@@ -447,19 +447,19 @@ student-mcp version
 
 Two private logs help diagnose what the app does:
 
-- `~/.student-mcp.activity.log` (JSON Lines): MCP tool name, argument **keys**,
+- `~/.local/state/student-mcp/activity.log` (JSON Lines): MCP tool name, argument **keys**,
   account id, duration, result size/content types, each Moodle Web Service
   function and duration, and file deliveries (filename, MIME, bytes, pages,
   text size, whether a link was issued). Values, message bodies, file bytes,
   tokens and passwords are never written.
-- `~/.student-mcp.mcp.log`: inbound HTTP method, **redacted** path, status and
+- `~/.local/state/student-mcp/mcp.log`: inbound HTTP method, **redacted** path, status and
   user-agent. Headers, bodies and connector tokens are never written.
 
 Both are mode 0600 and rotated at 1 MiB. `student-mcp logs` prints the activity
 log; add `--mcp` for inbound requests or `--follow` to watch live. Set
 `STUDENT_MCP_TEST_LOG` only in tests to redirect unit-test writes.
 
-`up` prints the settings URL on startup and in `~/.student-mcp/window.log`
+`up` prints the settings URL on startup and in `~/.local/state/student-mcp/window.log`
 (user-only permissions) even when the browser cannot open. `settings-url` reads
 that discovery file and checks the running instance; it changes no settings.
 The Linux installer also links the command into `~/.local/bin` and says what to
@@ -529,7 +529,7 @@ command there is preserved.
 - **The shared file link says it expired**: links are capability URLs valid for
   the configured lifetime (24 hours by default; 128 files / 24 MiB maximum). They
   survive app restarts and updates while unexpired, because they are stored in
-  `~/.student-mcp.links/` and deleted at expiry. A link still fails before its
+  `~/.local/share/student-mcp/links/` and deleted at expiry. A link still fails before its
   deadline only if that folder was removed, the configuration points elsewhere,
   or the address changed. Call `moodle_file` again to mint a fresh one. Anyone with the
   link can read that one file until it expires; the Moodle token is never in
@@ -537,7 +537,7 @@ command there is preserved.
 - **Gemini web says the MCP server could not be reached**: Gemini's custom
   connectors are currently limited to eligible US accounts/regions. The same link
   keeps working in Claude, ChatGPT and Grok. Confirm the failure in
-  `~/.student-mcp.mcp.log` (method, path, status, user-agent; tokens are redacted)
+  `~/.local/state/student-mcp/mcp.log` (method, path, status, user-agent; tokens are redacted)
   before changing the connector URL.
 - **Claude cannot register with the sign-in service** (`ofid_…` reference):
   Claude started an OAuth flow, but this server deliberately has no OAuth. All
@@ -549,7 +549,7 @@ command there is preserved.
   port 22. Identity file errors require checking folder permissions/restoring
   your backup; they do not silently regenerate an existing key.
 - **srv.us server identity changed**: public access stops. Verify the change
-  with the provider before touching `~/.student-mcp.srvus-host`; do not simply
+  with the provider before touching `~/.config/student-mcp/srvus-host`; do not simply
   delete it to bypass the warning.
 - **Claude reports HTTP 502 or an expired link**: keep the app open. A freshly
   generated hostname may take time to resolve: first wait and retry the same

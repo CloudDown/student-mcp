@@ -1,7 +1,7 @@
 # student-mcp — guide agents
 
 Backend Rust + interface web locale + MCP pour Moodle, Omnivox et Brightspace.
-Un dépôt = un commit. Secrets dans `~/.student-mcp.json`, jamais dans git.
+Un dépôt = un commit. Secrets dans `~/.config/student-mcp/config.json`, jamais dans git.
 
 ## Mémoire de travail
 
@@ -102,7 +102,7 @@ pour couvrir un handoff vers un autre sous-domaine.
 Brightspace, Omnivox et Canvas peuvent stocker une session dans un profil Chromium
 propre au compte (`src/browser.rs`). Le jeton enregistré est
 `browser-profile:<32 hex>`, jamais un cookie ou un mot de passe. Le profil vit
-à côté de la configuration (`~/.student-mcp.browsers/`, mode `0700` sur Unix) et
+à côté de la configuration (`~/.local/share/student-mcp/browsers/`, mode `0700` sur Unix) et
 ne doit jamais entrer dans git.
 
 - Seule l’interface locale ouvre une fenêtre visible (`Login::start`). Un appel
@@ -174,7 +174,7 @@ README. Ajouter une capture plutôt qu’un paragraphe.
 - `src/services/canvas.rs` — Canvas / ZoneCours, session navigateur, lecture seule
 - `src/services/moodle/download.rs` — cache de téléchargements Moodle
 - `src/services/moodle/research.rs` / `index.rs` — recherche de métadonnées Moodle,
-  consignes paginées et index privé par compte (`~/.student-mcp.index/`, hors git).
+  consignes paginées et index privé par compte (`~/.local/share/student-mcp/index/`, hors git).
   L’index ne contient pas les octets des fichiers ; ne pas présenter ses extraits
   comme une lecture complète. `refresh=true` ne doit pas masquer une panne avec
   une ancienne réponse. Les lectures ne doivent jamais accuser réception d’un document.

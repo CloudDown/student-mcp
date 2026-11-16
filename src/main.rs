@@ -1,6 +1,7 @@
 use student_mcp::{run_stdio, run_web, run_web_background, VERSION};
 
 fn main() {
+    student_mcp::paths::init();
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         None => run_stdio(),
