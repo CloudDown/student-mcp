@@ -218,7 +218,6 @@ try {
   assert.equal(actions.at(-1).action,'assistant_setup');
   assert.equal(actions.at(-1).assistant,'claude');
   await page.getByRole('button',{name:'Remove setup',exact:true}).click();
-  await page.locator('[data-assistant-remove-confirm]').click();
   assert.equal(actions.at(-1).action,'assistant_remove');
   assert.equal(actions.at(-1).assistant,'claude');
   await page.locator('[data-assistant-confirm="claude"]').waitFor();

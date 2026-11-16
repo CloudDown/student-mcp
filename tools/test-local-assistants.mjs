@@ -53,7 +53,7 @@ assert.match(rendered,/data-local-assistant="cursor"/);
 assert.match(rendered,/data-local-assistant="grok-build"/);
 assert.match(rendered,/<button class="local-app-card" data-local-assistant="omp"[^>]*disabled/,'An undetected app stays visible but cannot be configured');
 assert.doesNotMatch(rendered,/class="local-app-row"/,'The gallery replaces the list rows');
-assert.match(rendered,/Autres applications \(1\)/);
+assert.match(rendered,/Applications non détectées \(1\)/);
 await click('local-assistant','cursor');
 assert.equal(requests.length,1,'Selecting an app must not write before confirmation');
 assert.match(ui.assistantScreen(),/data-assistant-confirm="cursor"/);

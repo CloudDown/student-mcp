@@ -12,7 +12,10 @@ h1{font-size:clamp(2rem,6vw,2.75rem);line-height:1.1;letter-spacing:-.035em;font
 .link-card{margin:clamp(3rem,10vh,5rem) 0 0;width:100%;padding:0;min-height:0;display:flex;flex-direction:row;align-items:center;border-radius:1.25rem;background:#ffffffbf;backdrop-filter:blur(20px) saturate(150%);text-align:left;color:inherit}
 .link-open{flex:1;min-width:0;text-align:left;border:0;background:transparent;padding:1.25rem;color:inherit;border-radius:1.25rem;display:flex;flex-direction:column;gap:.35rem}
 .link-title{font-size:.9375rem;font-weight:600}.link-value{font: .8125rem/1.5 system-ui,sans-serif;margin:0;color:var(--subtle)}
-.copy-home{position:static;flex-shrink:0;margin-right:.75rem}
+.copy-home{position:absolute;top:1.25rem;right:1.25rem;margin:0}
+.link-open{width:100%;padding-right:1.25rem}
+.link-open .link-title{min-height:var(--button-height);display:flex;align-items:center;padding-right:6.5rem}
+.link-open .link-value{width:100%;overflow-wrap:anywhere}
 .icon-button,.field-head .eye,.field-head .help{position:static;width:44px;height:44px;flex-shrink:0;padding:0}.icon-button{border-radius:.75rem}
 .eye-slash[hidden]{display:none}
 .service-head{padding-top:0;margin-bottom:2rem}.service-head h1{font-size:2.125rem;font-weight:650;letter-spacing:-.03em}.logo-frame{width:4.5rem;height:4.5rem;border-radius:1.25rem;margin-bottom:1.25rem}
@@ -229,7 +232,7 @@ button{transition:background 140ms ease-out,transform 140ms ease-out}button:acti
 .node-state{display:flex;align-items:center;gap:.5rem;flex:1;min-width:0;font-size:.8125rem;color:var(--subtle)}
 .node-dot{width:.5rem;height:.5rem;border-radius:50%;background:var(--green);flex:none}
 .node-dot.wait{background:#c99a35}.node-dot.bad{background:var(--red)}.node-dot.idle{background:#b9b9c1}
-.copy-pill{display:inline-flex;align-items:center;gap:.375rem;height:2.25rem;padding:0 .75rem;border:1px solid var(--border);border-radius:999px;background:#fff;color:var(--ink);font-size:.8125rem;font-weight:600;flex:none}
+.copy-pill{display:inline-flex;align-items:center;justify-content:center;gap:.375rem;min-height:var(--button-height);height:auto;padding:0 .75rem;border:1px solid var(--border);border-radius:999px;background:#fff;color:var(--ink);font-size:.8125rem;font-weight:600;flex:none}
 .copy-pill svg{display:block;width:1rem;height:1rem;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .copy-pill.copy-confirmed{color:var(--green);border-color:#bcdcc6;background:#f2f9f4}
 .service-enabled-copy{display:flex;flex-direction:column;gap:.125rem;min-width:0;text-align:left}
@@ -256,7 +259,7 @@ button{transition:background 140ms ease-out,transform 140ms ease-out}button:acti
 .journey-node[aria-current="step"]{background:var(--hover);color:var(--ink);font-weight:600}.journey-node[aria-current="step"] .journey-number{background:var(--accent);border-color:var(--accent);color:var(--white)}
 .journey-short{display:none}.setup-stage{padding:2rem;min-width:0}.setup-stage h2{font-size:1.625rem;line-height:1.2;font-weight:650;letter-spacing:-.025em;margin:0}
 .setup-content{margin-top:1.5rem}.setup-note{margin:1rem 0 0;font-size:.9375rem;line-height:1.55;color:var(--ink)}
-.setup-link{padding:1.125rem;border-radius:1rem;background:var(--canvas);display:flex;align-items:center;gap:1rem}.setup-link>div{flex:1;min-width:0}.setup-link-label{font-size:.875rem;font-weight:600;color:var(--ink);display:block;margin-bottom:.5rem}.setup-link code{display:block;font-size:.875rem;line-height:1.65;overflow-wrap:anywhere;color:var(--ink)}.setup-link .copy-pill{min-height:44px;border-radius:.625rem;height:auto}
+.setup-link{padding:1.125rem;border-radius:1rem;background:var(--canvas);display:flex;align-items:center;gap:1rem}.setup-link>div{flex:1;min-width:0}.setup-link-label{font-size:.875rem;font-weight:600;color:var(--ink);display:block;margin-bottom:.5rem}.setup-link code{display:block;font-size:.875rem;line-height:1.65;overflow-wrap:anywhere;color:var(--ink)}.setup-link .copy-pill{min-height:var(--button-height);height:auto}
 .guide-path{display:flex;align-items:center;flex-wrap:wrap;gap:.5rem .75rem;list-style:none;margin:1.25rem 0 0;padding:0;font-size:.9375rem;line-height:1.5;color:var(--ink)}.guide-path li{display:flex;align-items:center;gap:.75rem;min-width:0}.guide-path li+li::before{content:"→";color:var(--muted)}.guide-path span{overflow-wrap:anywhere}.guide-path li:last-child{font-weight:600}
 .guide-capture{margin:1.25rem 0 0}.guide-shot-link{display:block;width:100%;padding:0;border:0;border-radius:1rem;background:none;cursor:zoom-in}.guide-shot{display:block;width:100%;height:auto;border-radius:1rem}
 .journey-fields{display:grid;margin:0;border-top:1px solid var(--border);font-size:.9375rem;line-height:1.6}.journey-field{display:grid;grid-template-columns:9rem minmax(0,1fr);gap:1rem;padding:1rem 0;border-bottom:1px solid var(--border)}.journey-field dt{color:var(--ink);font-weight:500}.journey-field dd{margin:0;overflow-wrap:anywhere;font-weight:600}.journey-field code{font-size:.875rem}.setup-link+.journey-fields{margin-top:1.25rem}
@@ -290,7 +293,7 @@ button{transition:background 140ms ease-out,transform 140ms ease-out}button:acti
 }
 .assistant-view .primary{background:var(--accent);color:var(--white)}
 .assistant-view .guide-link:hover{filter:brightness(.92)}
-.assistant-view .copy-pill{color:var(--accent)}
+.assistant-view .copy-pill{color:var(--ink)}
 .assistant-view .guide-path li:last-child{color:var(--accent)}
 .assistant-view .setup-link-label{color:var(--accent)}
 .assistant-local{display:grid;gap:1rem;padding:1.25rem;margin-bottom:1.25rem;border:1px solid var(--border);border-radius:1rem;background:var(--white)}.assistant-local-copy{display:flex;align-items:flex-start;gap:.75rem}.assistant-local-copy .status-dot{margin-top:.45em;flex:none}.assistant-local-copy>div{min-width:0}.assistant-local-copy strong{font-size:.9375rem;font-weight:600}.assistant-local-copy p{margin:.25rem 0 0;color:var(--ink);font-size:.9375rem;line-height:1.55}.assistant-local .full-button{display:flex;align-items:center;justify-content:center;gap:.5rem;margin:0}.assistant-local .full-button svg{width:1.125rem;height:1.125rem;fill:none;stroke:currentColor;stroke-width:1.8;flex:none}.assistant-local .local-close{justify-self:start;align-self:start;width:auto;min-height:44px;padding:.5rem 0;border:0;background:none;color:var(--ink);font-size:.9375rem;font-weight:600}
@@ -309,7 +312,7 @@ button{transition:background 140ms ease-out,transform 140ms ease-out}button:acti
 .local-apps header .assistant-local-toggle{width:auto;flex:none;min-height:44px}
 
 /* Consistency pass: one chrome, one radius scale, one green, one focus ring. */
-:root{--radius-sm:.75rem;--radius-md:1rem;--radius-lg:1.5rem;--h1-size:clamp(1.75rem,4.2vw,2.125rem);--green:#2f8a4d;--green-soft:#e8f5eb;--green-border:#b6d5bf}
+:root{--radius-sm:.75rem;--radius-md:1rem;--radius-lg:1.5rem;--button-height:44px;--button-compact-height:36px;--success-surface:#edf8f0;--success-selected:#e4f4e9;--success-border:#9dcaaa;--success-ink:#226d3c;--h1-size:clamp(1.75rem,4.2vw,2.125rem);--green:#2f8a4d;--green-soft:#e8f5eb;--green-border:#b6d5bf}
 .global-bar{position:fixed;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:max(1rem,env(safe-area-inset-top)) max(1.5rem,env(safe-area-inset-right)) 0 max(1.5rem,env(safe-area-inset-left));z-index:20;pointer-events:none}
 .global-bar>*{pointer-events:auto;min-width:0}
 .global-actions{display:flex;align-items:center;gap:.5rem;margin-left:auto;min-width:0}
@@ -405,37 +408,47 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 .language-menu button:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
 @media(pointer:coarse){.language-menu button{min-height:44px}}
 
-/* The selected app's setup summary is one compact, supporting panel. */
-.local-apps .assistant-local:has(.assistant-actions){display:flex;align-items:center;justify-content:space-between;gap:1rem 1.5rem;padding:1rem;margin-top:1rem;border:0;border-radius:var(--radius-sm);background:var(--canvas)}
-.local-apps .assistant-local:has(.assistant-actions) .assistant-local-copy{gap:.625rem;min-width:0}
-.local-apps .assistant-local:has(.assistant-actions) .assistant-local-copy strong{font-size:.875rem;font-weight:550;line-height:1.4;letter-spacing:-.01em}
-.local-apps .assistant-local:has(.assistant-actions) .assistant-local-copy p{margin:.25rem 0 0;font-size:.8125rem;line-height:1.5;color:var(--subtle)}
-.local-apps .assistant-actions{flex:none;justify-content:flex-end;gap:.5rem}
-.local-apps .assistant-actions .text-button[data-assistant-remove]{border:0;background:transparent;padding:.5rem .75rem;font-size:.8125rem;font-weight:500}
-.local-apps .assistant-actions .local-close{align-self:center;padding:.5rem .875rem;min-height:44px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--white);font-size:.8125rem;font-weight:550}
-@media(hover:hover) and (pointer:fine){.local-apps .assistant-actions .text-button[data-assistant-remove]:hover{background:var(--red-soft)}.local-apps .assistant-actions .local-close:hover{background:var(--hover)}}
-@media(max-width:52rem){.local-apps .assistant-local:has(.assistant-actions){flex-direction:column;align-items:stretch;gap:.625rem}.local-apps .assistant-actions{justify-content:flex-start;padding-left:1.125rem}}
-
 /* Configured assistants use the same open layout as setup confirmation. */
-.local-app-card.is-ready{background:#edf8f0;box-shadow:none}
-.local-app-card.is-ready .local-app-state{color:#226d3c;font-weight:600}
-.local-app-card.is-ready[aria-pressed="true"]{background:#e4f4e9;box-shadow:inset 0 0 0 1px #9dcaaa}
-@media(hover:hover) and (pointer:fine){.local-app-card.is-ready:not(:disabled):hover{background:#e4f4e9}.local-app-card.is-ready[aria-pressed="true"]:hover{background:#dcefe2}}
-.local-apps .assistant-local:has(.assistant-actions){display:grid;gap:1rem;padding:1rem 0 0;margin-top:1rem;border:0;border-top:1px solid var(--border);border-radius:0;background:transparent}
-.local-apps .assistant-local:has(.assistant-actions) .assistant-local-copy{gap:.625rem}
-.local-apps .assistant-local:has(.assistant-actions) .assistant-local-copy strong{font-size:.9375rem;font-weight:600;line-height:1.4}
-.local-apps .assistant-local:has(.assistant-actions) .assistant-local-copy p{margin:.5rem 0 0;font-size:.9375rem;line-height:1.55}
-.local-apps .assistant-local:has(.assistant-actions) .status-dot{width:.625rem;height:.625rem;margin-top:.4em}
-.local-apps .assistant-actions{display:flex;align-items:stretch;gap:.75rem;padding:0}
-.local-apps .assistant-actions .text-button[data-assistant-remove],.local-apps .assistant-actions .local-close{flex:1;min-width:0;min-height:44px;padding:.625rem 1rem;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--white);font-size:.875rem;font-weight:600;text-align:center}
-.local-apps .assistant-actions .text-button[data-assistant-remove]{color:var(--red)}
-@media(hover:hover) and (pointer:fine){.local-apps .assistant-actions .text-button[data-assistant-remove]:hover{background:var(--red-soft)}.local-apps .assistant-actions .local-close:hover{background:var(--hover)}}
-
+.local-app-card.is-ready{background:var(--success-surface);box-shadow:none}
+.local-app-card.is-ready .local-app-state{color:var(--success-ink);font-weight:600}
+.local-app-card.is-ready[aria-pressed="true"]{background:var(--success-selected);box-shadow:inset 0 0 0 1px var(--success-border)}
+@media(hover:hover) and (pointer:fine){.local-app-card.is-ready:not(:disabled):hover{background:var(--success-selected)}.local-app-card.is-ready[aria-pressed="true"]:hover{background:#dcefe2}}
 /* Inline action for the selected local assistant. */
 .local-app-item{position:relative;min-width:0}
 .local-app-item.is-selected .local-app-card{padding-right:8.5rem;grid-template-columns:2rem minmax(0,1fr)}
-.local-inline-action{position:absolute;right:.5rem;top:50%;transform:translateY(-50%);min-height:36px;padding:.4rem .75rem;border:0;border-radius:var(--radius-sm);font-size:.8125rem;font-weight:600;white-space:nowrap}
-.local-inline-action.is-setup{background:var(--blue);color:white}
+.local-inline-action{position:absolute;right:.5rem;top:50%;transform:translateY(-50%);min-height:var(--button-compact-height);padding:.4rem .75rem;border:0;border-radius:var(--radius-sm);font-size:.8125rem;font-weight:600;white-space:nowrap}
+.local-inline-action.is-setup{background:var(--blue);color:var(--white)}
 .local-inline-action.is-remove{background:var(--red);color:var(--white);box-shadow:none}
 .local-inline-action:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 @media(max-width:22rem){.local-app-item.is-selected .local-app-card{padding-right:7.5rem}.local-inline-action{padding:.4rem .5rem;font-size:.75rem}}
+
+/* Shared button dimensions and feedback across screens. */
+:is(.full-button,.small-button,.copy-pill,.setup-footer button,.local-inline-action){border-radius:var(--radius-sm);font-weight:600;line-height:1.25}
+:where(.back,.icon-button){min-width:var(--button-height);min-height:var(--button-height)}
+:where(.copy-pill,.local-inline-action):disabled{cursor:default;opacity:.55}
+.assistant-view .copy-pill.copy-confirmed{color:var(--green)}
+
+/* Semantic action families: primary, secondary, destructive and icon-only. */
+:is(.full-button.primary,.setup-footer .setup-next,.local-inline-action.is-setup){background:var(--blue);color:var(--white);border:1px solid transparent}
+:is(.full-button.secondary,.setup-footer .setup-previous,.copy-pill){background:var(--white);color:var(--ink);border:1px solid var(--border)}
+:is(.full-button.danger,.local-inline-action.is-remove){background:var(--red);color:var(--white);border:1px solid transparent}
+:is(.full-button,.setup-footer button){min-height:var(--button-height);padding:.625rem 1rem;font-size:.9375rem}
+:is(.copy-pill,.local-inline-action){font-size:.8125rem}
+:is(.back,.icon-button){border-radius:var(--radius-sm)}
+:is(.full-button,.setup-footer button,.copy-pill,.local-inline-action):disabled{opacity:.55;cursor:default}
+@media(hover:hover) and (pointer:fine){
+ :is(.full-button.primary,.setup-footer .setup-next,.local-inline-action.is-setup):not(:disabled):hover{background:#0055aa;color:var(--white)}
+ :is(.full-button.secondary,.setup-footer .setup-previous,.copy-pill):not(:disabled):hover{background:var(--hover);color:var(--ink)}
+ :is(.full-button.danger,.local-inline-action.is-remove):not(:disabled):hover{background:#901c24;color:var(--white)}
+}
+.assistant-view .copy-pill.copy-confirmed{color:var(--green)}
+
+/* Keep each web assistant’s own accent for its primary actions. */
+.assistant-view :is(.full-button.primary,.setup-footer .setup-next){background:var(--accent);color:var(--white)}
+@media(hover:hover) and (pointer:fine){.assistant-view :is(.full-button.primary,.setup-footer .setup-next):not(:disabled):hover{background:var(--accent);filter:brightness(.9)}}
+
+.local-inline-action:active:not(:disabled){transform:translateY(-50%) scale(.98)}
+@media(prefers-reduced-motion:reduce){.local-inline-action:active:not(:disabled){transform:translateY(-50%)}}
+/* Copy feedback uses the original green confirmation in every context. */
+.copy-pill.copy-confirmed,.assistant-view .copy-pill.copy-confirmed{color:var(--green);border-color:#bcdcc6;background:#f2f9f4}
+@media(hover:hover) and (pointer:fine){.copy-pill.copy-confirmed:not(:disabled):hover{color:var(--green);border-color:#bcdcc6;background:#f2f9f4}}
