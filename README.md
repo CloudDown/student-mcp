@@ -46,8 +46,8 @@ Paste the complete link into the assistant's MCP connector settings, not into a 
 |---|---|
 | Claude | Settings → Connectors → custom connector. OAuth? **Continue anyway**. |
 | ChatGPT | Plugins → custom MCP server, no authentication. |
-| Grok | [Connectors](https://grok.com/connectors) → New Connector → Custom. |
-| Gemini | Settings → Connected Apps → + Custom. Eligible accounts and regions only. |
+| Grok | [Grok](https://grok.com/) → + → Connectors → Manage connectors → Custom. |
+| Gemini | Connectors → + Custom. Eligible accounts and regions only. |
 | OpenCode | MCP settings, or stdio: `student-mcp`. |
 
 ## Privacy

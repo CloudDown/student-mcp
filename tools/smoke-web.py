@@ -172,18 +172,16 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         assert b"localLogos" in js and b"/assets/local-opencode.png" in js
         assert b'assistantScreen()' in js and b'data-assistant-choose' in js
         assert b"openAssistant('chatgpt')" in js and b'class="assistant-switcher"' in js
-        for guide in ("guide-claude-menu", "guide-claude-form", "guide-claude-chat",
-                      "guide-gemini-settings", "guide-gemini-form", "guide-gemini-chat",
-                      "guide-grok-settings", "guide-grok-form", "guide-grok-chat"):
-            status, body = request(f"/assets/{guide}.webp", auth=False)
-            assert status == 200, guide
-            assert body[:4] == b"RIFF" and body[8:12] == b"WEBP", guide
-        for guide in ("guide-chatgpt-menu", "guide-chatgpt-form", "guide-chatgpt-chat"):
-            status, body = request(f"/assets/{guide}.mp4", auth=False)
-            assert status == 200 and body[4:8] == b"ftyp", guide
-            status, body = request(f"/assets/{guide}.png", auth=False)
-            assert status == 200 and body.startswith(b"\x89PNG\r\n\x1a\n"), guide
-            assert request(f"/assets/{guide}.webp", auth=False)[0] == 404, guide
+        for app in ("chatgpt", "claude", "grok", "gemini"):
+            for step in ("menu", "form", "chat"):
+                guide = f"guide-{app}-{step}"
+                status, body = request(f"/assets/{guide}.mp4", auth=False)
+                assert status == 200 and body[4:8] == b"ftyp", guide
+                status, body = request(f"/assets/{guide}.png", auth=False)
+                assert status == 200 and body.startswith(b"\x89PNG\r\n\x1a\n"), guide
+                assert request(f"/assets/{guide}.webp", auth=False)[0] == 404, guide
+        for app in ("grok", "gemini"):
+            assert request(f"/assets/guide-{app}-settings.webp", auth=False)[0] == 404
         assert request("/assistant/chatgpt", auth=False)[0] == 401
         assistant_status, assistant_body = request("/assistant/chatgpt")
         assert assistant_status == 200 and json.loads(assistant_body)["local"] is False

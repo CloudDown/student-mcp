@@ -81,7 +81,6 @@ const translations={
  'Enter student-mcp as the name and paste the complete HTTPS URL under Connection. Select no authentication when offered.':['Saisis student-mcp comme nom et colle l’URL HTTPS complète dans Connexion. Choisis aucune authentification si l’option est proposée.','Escribe student-mcp como nombre y pega la URL HTTPS completa en Conexión. Selecciona sin autenticación cuando se ofrezca.'],
  'Review and create':['Vérifier et créer','Revisar y crear'], 'Review the risk notice, create the plugin, then check the discovered tools. Availability depends on your plan and workspace permissions.':['Lis l’avertissement, crée le plugin, puis vérifie les outils détectés. La disponibilité dépend de ton forfait et des permissions de l’espace de travail.','Revisa el aviso, crea el plugin y comprueba las herramientas detectadas. La disponibilidad depende de tu plan y de los permisos del espacio de trabajo.'],
  'Use the plugin in a chat':['Utiliser le plugin dans une conversation','Usar el plugin en un chat'], 'Start a chat, type @ and select student-mcp.':['Commence une conversation, saisis @ et choisis student-mcp.','Empieza un chat, escribe @ y selecciona student-mcp.'],
- 'Open Gemini Connected Apps':['Ouvrir les applications connectées Gemini','Abrir aplicaciones conectadas de Gemini'], 'Open Settings > Connected Apps, then Add a custom app.':['Ouvre Réglages > Applications connectées, puis Ajouter une application personnalisée.','Abre Ajustes > Aplicaciones conectadas y luego Añadir una aplicación personalizada.'],
  'Paste your public HTTPS MCP URL and select Next. If credentials are requested, review the official authentication instructions.':['Colle ton URL MCP HTTPS publique et choisis Suivant. Si des identifiants sont demandés, suis les instructions officielles d’authentification.','Pega tu URL MCP HTTPS pública y selecciona Siguiente. Si se piden credenciales, sigue las instrucciones oficiales de autenticación.'],
  'Confirm and test':['Confirmer et tester','Confirmar y probar'], 'Follow the security prompts, then use @student-mcp in Gemini. Custom apps currently require an eligible personal Google Account and may be limited by region and language.':['Suis les consignes de sécurité, puis utilise @student-mcp dans Gemini. Les applications personnalisées exigent un compte Google personnel admissible et peuvent être limitées selon la région et la langue.','Sigue los avisos de seguridad y usa @student-mcp en Gemini. Las aplicaciones personalizadas requieren una cuenta personal de Google compatible y pueden variar según la región y el idioma.'],
  'Verify the local connection':['Vérifier la connexion locale','Verificar la conexión local'], 'Restart Claude Desktop, then open + > Connectors to see student-mcp and its tools.':['Redémarre Claude Desktop, puis ouvre + > Connecteurs pour voir student-mcp et ses outils.','Reinicia Claude Desktop y abre + > Conectores para ver student-mcp y sus herramientas.'],
@@ -151,11 +150,13 @@ Object.assign(translations,{
  'Set up an assistant':['Configurer un assistant','Configurar un asistente'],
  'Your courses, one conversation away.':['Tes cours, directement dans ton assistant.','Tus cursos, directamente en tu asistente.'],
  'Set up Grok':['Configurer Grok','Configurar Grok'],
+ 'Gemini · Connectors → + Custom':['Gemini · Connecteurs → + Custom','Gemini · Conectores → + Custom'], 'Gemini · Connect to an MCP server':['Gemini · Se connecter à un serveur MCP','Gemini · Conectar a un servidor MCP'],
+ 'Leave the optional OAuth client ID and secret blank.':['Laisse vides les champs facultatifs client ID et secret OAuth.','Deja vacíos el ID de cliente y el secreto OAuth opcionales.'],
+ 'Accept the security and privacy risks':['Accepte les risques de sécurité et de confidentialité','Acepta los riesgos de seguridad y privacidad'], 'Connect':['Connecter','Conectar'],
+ 'Manage connectors':['Gérer les connecteurs','Administrar conectores'], 'Add a custom connector':['Ajouter un connecteur personnalisé','Añadir un conector personalizado'], 'Add MCP':['Ajouter MCP','Añadir MCP'], 'Add (or Continue)':['Ajouter (ou Continuer)','Añadir (o Continuar)'],
+ 'Grok · + → Connectors → Manage connectors':['Grok · + → Connecteurs → Gérer les connecteurs','Grok · + → Conectores → Administrar conectores'], 'Grok · Add MCP Server':['Grok · Ajouter un serveur MCP','Grok · Añadir servidor MCP'],
  'Open Grok settings':['Ouvrir Grok','Abrir Grok'],
  'Screenshot arrows':['Flèches de la capture','Flechas de la captura'],
- 'Open Grok’s Plugins page, then click New Connector.':['Ouvre la page Plugins de Grok, puis clique sur New Connector.','Abre la página Plugins de Grok y haz clic en New Connector.'],
- 'In the New Connector dialog, select Custom.':['Dans la fenêtre New Connector, sélectionne Custom.','En la ventana New Connector, selecciona Custom.'],
- 'Enter student-mcp under Name and paste your complete link under Server URL, then click Add Connector.':['Saisis student-mcp dans Name et colle ton lien complet dans Server URL, puis clique sur Add Connector.','Escribe student-mcp en Name y pega tu enlace completo en Server URL; después haz clic en Add Connector.'],
  'Grok’s placeholder shows /sse. Keep your complete /mcp/ link unchanged. The connector was not submitted during capture.':['L’exemple de Grok affiche /sse. Garde ton lien /mcp/ complet sans le modifier. Le connecteur n’a pas été enregistré lors de la capture.','El ejemplo de Grok muestra /sse. Conserva tu enlace /mcp/ completo sin modificarlo. No se guardó el conector durante la captura.'],
  'Start a new conversation and ask Grok to use student-mcp.':['Ouvre une conversation et demande à Grok d’utiliser student-mcp.','Abre una conversación y pide a Grok que use student-mcp.'],
  'Connection method':['Mode de connexion','Método de conexión'],
@@ -180,12 +181,9 @@ Object.assign(translations,{
  'Click + Add → Add custom connector.':['Clique sur + Ajouter → Ajouter un connecteur personnalisé.','Haz clic en + Añadir → Añadir conector personalizado.'],
  'Open ChatGPT Plugins.':['Ouvre les Plugins de ChatGPT.','Abre los Plugins de ChatGPT.'],
  'Click + → Add custom MCP server.':['Clique sur + → Add custom MCP server.','Haz clic en + → Add custom MCP server.'],
- 'Open Settings → Connected Apps.':['Ouvre Settings → Connected Apps.','Abre Settings → Connected Apps.'],
  'Click + Custom at the top right.':['Clique sur + Custom en haut à droite.','Haz clic en + Custom arriba a la derecha.'],
  'Open Claude settings':['Ouvrir Claude','Abrir Claude'], 'Open ChatGPT settings':['Ouvrir ChatGPT','Abrir ChatGPT'], 'Open Gemini settings':['Ouvrir Gemini','Abrir Gemini'],
  'Claude · Add custom connector':['Claude · Ajouter un connecteur personnalisé','Claude · Añadir conector personalizado'],
- 'Gemini · Connected Apps → + Custom':['Gemini · Connected Apps → + Custom','Gemini · Connected Apps → + Custom'],
- 'Gemini · MCP Server URL → Next':['Gemini · MCP Server URL → Next','Gemini · MCP Server URL → Next'],
  'OpenAI · documented setup steps':['OpenAI · étapes du guide officiel','OpenAI · pasos de la guía oficial'],
  'Helium capture':['Capture Helium','Captura de Helium'], 'Screenshot':['Capture d’écran','Captura de pantalla'], 'Enlarge screenshot':['Agrandir la capture','Ampliar captura'], 'Enlarge video':['Agrandir la vidéo','Ampliar vídeo'],
  'Free accounts allow one custom connector. If Add is disabled, check your plan’s limit.':['Le forfait Free autorise un connecteur personnalisé. Si Ajouter est grisé, vérifie la limite de ton forfait.','El plan Free permite un conector personalizado. Si Añadir está desactivado, comprueba el límite de tu plan.'],
@@ -200,7 +198,7 @@ Object.assign(translations,{
  'Your complete public HTTPS link':['Ton lien HTTPS public complet','Tu enlace HTTPS público completo'],
  'My courses, deadlines and school files':['Mes cours, échéances et fichiers scolaires','Mis cursos, fechas de entrega y archivos escolares'],
  'Save the server, then allow the tools you want to use. Do not enter your school password.':['Enregistre le serveur, puis autorise les outils souhaités. Ne saisis pas ton mot de passe scolaire.','Guarda el servidor y autoriza las herramientas que quieras usar. No introduzcas tu contraseña escolar.'],
-  'Click Continue, review the detected authentication, then Continue → No sign in → Add. These form steps follow Anthropic’s guide; only the Add menu was verified in Helium.':['Clique sur Continuer (« Continue »), vérifie l’authentification détectée, puis Continuer → Aucune connexion (« No sign in ») → Ajouter (« Add »). Ces étapes suivent le guide Anthropic ; seul le menu Ajouter a été vérifié dans Helium.','Haz clic en Continuar (« Continue »), revisa la autenticación detectada y luego Continuar → Sin inicio de sesión (« No sign in ») → Añadir (« Add »). Estos pasos siguen la guía de Anthropic; solo se verificó el menú Añadir en Helium.'],
+
   'No sign in':['Aucune connexion','Sin inicio de sesión'],
   'No authentication':['Aucune authentification','Sin autenticación'],
   'Add':['Ajouter','Añadir'],
@@ -209,7 +207,7 @@ Object.assign(translations,{
  'Review the risk notice → I understand and want to continue → Create as a plugin. Check the tools discovered by ChatGPT.':['Lis l’avertissement → I understand and want to continue → Create as a plugin. Vérifie les outils détectés par ChatGPT.','Lee el aviso → I understand and want to continue → Create as a plugin. Comprueba las herramientas detectadas por ChatGPT.'],
  'Paste your complete link in MCP Server URL.':['Colle ton lien complet dans MCP Server URL.','Pega tu enlace completo en MCP Server URL.'],
  'Click Next, then review the security prompts.':['Clique sur Next, puis lis les consignes de sécurité.','Haz clic en Next y revisa los avisos de seguridad.'],
- 'No school password is needed. If Gemini requests OAuth credentials, do not invent any: check the official guide. Screens after Next were not verified.':['Aucun mot de passe scolaire n’est nécessaire. Si Gemini demande des identifiants OAuth, n’en invente pas : consulte le guide officiel. Les écrans après Next n’ont pas été vérifiés.','No se necesita la contraseña escolar. Si Gemini solicita credenciales OAuth, no las inventes: consulta la guía oficial. No se verificaron las pantallas posteriores a Next.'],
+ 'No school password is needed. If Gemini requests OAuth credentials, do not invent any: check the official guide. Review the security and privacy notice before connecting.':['Aucun mot de passe scolaire n’est nécessaire. Si Gemini demande des identifiants OAuth, n’en invente pas : consulte le guide officiel. Lis l’avertissement de sécurité et de confidentialité avant de te connecter.','No se necesita la contraseña escolar. Si Gemini solicita credenciales OAuth, no las inventes: consulta la guía oficial. Revisa el aviso de seguridad y privacidad antes de conectar.'],
  'The secret is already in your link. student-mcp does not provide an OAuth client ID or client secret.':['Le secret est déjà dans ton lien. student-mcp ne fournit pas de client ID ni de client secret OAuth.','El secreto ya está en tu enlace. student-mcp no proporciona un client ID ni un client secret de OAuth.'],
  'Ask your first question':['Pose ta première question','Haz tu primera pregunta'],
  'What are my deadlines this week?':['Quelles sont mes échéances cette semaine ?','¿Cuáles son mis fechas de entrega esta semana?'],
@@ -442,7 +440,7 @@ function toolsScreen(){
 const assistantInfo={
  chatgpt:{name:'ChatGPT',accent:'#0f9d78',settings:'https://chatgpt.com/plugins',guide:'https://developers.openai.com/plugins/deploy/connect-chatgpt'},
  claude:{name:'Claude',accent:'#c96442',local:true,settings:'https://claude.ai/customize/connectors',guide:'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp'},
- grok:{name:'Grok',accent:'#1d1d1f',settings:'https://grok.com/connectors',guide:'https://docs.x.ai/grok/connectors'},
+ grok:{name:'Grok',accent:'#1d1d1f',settings:'https://grok.com/',guide:'https://docs.x.ai/grok/connectors'},
  gemini:{name:'Gemini',accent:'#3b82f6',local:true,settings:'https://gemini.google.com/apps',guide:'https://support.google.com/gemini/answer/17209137?hl=en&co=GENIE.Platform%3DDesktop'}
 };
 const assistantJourney={step:0};
@@ -481,24 +479,24 @@ function assistantGuide(id){
  const step=assistantJourney.step;
  if(step===0){
   const observed={
-   grok:{image:'guide-grok-settings',caption:'Grok · Plugins → New Connector'},
-   claude:{image:'guide-claude-menu',caption:'Claude · Add → Add custom connector'},
+   grok:{video:'guide-grok-menu',caption:'Grok · + → Connectors → Manage connectors'},
+   claude:{video:'guide-claude-menu',caption:'Claude · Add → Add custom connector'},
    chatgpt:{video:'guide-chatgpt-menu',caption:'ChatGPT · Add → Add custom MCP server'},
-   gemini:{image:'guide-gemini-settings',caption:'Gemini · Connected Apps → + Custom'}
+   gemini:{video:'guide-gemini-menu',caption:'Gemini · Connectors → + Custom'}
   };
-  return {title:'Open the connector settings',content:guideOpen(id)+guideMedia(observed[id],observed[id].caption)};
+  return {title:'Open the connector settings',content:guideOpen(id)+(id==='grok'?guidePath(['+','Connectors','Manage connectors','Custom','Add a custom connector']):id==='gemini'?guidePath(['Connectors','+ Custom']):'')+guideMedia(observed[id],observed[id].caption)};
  }
  if(step===1){
   const forms={
-    grok:guideFields([['Name','student-mcp']])+publicGuideLink('Server URL')+guideMedia({image:'guide-grok-form'},'Grok · Custom Connector'),
-   claude:publicGuideLink('Remote MCP server URL')+guideFields([['Name','student-mcp'],['Authentication','No sign in']])+guidePath(['Continue','No sign in','Add'])+guideMedia({image:'guide-claude-form'},'Claude · Add custom connector'),
+    grok:guideFields([['Name','student-mcp']])+publicGuideLink('Server URL')+guidePath(['Add MCP'])+guideMedia({video:'guide-grok-form'},'Grok · Add MCP Server'),
+   claude:publicGuideLink('Remote MCP server URL')+guideFields([['Name','student-mcp'],['Authentication','No sign in']])+guidePath(['Continue','No sign in','Add (or Continue)'])+guideMedia({video:'guide-claude-form'},'Claude · Add custom connector'),
    chatgpt:publicGuideLink('Connection → Server URL')+guideFields([['Name','student-mcp'],['Authentication','No authentication']])+guideMedia({video:'guide-chatgpt-form'},'ChatGPT · Add custom MCP server'),
-   gemini:publicGuideLink('MCP Server URL')+guideMedia({image:'guide-gemini-form'},'Gemini · MCP Server URL → Next')
+   gemini:publicGuideLink('MCP Server URL')+`<p class="setup-note">${t('Leave the optional OAuth client ID and secret blank.')}</p>`+guidePath(['Next','Accept the security and privacy risks','Connect'])+guideMedia({video:'guide-gemini-form'},'Gemini · Connect to an MCP server')
   };
   return {title:'Add student-mcp',content:forms[id]};
  }
  const paths={grok:[],claude:['+','Connectors','student-mcp'],chatgpt:['@','student-mcp'],gemini:['@',t('Your custom app')]};
- const chats={grok:{image:'guide-grok-chat'},claude:{image:'guide-claude-chat'},chatgpt:{video:'guide-chatgpt-chat'},gemini:{image:'guide-gemini-chat'}};
+ const chats={grok:{video:'guide-grok-chat'},claude:{video:'guide-claude-chat'},chatgpt:{video:'guide-chatgpt-chat'},gemini:{video:'guide-gemini-chat'}};
  return {title:'Ask your first question',content:(paths[id].length?guidePath(paths[id]):'')+`<blockquote class="setup-prompt"><p>${t('Use student-mcp: what are my deadlines this week?')}</p></blockquote>`+guideMedia(chats[id],'Write in the message field')};
 }
 function assistantScreen(){

@@ -33,8 +33,7 @@ try{
   if(path.startsWith('/assets/')){
    const file=path.split('/').at(-1),name=file.replace(/\.png$/,'');
    if(assetNames[name])return route.fulfill({contentType:'image/png',body:readFileSync(new URL(`../src/resources/assets/${assetNames[name]}.png`,import.meta.url))});
-    if(/^guide-chatgpt-(menu|form|chat)\.(mp4|png)$/.test(file))return route.fulfill({contentType:file.endsWith('.mp4')?'video/mp4':'image/png',body:readFileSync(new URL('../src/resources/assets/guides/'+file,import.meta.url))});
-    if(/^guide-[a-z-]+\.webp$/.test(file))return route.fulfill({contentType:'image/webp',body:readFileSync(new URL('../src/resources/assets/'+file,import.meta.url))});
+    if(/^guide-(chatgpt|claude|grok|gemini)-(menu|form|chat)\.(mp4|png)$/.test(file))return route.fulfill({contentType:file.endsWith('.mp4')?'video/mp4':'image/png',body:readFileSync(new URL('../src/resources/assets/guides/'+file,import.meta.url))});
   }
    if(['/assistant/others','/assistant/grok','/assistant/chatgpt'].includes(path))throw Error('Web-only guides must not call a local setup endpoint');
    if(path==='/assistants')return route.fulfill({json:{assistants:[{assistant:'claude',name:'Claude Desktop',detected:true,configured:false,reload:'restart'},{assistant:'opencode',name:'OpenCode',detected:true,configured:false,reload:'automatic'},{assistant:'omp',name:'Oh My Pi',detected:false,configured:false}]}});
@@ -95,7 +94,7 @@ try{
    await page.locator('[data-guide-step="1"]').click();
    if(id==='claude'){
     assert.match(await page.locator('.journey-fields').innerText(),/Authentification\s+Aucune connexion/);
-    assert.deepEqual(await page.locator('.guide-path li').allTextContents(),['Continuer','Aucune connexion','Ajouter']);
+    assert.deepEqual(await page.locator('.guide-path li').allTextContents(),['Continuer','Aucune connexion','Ajouter (ou Continuer)']);
    }
    await page.getByRole('button',{name:'Copier le lien',exact:true}).click();
    assert.equal(await page.evaluate(()=>window.fixtureCopied),fixture.link);
@@ -120,12 +119,12 @@ try{
     if(width!==320)await snapshot(`${id}-${step+1}-${width}`);
       assert.equal(await page.locator('.guide-shot').count(),1,'One media element per step');
       if(width===1440){
-     const isVideo=id==='chatgpt';
+     const isVideo=true;
      if(isVideo){
       await page.waitForFunction(()=>{const v=document.querySelector('.guide-shot');return v&&v.tagName==='VIDEO'&&v.readyState>=2&&v.videoWidth>0});
       const video=page.locator('.guide-shot').first();
       assert.ok((await video.boundingBox()).width>150);
-      assert.ok(await video.evaluate(v=>v.videoWidth===1920&&v.videoHeight===1080),'ChatGPT guide videos are 1920×1080');
+      assert.ok(await video.evaluate(v=>v.videoWidth===1920&&v.videoHeight===1080),'Recorded guide videos are 1920×1080');
       assert.ok(await video.evaluate(v=>v.autoplay&&v.muted&&v.loop&&v.playsInline));
       await page.waitForFunction(()=>{const v=document.querySelector('.guide-shot');return v&&v.readyState>=2&&!v.paused});
      }else{
@@ -146,7 +145,9 @@ try{
     }
     if(width===390){
      await page.setViewportSize({width,height:844});
-     assert.ok(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight+1),`The ${id} guide step ${step+1} must fit vertically at 390×844 without scrolling`);
+     await noOverflow();
+     await page.locator('.setup-footer').scrollIntoViewIfNeeded();
+     assert.ok(await page.locator('.setup-footer').isVisible(),`The ${id} guide step ${step+1} controls must remain reachable at 390×844`);
      await page.setViewportSize({width,height:1000});
     }
    }

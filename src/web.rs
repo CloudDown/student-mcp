@@ -273,18 +273,6 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                     include_bytes!("resources/assets/grok-icon.png"),
                     "image/png",
                 )),
-                "/assets/guide-grok-settings.webp" => Some((
-                    include_bytes!("resources/assets/guide-grok-settings.webp"),
-                    "image/webp",
-                )),
-                "/assets/guide-grok-form.webp" => Some((
-                    include_bytes!("resources/assets/guide-grok-form.webp"),
-                    "image/webp",
-                )),
-                "/assets/guide-grok-chat.webp" => Some((
-                    include_bytes!("resources/assets/guide-grok-chat.webp"),
-                    "image/webp",
-                )),
                 "/assets/chatgpt.png" => Some((
                     include_bytes!("resources/assets/chatgpt-icon.png"),
                     "image/png",
@@ -293,17 +281,77 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                     include_bytes!("resources/assets/gemini-icon.png"),
                     "image/png",
                 )),
-                "/assets/guide-claude-menu.webp" => Some((
-                    include_bytes!("resources/assets/guide-claude-menu.webp"),
-                    "image/webp",
+                "/assets/guide-claude-menu.mp4" => Some((
+                    include_bytes!("resources/assets/guides/guide-claude-menu.mp4"),
+                    "video/mp4",
                 )),
-                "/assets/guide-claude-form.webp" => Some((
-                    include_bytes!("resources/assets/guide-claude-form.webp"),
-                    "image/webp",
+                "/assets/guide-claude-menu.png" => Some((
+                    include_bytes!("resources/assets/guides/guide-claude-menu.png"),
+                    "image/png",
                 )),
-                "/assets/guide-claude-chat.webp" => Some((
-                    include_bytes!("resources/assets/guide-claude-chat.webp"),
-                    "image/webp",
+                "/assets/guide-claude-form.mp4" => Some((
+                    include_bytes!("resources/assets/guides/guide-claude-form.mp4"),
+                    "video/mp4",
+                )),
+                "/assets/guide-claude-form.png" => Some((
+                    include_bytes!("resources/assets/guides/guide-claude-form.png"),
+                    "image/png",
+                )),
+                "/assets/guide-claude-chat.mp4" => Some((
+                    include_bytes!("resources/assets/guides/guide-claude-chat.mp4"),
+                    "video/mp4",
+                )),
+                "/assets/guide-claude-chat.png" => Some((
+                    include_bytes!("resources/assets/guides/guide-claude-chat.png"),
+                    "image/png",
+                )),
+                "/assets/guide-grok-menu.mp4" => Some((
+                    include_bytes!("resources/assets/guides/guide-grok-menu.mp4"),
+                    "video/mp4",
+                )),
+                "/assets/guide-grok-menu.png" => Some((
+                    include_bytes!("resources/assets/guides/guide-grok-menu.png"),
+                    "image/png",
+                )),
+                "/assets/guide-grok-form.mp4" => Some((
+                    include_bytes!("resources/assets/guides/guide-grok-form.mp4"),
+                    "video/mp4",
+                )),
+                "/assets/guide-grok-form.png" => Some((
+                    include_bytes!("resources/assets/guides/guide-grok-form.png"),
+                    "image/png",
+                )),
+                "/assets/guide-grok-chat.mp4" => Some((
+                    include_bytes!("resources/assets/guides/guide-grok-chat.mp4"),
+                    "video/mp4",
+                )),
+                "/assets/guide-grok-chat.png" => Some((
+                    include_bytes!("resources/assets/guides/guide-grok-chat.png"),
+                    "image/png",
+                )),
+                "/assets/guide-gemini-menu.mp4" => Some((
+                    include_bytes!("resources/assets/guides/guide-gemini-menu.mp4"),
+                    "video/mp4",
+                )),
+                "/assets/guide-gemini-menu.png" => Some((
+                    include_bytes!("resources/assets/guides/guide-gemini-menu.png"),
+                    "image/png",
+                )),
+                "/assets/guide-gemini-form.mp4" => Some((
+                    include_bytes!("resources/assets/guides/guide-gemini-form.mp4"),
+                    "video/mp4",
+                )),
+                "/assets/guide-gemini-form.png" => Some((
+                    include_bytes!("resources/assets/guides/guide-gemini-form.png"),
+                    "image/png",
+                )),
+                "/assets/guide-gemini-chat.mp4" => Some((
+                    include_bytes!("resources/assets/guides/guide-gemini-chat.mp4"),
+                    "video/mp4",
+                )),
+                "/assets/guide-gemini-chat.png" => Some((
+                    include_bytes!("resources/assets/guides/guide-gemini-chat.png"),
+                    "image/png",
                 )),
                 "/assets/guide-chatgpt-menu.mp4" => Some((
                     include_bytes!("resources/assets/guides/guide-chatgpt-menu.mp4"),
@@ -328,18 +376,6 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                 "/assets/guide-chatgpt-chat.png" => Some((
                     include_bytes!("resources/assets/guides/guide-chatgpt-chat.png"),
                     "image/png",
-                )),
-                "/assets/guide-gemini-settings.webp" => Some((
-                    include_bytes!("resources/assets/guide-gemini-settings.webp"),
-                    "image/webp",
-                )),
-                "/assets/guide-gemini-form.webp" => Some((
-                    include_bytes!("resources/assets/guide-gemini-form.webp"),
-                    "image/webp",
-                )),
-                "/assets/guide-gemini-chat.webp" => Some((
-                    include_bytes!("resources/assets/guide-gemini-chat.webp"),
-                    "image/webp",
                 )),
                 "/assets/local-claude-code.png" => Some((
                     include_bytes!("resources/assets/local-claude-code.png"),

@@ -83,57 +83,21 @@ student-mcp can configure.
 
 # Assistant setup guides
 
-## Rendered captures (2026-11-09)
+## Recorded guides
 
-The Claude, Grok and Gemini guides use one rendered capture per step, after the
-link step. They are **not** screenshots of a live session: each one is rendered
-from `tools/assistant-guides.html` by `tools/render-assistant-guides.mjs`, so the
-labels, the empty states and the arrow stay identical across releases. The page
-frame and the app chrome are kept; the browser tab strip and address bar are not.
-
-ChatGPT uses three **real videos** recorded on chatgpt.com (1920 × 1080, H.264,
-silent) with a PNG poster of the same name. Only fictional data is shown:
-`student-mcp` and `https://example.com/mcp`; the connector subtitle is blurred.
-The videos live in `src/resources/assets/guides/` and are embedded in the app.
-
-For rendered captures: one scene per assistant and step, **480 × 360 CSS px at
-  3×** → 1440 × 1080 WebP. The captures are displayed at 480 px wide in the app, so their text is
-  read at its natural size. Do not widen the canvas without widening that
-  column: anything smaller becomes unreadable at 1:1.
-- One thin arrow per capture, in the assistant's accent colour, pointing a few
-  pixels away from the control to click. No numbered badges, no legend, no
-  caption, no browser chrome. Clicking a capture opens the in-page viewer.
-- Fictional data only: `student-mcp`, `https://example.com/mcp`, no account, no
-  real MCP link, no school credential. Vendor labels are in English, as the
-  assistants ship them; the surrounding UI is translated.
-- Each form capture shows the state just before the final click: fields filled
-  and the action button enabled.
-
-Rendered captures: `guide-claude-menu|form|chat`,
-`guide-gemini-settings|form|chat`, `guide-grok-settings|form|chat`.
-ChatGPT videos and posters: `guides/guide-chatgpt-menu|form|chat.mp4` and
-`.png`. The app chooses a video when a step defines `video`, otherwise an image.
-The ChatGPT scenes remain in `tools/assistant-guides.html` for reference but the
-render script skips them.
-
-Regenerate after editing the scenes:
-
-```bash
-export PLAYWRIGHT_MODULE=/path/to/node_modules/playwright/index.mjs
-export STUDENT_MCP_BROWSER=$(ls -d ~/.cache/ms-playwright/chromium-*/chrome-linux*/chrome | head -1)
-node tools/render-assistant-guides.mjs
-```
-
-The script fails if a scene is not exactly 480 × 360, if an output is not
-1440 × 1080, or if a WebP exceeds 120 KB. The arrow is part of the annotation,
-not of the product: keep it out of any capture that claims to be a screenshot.
+ChatGPT, Claude, Grok and Gemini each use three real, silent 1920 × 1080
+H.264 videos with matching PNG posters. The files are embedded from
+`guides/guide-{chatgpt,claude,grok,gemini}-{menu,form,chat}.mp4` and `.png`.
+The guides show fictional `student-mcp` details and example links; never record
+real school credentials or real MCP links. The Claude recording uses the French
+interface. The videos and posters are provided recordings, not rendered mockups.
 
 `grok-icon.png` is the official Grok app icon from
 https://grok.com/images/android-chrome-192x192.png, resized to 128 × 128.
 It identifies the assistant only; the brand remains its owner's property.
 Grok instructions were checked against https://docs.x.ai/grok/connectors
 and the signed-in Helium interface on 2026-11-08. Brand names and control
-labels in the renders follow those interfaces; the products and brands remain
+labels in the guide follow those interfaces; the products and brands remain
 their owners' property. Refresh a capture whenever a vendor renames a control.
 
 `tools/test-assistant-guides.mjs` checks the four assistant guides at phone,
