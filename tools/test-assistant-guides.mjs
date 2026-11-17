@@ -135,7 +135,10 @@ try{
       const firstShot=page.locator('.guide-shot-link').first();
       await firstShot.click();
       assert.equal(await page.locator('#lightbox').evaluate(dialog=>dialog.open),true,'The media opens in the page, not a new tab');
-      if(isVideo)assert.equal(await page.locator('#lightbox-video').isVisible(),true,'The enlarged viewer uses the video');
+       if(isVideo){
+        await page.locator('#lightbox-video').waitFor({state:'visible'});
+        assert.equal(await page.locator('#lightbox-video').isVisible(),true,'The enlarged viewer uses the video');
+       }
       await page.locator('[data-lightbox-close]').click();
       assert.equal(await page.locator('#lightbox').evaluate(dialog=>dialog.open),false,'The close button leaves the viewer');
       await firstShot.click();

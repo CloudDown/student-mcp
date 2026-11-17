@@ -735,15 +735,33 @@ mod tests {
         #[cfg(not(unix))]
         std::fs::write(data_path(&root, &live), b"kept").unwrap();
         let loaded = load_from(&root, unix_now());
+        #[cfg(unix)]
         assert!(
             loaded.is_empty(),
             "expired, linked and incomplete entries are dropped"
         );
+        #[cfg(not(unix))]
+        assert_eq!(
+            loaded
+                .iter()
+                .map(|file| file.id.as_str())
+                .collect::<Vec<_>>(),
+            [live.as_str()],
+            "expired and incomplete entries are dropped; regular files are retained"
+        );
         assert!(!meta_path(&root, &expired).exists());
         assert!(!data_path(&root, &expired).exists());
         assert!(!data_path(&root, &orphan).exists());
-        assert!(!meta_path(&root, &live).exists());
-        assert!(!data_path(&root, &live).exists());
+        #[cfg(unix)]
+        {
+            assert!(!meta_path(&root, &live).exists());
+            assert!(!data_path(&root, &live).exists());
+        }
+        #[cfg(not(unix))]
+        {
+            assert!(meta_path(&root, &live).exists());
+            assert!(data_path(&root, &live).exists());
+        }
         let _ = std::fs::remove_dir_all(&root);
     }
 }

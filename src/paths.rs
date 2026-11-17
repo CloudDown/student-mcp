@@ -249,6 +249,7 @@ pub fn init() {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
     fn unix_env() -> Env {
         Env {
             home: Some("/home/lea".into()),
@@ -257,6 +258,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn unix_defaults_follow_xdg() {
         let layout = layout_from(&unix_env());
         assert_eq!(
@@ -274,6 +276,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn xdg_variables_win_when_absolute() {
         let env = Env {
             xdg_config: Some("/xdg/conf".into()),
@@ -297,6 +300,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn relative_xdg_values_are_ignored() {
         let env = Env {
             xdg_config: Some("relative/path".into()),
@@ -328,6 +332,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn explicit_config_file_keeps_side_files_beside_it() {
         let env = Env {
             config_override: Some("/tmp/student-mcp-test/settings.json".into()),
