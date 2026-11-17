@@ -305,17 +305,29 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                     include_bytes!("resources/assets/guide-claude-chat.webp"),
                     "image/webp",
                 )),
-                "/assets/guide-chatgpt-menu.webp" => Some((
-                    include_bytes!("resources/assets/guide-chatgpt-menu.webp"),
-                    "image/webp",
+                "/assets/guide-chatgpt-menu.mp4" => Some((
+                    include_bytes!("resources/assets/guides/guide-chatgpt-menu.mp4"),
+                    "video/mp4",
                 )),
-                "/assets/guide-chatgpt-form.webp" => Some((
-                    include_bytes!("resources/assets/guide-chatgpt-form.webp"),
-                    "image/webp",
+                "/assets/guide-chatgpt-menu.png" => Some((
+                    include_bytes!("resources/assets/guides/guide-chatgpt-menu.png"),
+                    "image/png",
                 )),
-                "/assets/guide-chatgpt-chat.webp" => Some((
-                    include_bytes!("resources/assets/guide-chatgpt-chat.webp"),
-                    "image/webp",
+                "/assets/guide-chatgpt-form.mp4" => Some((
+                    include_bytes!("resources/assets/guides/guide-chatgpt-form.mp4"),
+                    "video/mp4",
+                )),
+                "/assets/guide-chatgpt-form.png" => Some((
+                    include_bytes!("resources/assets/guides/guide-chatgpt-form.png"),
+                    "image/png",
+                )),
+                "/assets/guide-chatgpt-chat.mp4" => Some((
+                    include_bytes!("resources/assets/guides/guide-chatgpt-chat.mp4"),
+                    "video/mp4",
+                )),
+                "/assets/guide-chatgpt-chat.png" => Some((
+                    include_bytes!("resources/assets/guides/guide-chatgpt-chat.png"),
+                    "image/png",
                 )),
                 "/assets/guide-gemini-settings.webp" => Some((
                     include_bytes!("resources/assets/guide-gemini-settings.webp"),

@@ -187,7 +187,7 @@ Object.assign(translations,{
  'Gemini · Connected Apps → + Custom':['Gemini · Connected Apps → + Custom','Gemini · Connected Apps → + Custom'],
  'Gemini · MCP Server URL → Next':['Gemini · MCP Server URL → Next','Gemini · MCP Server URL → Next'],
  'OpenAI · documented setup steps':['OpenAI · étapes du guide officiel','OpenAI · pasos de la guía oficial'],
- 'Helium capture':['Capture Helium','Captura de Helium'], 'Screenshot':['Capture d’écran','Captura de pantalla'], 'Enlarge screenshot':['Agrandir la capture','Ampliar captura'],
+ 'Helium capture':['Capture Helium','Captura de Helium'], 'Screenshot':['Capture d’écran','Captura de pantalla'], 'Enlarge screenshot':['Agrandir la capture','Ampliar captura'], 'Enlarge video':['Agrandir la vidéo','Ampliar vídeo'],
  'Free accounts allow one custom connector. If Add is disabled, check your plan’s limit.':['Le forfait Free autorise un connecteur personnalisé. Si Ajouter est grisé, vérifie la limite de ton forfait.','El plan Free permite un conector personalizado. Si Añadir está desactivado, comprueba el límite de tu plan.'],
  'Availability depends on your plan and workspace permissions. These steps follow OpenAI’s guide; the signed-in form could not be verified in Helium.':['La disponibilité dépend de ton forfait et de ton espace de travail. Ces étapes suivent le guide OpenAI ; le formulaire connecté n’a pas pu être vérifié dans Helium.','La disponibilidad depende de tu plan y espacio de trabajo. Estos pasos siguen la guía de OpenAI; no se pudo verificar el formulario conectado en Helium.'],
  'Google currently lists these requirements: personal account, age 18+, US, English and Keep Activity on. Availability may change.':['Google indique actuellement : compte personnel, 18 ans et plus, États-Unis, anglais et activité conservée. La disponibilité peut évoluer.','Google indica actualmente: cuenta personal, 18 años o más, Estados Unidos, inglés y actividad guardada. La disponibilidad puede cambiar.'],
@@ -416,7 +416,8 @@ document.addEventListener('click',e=>{
 $('lightbox').addEventListener('close',()=>{
  document.body.classList.remove('lightbox-open');
  const trigger=[...document.querySelectorAll('[data-lightbox]')].find(button=>button.dataset.lightbox===$('lightbox').dataset.trigger);
- $('lightbox-image').removeAttribute('src');trigger?.focus({preventScroll:true});
+ const video=$('lightbox-video');video.pause();video.hidden=true;video.removeAttribute('src');
+ $('lightbox-image').hidden=false;$('lightbox-image').removeAttribute('src');trigger?.focus({preventScroll:true});
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('language-menu').hidden){e.preventDefault();closeLanguages(true)}});
 document.addEventListener('focusin',e=>{if(!e.target.closest('.language-control'))closeLanguages()});
@@ -449,7 +450,17 @@ const localAssistants={mode:'web',items:null,scanning:false,error:null,selected:
 function assistantModes(){return `<nav class="assistant-modes" aria-label="${t('Choose a local app or the web.')}">${['web','local'].map(mode=>`<button data-assistant-mode="${mode}" aria-pressed="${localAssistants.mode===mode}" ${state.assistantBusy?'disabled':''}>${t(mode==='web'?'Web':'On this computer')}</button>`).join('')}</nav>`}
 function assistantSwitcher(){return `<nav class="assistant-switcher" aria-label="${t('Your assistant')}">${Object.entries(assistantInfo).map(([id,info])=>`<button data-assistant="${id}" aria-pressed="${state.assistant===id}" aria-label="${t('Set up '+info.name)}"><img src="/assets/${id}.png" alt=""><span>${info.name}</span></button>`).join('')}</nav>`}
 function publicGuideLink(label='Your public link'){const ready=state.public&&state.tunnel.startsWith('Ready(')&&/^https:\/\//.test(state.link);return `<div class="setup-link"><div><span class="setup-link-label">${t(label)}</span>${ready?`<code>${esc(state.link)}</code>`:`<span>${t('Enable your public link')}</span>`}</div>${ready?`<button class="copy-pill" data-copy="assistant">${icon('copy')}<span>${t('Copy link')}</span></button>`:`<button class="copy-pill" data-screen="links">${t('Open link settings')}</button>`}</div>${ready?'':`<p class="setup-note">${t('Your public link is not ready. Open link settings and turn on From the web.')}</p>`}`}
-function guideCapture(file,caption){const path='/assets/'+file+'.webp';return `<figure class="guide-capture"><button class="guide-shot-link" type="button" data-lightbox="${path}" aria-label="${t('Enlarge screenshot')}"><img class="guide-shot" src="${path}" alt="${esc(t(caption))}" width="1440" height="1080" loading="lazy" decoding="async"></button></figure>`}
+function guideMedia(media,caption){
+ const label=esc(t(caption)),reduce=window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+ if(media.video){
+  const src='/assets/'+media.video+'.mp4',poster='/assets/'+media.video+'.png';
+  const video=`<video class="guide-shot" ${reduce?'controls':`autoplay muted loop playsinline`} muted preload="metadata" poster="${poster}" width="1920" height="1080" aria-label="${label}"><source src="${src}" type="video/mp4"></video>`;
+  return reduce?`<figure class="guide-capture is-video">${video}</figure>`:`<figure class="guide-capture is-video"><button class="guide-shot-link" type="button" data-lightbox="${src}" data-lightbox-type="video" data-lightbox-poster="${poster}" aria-label="${t('Enlarge video')}">${video}</button></figure>`;
+ }
+ const path='/assets/'+media.image+'.webp';
+ return `<figure class="guide-capture"><button class="guide-shot-link" type="button" data-lightbox="${path}" aria-label="${t('Enlarge screenshot')}"><img class="guide-shot" src="${path}" alt="${label}" width="1440" height="1080" loading="lazy" decoding="async"></button></figure>`;
+}
+function guideCapture(file,caption){return guideMedia({image:file},caption)}
  function guideFields(fields){return `<dl class="journey-fields">${fields.map(([label,value])=>`<div class="journey-field"><dt>${t(label)}</dt><dd>${esc(t(value))}</dd></div>`).join('')}</dl>`}
  function guidePath(items){return `<ol class="guide-path" aria-label="${t('Click path')}">${items.map(text=>`<li><span data-server-text>${esc(t(text))}</span></li>`).join('')}</ol>`}
 function guideOpen(id){return `<a class="full-button primary guide-link" href="${assistantInfo[id].settings}" target="_blank" rel="noopener noreferrer">${t('Open '+assistantInfo[id].name+' settings')} <span aria-hidden="true">↗</span></a>`}
@@ -470,25 +481,25 @@ function assistantGuide(id){
  const step=assistantJourney.step;
  if(step===0){
   const observed={
-   grok:guideCapture('guide-grok-settings','Grok · Plugins → New Connector'),
-   claude:guideCapture('guide-claude-menu','Claude · Add → Add custom connector'),
-   chatgpt:guideCapture('guide-chatgpt-menu','ChatGPT · Add → Add custom MCP server'),
-   gemini:guideCapture('guide-gemini-settings','Gemini · Connected Apps → + Custom')
+   grok:{image:'guide-grok-settings',caption:'Grok · Plugins → New Connector'},
+   claude:{image:'guide-claude-menu',caption:'Claude · Add → Add custom connector'},
+   chatgpt:{video:'guide-chatgpt-menu',caption:'ChatGPT · Add → Add custom MCP server'},
+   gemini:{image:'guide-gemini-settings',caption:'Gemini · Connected Apps → + Custom'}
   };
-  return {title:'Open the connector settings',content:guideOpen(id)+observed[id]};
+  return {title:'Open the connector settings',content:guideOpen(id)+guideMedia(observed[id],observed[id].caption)};
  }
  if(step===1){
   const forms={
-    grok:guideFields([['Name','student-mcp']])+publicGuideLink('Server URL')+guideCapture('guide-grok-form','Grok · Custom Connector'),
-   claude:publicGuideLink('Remote MCP server URL')+guideFields([['Name','student-mcp'],['Authentication','No sign in']])+guidePath(['Continue','No sign in','Add'])+guideCapture('guide-claude-form','Claude · Add custom connector'),
-   chatgpt:publicGuideLink('Connection → Server URL')+guideFields([['Name','student-mcp'],['Authentication','No authentication']])+guideCapture('guide-chatgpt-form','ChatGPT · Add custom MCP server'),
-   gemini:publicGuideLink('MCP Server URL')+guideCapture('guide-gemini-form','Gemini · MCP Server URL → Next')
+    grok:guideFields([['Name','student-mcp']])+publicGuideLink('Server URL')+guideMedia({image:'guide-grok-form'},'Grok · Custom Connector'),
+   claude:publicGuideLink('Remote MCP server URL')+guideFields([['Name','student-mcp'],['Authentication','No sign in']])+guidePath(['Continue','No sign in','Add'])+guideMedia({image:'guide-claude-form'},'Claude · Add custom connector'),
+   chatgpt:publicGuideLink('Connection → Server URL')+guideFields([['Name','student-mcp'],['Authentication','No authentication']])+guideMedia({video:'guide-chatgpt-form'},'ChatGPT · Add custom MCP server'),
+   gemini:publicGuideLink('MCP Server URL')+guideMedia({image:'guide-gemini-form'},'Gemini · MCP Server URL → Next')
   };
   return {title:'Add student-mcp',content:forms[id]};
  }
  const paths={grok:[],claude:['+','Connectors','student-mcp'],chatgpt:['@','student-mcp'],gemini:['@',t('Your custom app')]};
- const chats={grok:'guide-grok-chat',claude:'guide-claude-chat',chatgpt:'guide-chatgpt-chat',gemini:'guide-gemini-chat'};
- return {title:'Ask your first question',content:(paths[id].length?guidePath(paths[id]):'')+`<blockquote class="setup-prompt"><p>${t('Use student-mcp: what are my deadlines this week?')}</p></blockquote>`+guideCapture(chats[id],'Write in the message field')};
+ const chats={grok:{image:'guide-grok-chat'},claude:{image:'guide-claude-chat'},chatgpt:{video:'guide-chatgpt-chat'},gemini:{image:'guide-gemini-chat'}};
+ return {title:'Ask your first question',content:(paths[id].length?guidePath(paths[id]):'')+`<blockquote class="setup-prompt"><p>${t('Use student-mcp: what are my deadlines this week?')}</p></blockquote>`+guideMedia(chats[id],'Write in the message field')};
 }
 function assistantScreen(){
   const id=state.assistant,info=assistantInfo[id],step=assistantJourney.step;
@@ -951,8 +962,14 @@ async function send(data){if(state.busy)return;state.busy=true;render();try{cons
 document.addEventListener('click',async e=>{
   const shot=e.target.closest('[data-lightbox]');
   if(shot){
-   const lightbox=$('lightbox'),image=$('lightbox-image');
-   image.src=shot.dataset.lightbox;image.alt=shot.querySelector('img')?.alt||t('Screenshot');
+   const lightbox=$('lightbox'),image=$('lightbox-image'),video=$('lightbox-video');
+   if(shot.dataset.lightboxType==='video'){
+    image.hidden=true;image.removeAttribute('src');
+    video.hidden=false;video.src=shot.dataset.lightbox;video.poster=shot.dataset.lightboxPoster||'';video.currentTime=0;video.play().catch(()=>{});
+   }else{
+    video.pause();video.hidden=true;video.removeAttribute('src');
+    image.hidden=false;image.src=shot.dataset.lightbox;image.alt=shot.querySelector('img')?.alt||t('Screenshot');
+   }
    lightbox.showModal();$('lightbox').dataset.trigger=shot.dataset.lightbox;document.body.classList.add('lightbox-open');$('lightbox').querySelector('[data-lightbox-close]').focus();return
   }
   if(e.target.closest('[data-lightbox-close]')||e.target.id==='lightbox'){$('lightbox').close();return}

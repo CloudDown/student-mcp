@@ -85,14 +85,19 @@ student-mcp can configure.
 
 ## Rendered captures (2026-11-09)
 
-The four assistant guides use one render per step, after the link step. They are
-**not** screenshots of a live session: each one is rendered from
-`tools/assistant-guides.html` by `tools/render-assistant-guides.mjs`, so the
+The Claude, Grok and Gemini guides use one rendered capture per step, after the
+link step. They are **not** screenshots of a live session: each one is rendered
+from `tools/assistant-guides.html` by `tools/render-assistant-guides.mjs`, so the
 labels, the empty states and the arrow stay identical across releases. The page
 frame and the app chrome are kept; the browser tab strip and address bar are not.
 
-- One scene per assistant and step, **480 × 360 CSS px at 3×** → 1440 × 1080
-  WebP. The captures are displayed at 480 px wide in the app, so their text is
+ChatGPT uses three **real videos** recorded on chatgpt.com (1920 × 1080, H.264,
+silent) with a PNG poster of the same name. Only fictional data is shown:
+`student-mcp` and `https://example.com/mcp`; the connector subtitle is blurred.
+The videos live in `src/resources/assets/guides/` and are embedded in the app.
+
+For rendered captures: one scene per assistant and step, **480 × 360 CSS px at
+  3×** → 1440 × 1080 WebP. The captures are displayed at 480 px wide in the app, so their text is
   read at its natural size. Do not widen the canvas without widening that
   column: anything smaller becomes unreadable at 1:1.
 - One thin arrow per capture, in the assistant's accent colour, pointing a few
@@ -104,8 +109,12 @@ frame and the app chrome are kept; the browser tab strip and address bar are not
 - Each form capture shows the state just before the final click: fields filled
   and the action button enabled.
 
-Files: `guide-claude-menu|form|chat`, `guide-chatgpt-menu|form|chat`,
+Rendered captures: `guide-claude-menu|form|chat`,
 `guide-gemini-settings|form|chat`, `guide-grok-settings|form|chat`.
+ChatGPT videos and posters: `guides/guide-chatgpt-menu|form|chat.mp4` and
+`.png`. The app chooses a video when a step defines `video`, otherwise an image.
+The ChatGPT scenes remain in `tools/assistant-guides.html` for reference but the
+render script skips them.
 
 Regenerate after editing the scenes:
 

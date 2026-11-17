@@ -33,6 +33,7 @@ try{
   if(path.startsWith('/assets/')){
    const file=path.split('/').at(-1),name=file.replace(/\.png$/,'');
    if(assetNames[name])return route.fulfill({contentType:'image/png',body:readFileSync(new URL(`../src/resources/assets/${assetNames[name]}.png`,import.meta.url))});
+    if(/^guide-chatgpt-(menu|form|chat)\.(mp4|png)$/.test(file))return route.fulfill({contentType:file.endsWith('.mp4')?'video/mp4':'image/png',body:readFileSync(new URL('../src/resources/assets/guides/'+file,import.meta.url))});
     if(/^guide-[a-z-]+\.webp$/.test(file))return route.fulfill({contentType:'image/webp',body:readFileSync(new URL('../src/resources/assets/'+file,import.meta.url))});
   }
    if(['/assistant/others','/assistant/grok','/assistant/chatgpt'].includes(path))throw Error('Web-only guides must not call a local setup endpoint');
@@ -117,15 +118,26 @@ try{
     assert.equal(await page.locator('.setup-details,.guide-caption,.guide-legend').count(),0,'No disclosure blocks or small grey captions on the guide');
       assert.ok((await page.locator('.setup-stage').innerText()).split(/\s+/).length<100,'Each step must be labels and visuals, not paragraphs');
     if(width!==320)await snapshot(`${id}-${step+1}-${width}`);
-      assert.equal(await page.locator('.guide-shot').count(),1,'One screenshot per step');
+      assert.equal(await page.locator('.guide-shot').count(),1,'One media element per step');
       if(width===1440){
-     await page.waitForFunction(()=>[...document.querySelectorAll('.guide-shot')].every(img=>img.complete&&img.naturalWidth>0));
+     const isVideo=id==='chatgpt';
+     if(isVideo){
+      await page.waitForFunction(()=>{const v=document.querySelector('.guide-shot');return v&&v.tagName==='VIDEO'&&v.readyState>=2&&v.videoWidth>0});
+      const video=page.locator('.guide-shot').first();
+      assert.ok((await video.boundingBox()).width>150);
+      assert.ok(await video.evaluate(v=>v.videoWidth===1920&&v.videoHeight===1080),'ChatGPT guide videos are 1920×1080');
+      assert.ok(await video.evaluate(v=>v.autoplay&&v.muted&&v.loop&&v.playsInline));
+      await page.waitForFunction(()=>{const v=document.querySelector('.guide-shot');return v&&v.readyState>=2&&!v.paused});
+     }else{
+      await page.waitForFunction(()=>[...document.querySelectorAll('.guide-shot')].every(img=>img.complete&&img.naturalWidth>0));
       const image=page.locator('.guide-shot').first();
-       assert.ok((await image.boundingBox()).width>150);
-       assert.ok(await image.evaluate(img=>img.naturalWidth===1440&&img.naturalHeight===1080),'Guide captures are a focused 480×360 panel rendered at 3×');
+      assert.ok((await image.boundingBox()).width>150);
+      assert.ok(await image.evaluate(img=>img.naturalWidth===1440&&img.naturalHeight===1080),'Guide captures are a focused 480×360 panel rendered at 3×');
+     }
       const firstShot=page.locator('.guide-shot-link').first();
       await firstShot.click();
-      assert.equal(await page.locator('#lightbox').evaluate(dialog=>dialog.open),true,'The screenshot opens in the page, not a new tab');
+      assert.equal(await page.locator('#lightbox').evaluate(dialog=>dialog.open),true,'The media opens in the page, not a new tab');
+      if(isVideo)assert.equal(await page.locator('#lightbox-video').isVisible(),true,'The enlarged viewer uses the video');
       await page.locator('[data-lightbox-close]').click();
       assert.equal(await page.locator('#lightbox').evaluate(dialog=>dialog.open),false,'The close button leaves the viewer');
       await firstShot.click();
@@ -187,6 +199,13 @@ try{
  await page.emulateMedia({reducedMotion:'reduce'});
  await page.locator('[data-guide-step="2"]').focus();await page.keyboard.press('Enter');
  await page.getByRole('heading',{name:'Ask your first question',exact:true}).waitFor();
+ await page.locator('[data-assistant="chatgpt"]').click();
+ await page.locator('[data-guide-step="0"]').click();
+ const reducedVideo=page.locator('.guide-shot');
+ await reducedVideo.waitFor();
+ assert.equal(await reducedVideo.evaluate(v=>v.tagName),'VIDEO');
+ assert.ok(await reducedVideo.evaluate(v=>v.controls&&!v.autoplay&&v.paused),'Reduced motion disables autoplay and shows controls');
+ assert.equal(await page.locator('.guide-shot-link').count(),0,'Reduced-motion video is not wrapped in the zoom button');
  await snapshot('reduced-motion');
  assert.deepEqual(errors,[]);
     console.log('Assistant guides passed: separate web/local views, minimal web guides, lightbox, 320/390/768/1440px, FR/ES/EN, clipboard, polling, keyboard and opt-in automatic local setup.');

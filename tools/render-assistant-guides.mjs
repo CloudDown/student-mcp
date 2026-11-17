@@ -14,7 +14,7 @@ try{
  const page=await browser.newPage({viewport:{width:sceneW,height:sceneH},deviceScaleFactor:scale});
  await page.goto(new URL(htmlPath.href).href);
  await page.evaluate(()=>document.fonts.ready);
- const scenes=await page.locator('section.scene').evaluateAll(els=>els.map(el=>({id:el.id,file:el.dataset.file})));
+ const scenes=(await page.locator('section.scene').evaluateAll(els=>els.map(el=>({id:el.id,file:el.dataset.file})))).filter(scene=>!scene.file.startsWith('guide-chatgpt-'));
  if(!scenes.length)throw new Error('No section.scene found in assistant-guides.html');
  const rows=[];
  for(const scene of scenes){
@@ -42,5 +42,5 @@ try{
  const badSize=rows.filter(r=>r.width!==sceneW*scale||r.height!==sceneH*scale);
  if(badSize.length)throw new Error(`Captures not ${sceneW*scale}×${sceneH*scale}: ${badSize.map(r=>r.file).join(', ')}`);
  if(tooBig.length)throw new Error(`Captures over 120 KiB: ${tooBig.map(r=>`${r.file} (${r.bytes} bytes)`).join(', ')}`);
- console.log(`Rendered ${rows.length} assistant guide captures into src/resources/assets.`);
+ console.log(`Rendered ${rows.length} assistant guide captures into src/resources/assets (ChatGPT uses real videos).`);
 }finally{await browser.close()}
