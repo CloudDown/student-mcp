@@ -469,3 +469,6 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 @media(max-width:32rem){.assistant-toolbar .guide-link{margin-left:0}}
 
 @media(hover:hover) and (pointer:fine){.video-steps button:not(:disabled):hover{background:var(--hover);color:var(--ink)}}
+.update-label[hidden]{display:none}
+.global-bar .update-control>.icon-button{width:2rem;height:2rem;min-width:2rem;min-height:2rem;border:1px solid var(--border);border-radius:999px;background:var(--white);box-shadow:var(--shadow);color:var(--blue)}
+.global-bar .update-control>.icon-button svg{width:1.125rem;height:1.125rem}
