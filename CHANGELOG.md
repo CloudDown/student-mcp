@@ -3,7 +3,7 @@
 Notable changes, newest first. Downloads for each release are on the
 [releases page](https://github.com/CloudDown/student-mcp/releases).
 
-## Unreleased
+## 0.8.5 — 2026-11-16
 
 - **XDG file locations.** Settings moved to `~/.config/student-mcp/config.json`
   (`$XDG_CONFIG_HOME` is honoured), the private index, browser profiles and file
@@ -22,12 +22,16 @@ Notable changes, newest first. Downloads for each release are on the
   descriptions now state when to prefer a dedicated tool, what `moodle_api_schema`
   does and does not know, and that `moodle_api_call` can change school data.
 
-- **File links survive restarts.** Temporary `/s/...` links are also saved in the
-  private folder `~/.student-mcp.links/` (`0700`, one `0600` file per link) and
-  restored at startup, so restarting the app or installing an update no longer
-  breaks a link before its deadline. Each link keeps its original expiry; expired,
-  orphaned, symlinked or oversized entries are deleted instead of served, and the
-  128-link / 24 MiB bounds still apply.
+- **File links survive restarts.** Temporary `/s/...` links are saved in the
+  private data folder (`~/.local/share/student-mcp/links/` by default on Linux
+  and macOS; `%LOCALAPPDATA%\student-mcp\links\` on Windows) and restored at
+  startup. Restarting or updating no longer breaks a link before its deadline.
+  Expired, orphaned, symlinked or oversized entries are removed instead of
+  served; the 128-link / 24 MiB bounds still apply.
+
+- **Assistant setup videos.** The web setup guide now shows recorded menu, server
+  configuration and first-chat steps for ChatGPT, Claude, Gemini and Grok, with
+  previous/next controls, reduced-motion support and an enlarged video view.
 
 ## 0.8.4 — 2026-11-12
 

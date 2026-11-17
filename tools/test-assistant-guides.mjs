@@ -71,7 +71,9 @@ try{
   assert.equal(await page.locator('.assistant-switcher button').count(),4);
    assert.equal(await page.locator('.assistant-switcher [aria-pressed="true"]').getAttribute('data-assistant'),'chatgpt');
    assert.equal(await page.locator('[data-assistant="others"]').count(),0,'The general MCP guide must be removed');
-   assert.equal(await page.locator('.journey-node').count(),3,'The ChatGPT tutorial must open immediately');
+    assert.equal(await page.locator('.video-steps button').count(),2,'The video guide has previous/next controls');
+    assert.equal(await page.locator('.video-steps span').innerText(),'1 / 3');
+    assert.equal(await page.locator('.guide-shot source').getAttribute('src'),'/assets/guide-chatgpt-menu.mp4');
    assert.equal(requests.filter(path=>path.startsWith('/assistant/')).length,0,'ChatGPT must not detect or configure a local assistant');
   for(const width of [1440,768,390,320]){await page.setViewportSize({width,height:1000});await noOverflow();for(const button of await page.locator('.assistant-switcher button').all()){const box=await button.boundingBox();assert.ok(box.width>=44&&box.height>=44)}await snapshot('general-default-'+width)}
  await page.getByRole('button',{name:'Retour aux services',exact:true}).click();
@@ -81,28 +83,26 @@ try{
    await page.getByRole('button',{name:title,exact:true}).click();
    assert.equal(await page.locator('.assistant-switcher [aria-pressed="true"]').getAttribute('data-assistant'),id);
    const accents={grok:'rgb(29, 29, 31)',claude:'rgb(201, 100, 66)',chatgpt:'rgb(15, 157, 120)',gemini:'rgb(59, 130, 246)'};
-   assert.equal(await page.locator('.setup-footer .setup-next').evaluate(el=>getComputedStyle(el).backgroundColor),accents[id],'Primary actions follow the assistant colour');
-   assert.equal(await page.locator('.journey-node[aria-current="step"] .journey-number').evaluate(el=>getComputedStyle(el).backgroundColor),accents[id],'The active step follows the assistant colour');
-   assert.equal(await page.locator('.journey-node[aria-current="step"]').getAttribute('data-guide-step'),'0','Switching a tutorial must start its web guide');
-  assert.equal(await page.locator('.journey-node').count(),3);
-  assert.equal(await page.locator('.journey-node[aria-current="step"]').count(),1);
+    assert.equal(await page.locator('.video-steps span').innerText(),'1 / 3','Switching a tutorial must start its web guide');
+    assert.equal(await page.locator('.guide-shot source').getAttribute('src'),`/assets/guide-${id}-menu.mp4`);
    assert.equal(actions.length,0,'Opening a guide must not write configuration');
    assert.equal(await page.locator('[data-assistant-route],.assistant-routes,.connection-flow,.setup-intro').count(),0,'Only the web guide remains; remove the route picker, intro and decorative school flow');
    assert.equal(await page.locator('.assistant-local').count(),0,'Automatic local setup is closed by default');
    assert.equal(await page.locator('[data-assistant-setup]').count(),0,'Local setup belongs in its own view');
    assert.equal(await page.locator('[data-assistant-mode]').count(),2);
-   await page.locator('[data-guide-step="1"]').click();
-   if(id==='claude'){
-    assert.match(await page.locator('.journey-fields').innerText(),/Authentification\s+Aucune connexion/);
-    assert.deepEqual(await page.locator('.guide-path li').allTextContents(),['Continuer','Aucune connexion','Ajouter (ou Continuer)']);
-   }
-   await page.getByRole('button',{name:'Copier le lien',exact:true}).click();
-   assert.equal(await page.evaluate(()=>window.fixtureCopied),fixture.link);
-  for(const width of [1440,768,390,320]){
-   await page.setViewportSize({width,height:1000});
-   for(let step=0;step<3;step++){
-    await page.locator(`[data-guide-step="${step}"]`).click();
-     assert.equal(await page.locator('.journey-node[aria-current="step"]').getAttribute('data-guide-step'),String(step));
+    assert.equal(await page.locator('.guide-link').getAttribute('href'),({
+      claude:'https://claude.ai/customize/connectors',
+      chatgpt:'https://chatgpt.com/plugins',
+      gemini:'https://gemini.google.com/apps',
+      grok:'https://grok.com/'
+    })[id]);
+   for(const width of [1440,768,390,320]){
+    await page.setViewportSize({width,height:1000});
+    while(await page.locator('.video-steps span').innerText()!=='1 / 3')await page.locator('[data-guide-previous]').click();
+    for(let step=0;step<3;step++){
+      if(step>0)await page.locator('[data-guide-next]').click();
+      assert.equal(await page.locator('.video-steps span').innerText(),`${step+1} / 3`);
+      assert.equal(await page.locator('.guide-shot source').getAttribute('src'),`/assets/guide-${id}-${['menu','form','chat'][step]}.mp4`);
      await page.evaluate(()=>document.querySelector('.screen').scrollTop=0);
      assert.ok(await page.evaluate(()=>{
       const back=document.querySelector('.page-nav .back').getBoundingClientRect();
@@ -110,13 +110,12 @@ try{
       return !badge.width || back.top>=badge.bottom+4 || back.left>=badge.right+4;
      }),'Version badge must not overlap the back button');
     await noOverflow();
-     assert.ok(await page.locator('.journey-long,.journey-short').evaluateAll(labels=>labels.filter(label=>label.getClientRects().length).every(label=>{const box=label.getBoundingClientRect(),button=label.parentElement.getBoundingClientRect();return box.left>=button.left-1&&box.right<=button.right+1})),'Step labels must not collide on narrow screens');
-     assert.ok(await page.locator('.assistant-switcher').evaluate(track=>[...track.querySelectorAll('button')].every(button=>{const a=track.getBoundingClientRect(),b=button.getBoundingClientRect();return b.left>=a.left&&b.right<=a.right})),'Assistant buttons must fit inside their control');
+      assert.ok(await page.locator('.assistant-switcher').evaluate(track=>[...track.querySelectorAll('button')].every(button=>{const a=track.getBoundingClientRect(),b=button.getBoundingClientRect();return b.left>=a.left&&b.right<=a.right})),'Assistant buttons must fit inside their control');
      assert.equal(await page.locator('.assistant-workspace').count(),1,'The guide uses one coherent workspace');
      assert.equal(await page.locator('.assistant-journey .card').count(),0,'Web setup must not use nested tiles');
     assert.equal(await page.locator('.setup-details,.guide-caption,.guide-legend').count(),0,'No disclosure blocks or small grey captions on the guide');
       assert.ok((await page.locator('.setup-stage').innerText()).split(/\s+/).length<100,'Each step must be labels and visuals, not paragraphs');
-    if(width!==320)await snapshot(`${id}-${step+1}-${width}`);
+     if(width!==320)await snapshot(`${id}-${step+1}-${width}`);
       assert.equal(await page.locator('.guide-shot').count(),1,'One media element per step');
       if(width===1440){
      const isVideo=true;
@@ -146,23 +145,23 @@ try{
     if(width===390){
      await page.setViewportSize({width,height:844});
      await noOverflow();
-     await page.locator('.setup-footer').scrollIntoViewIfNeeded();
-     assert.ok(await page.locator('.setup-footer').isVisible(),`The ${id} guide step ${step+1} controls must remain reachable at 390×844`);
+      await page.locator('.video-steps').scrollIntoViewIfNeeded();
+      assert.ok(await page.locator('.video-steps').isVisible(),`The ${id} guide step ${step+1} controls must remain reachable at 390×844`);
      await page.setViewportSize({width,height:1000});
     }
    }
   }
   await page.locator('[data-guide-previous]').click();
-  assert.equal(await page.locator('[aria-current="step"]').getAttribute('data-guide-step'),'1');
-  await page.locator('[data-guide-next]').click();
-  assert.equal(await page.locator('[aria-current="step"]').getAttribute('data-guide-step'),'2');
+   assert.equal(await page.locator('.video-steps span').innerText(),'2 / 3');
+   await page.locator('[data-guide-next]').click();
+   assert.equal(await page.locator('.video-steps span').innerText(),'3 / 3');
    assert.equal(await page.locator('[data-assistant-route]').count(),0,'No web/local route choice');
   await home();
  }
  await page.setViewportSize({width:1440,height:1000});
   await openGeneral();
  await page.getByRole('button',{name:'Configurer Claude',exact:true}).click();
-  await page.locator('[data-guide-step="2"]').click();
+   await page.locator('[data-guide-next]').click();
    await page.locator('[data-assistant-mode="local"]').click();
    await page.locator('[data-local-assistant="claude"]').waitFor();
    assert.equal(await page.locator('.assistant-workspace').count(),0,'The local view must not show web instructions');
@@ -179,29 +178,23 @@ try{
    await page.locator('[data-local-assistant="claude"]').click();
   for(const width of [1440,768,390,320]){await page.setViewportSize({width,height:1000});await noOverflow();await snapshot('local-apps-'+width)}
   await page.locator('[data-assistant-mode="web"]').click();
-  assert.equal(await page.locator('[aria-current="step"]').getAttribute('data-guide-step'),'2','Switching views preserves the web step');
- await page.locator('[data-guide-step="2"]').click();
- await page.evaluate(()=>refresh());
- assert.equal(await page.locator('[aria-current="step"]').getAttribute('data-guide-step'),'2','Polling must preserve the active step');
- // Unavailable links must not be exposed as ready; language changes preserve the route.
- await page.locator('[data-guide-step="1"]').click();
- fixture.public=false;fixture.tunnel='Stopped';fixture.link='';
- await page.evaluate(()=>refresh());
- // A polling refresh may already be in flight, so wait for the next render instead of racing it.
- await page.locator('[data-copy="assistant"]').waitFor({state:'detached'});
- await page.getByRole('button',{name:'Ouvrir les réglages du lien',exact:true}).waitFor();
+   assert.equal(await page.locator('.video-steps span').innerText(),'2 / 3','Switching views preserves the web step');
+  await page.locator('[data-guide-next]').click();
+  await page.evaluate(()=>refresh());
+  assert.equal(await page.locator('.video-steps span').innerText(),'3 / 3','Polling must preserve the active step');
  await page.locator('#language-button').click();
  await page.getByRole('button',{name:'Español'}).click();
-  await page.getByRole('heading',{name:'Añade student-mcp',exact:true}).waitFor();
+    await page.waitForFunction(()=>document.querySelector('.setup-stage h2')?.textContent==='Haz tu primera pregunta');
  await page.locator('#language-button').click();
  await page.getByRole('button',{name:'English'}).click();
-  await page.getByRole('heading',{name:'Add student-mcp',exact:true}).waitFor();
+    await page.waitForFunction(()=>document.querySelector('.setup-stage h2')?.textContent==='Ask your first question');
  // Keyboard navigation and reduced-motion behavior retain the same guide content.
  await page.emulateMedia({reducedMotion:'reduce'});
- await page.locator('[data-guide-step="2"]').focus();await page.keyboard.press('Enter');
- await page.getByRole('heading',{name:'Ask your first question',exact:true}).waitFor();
- await page.locator('[data-assistant="chatgpt"]').click();
- await page.locator('[data-guide-step="0"]').click();
+  await page.locator('[data-guide-previous]').focus();await page.keyboard.press('Enter');
+  assert.equal(await page.locator('.video-steps span').innerText(),'2 / 3');
+  await page.locator('[data-guide-next]').focus();await page.keyboard.press('Enter');
+  await page.waitForFunction(()=>document.querySelector('.setup-stage h2')?.textContent==='Ask your first question');
+  await page.locator('[data-assistant="chatgpt"]').click();
  const reducedVideo=page.locator('.guide-shot');
  await reducedVideo.waitFor();
  assert.equal(await reducedVideo.evaluate(v=>v.tagName),'VIDEO');

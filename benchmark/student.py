@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT))
 from benchmark.harness import MCP
 from benchmark.run import config_copy
 
-API_URL = "https://opencode.ai/zen/v1/responses"
+API_URL = "https://opencode.ai/inference/openai/v1/responses"
 DEFAULT_MODELS = ("gpt-6-luna", "claude-haiku-5-5")
 SYSTEM_PROMPT = """Tu aides un étudiant à partir de ses données Moodle.
 Choisis toi-même les outils nécessaires et réponds en français, clairement et
@@ -78,9 +78,35 @@ def api_request(api_key: str, body: dict[str, Any]) -> dict[str, Any]:
         with urllib.request.urlopen(request, timeout=180) as response:
             return json.loads(response.read())
     except urllib.error.HTTPError as error:
-        raise RuntimeError(f"OpenCode Zen returned HTTP {error.code}") from None
+        raise ApiError(error.code, safe_api_error(error, api_key)) from None
     except urllib.error.URLError as error:
         raise RuntimeError(f"OpenCode Zen request failed: {error.reason}") from None
+
+
+def safe_api_error(error: urllib.error.HTTPError, api_key: str) -> str | None:
+    """Keep only known public gateway error categories, never raw server content."""
+    try:
+        raw = json.loads(error.read(8192))
+    except (ValueError, OSError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    details = raw.get("error")
+    if not isinstance(details, dict):
+        return None
+    categories = {"authentication_error", "permission_error", "insufficient_quota",
+                  "invalid_api_key", "model_not_found", "billing_error"}
+    for field in ("code", "type"):
+        value = details.get(field)
+        if isinstance(value, str) and value in categories and api_key not in value:
+            return value
+    return None
+
+
+class ApiError(RuntimeError):
+    def __init__(self, status: int, category: str | None = None):
+        self.status = status
+        super().__init__(f"OpenCode returned HTTP {status}" + (f" ({category})" if category else ""))
 
 
 def run_turns(
@@ -222,8 +248,13 @@ def main() -> int:
         if not function_tools:
             raise SystemExit("MCP exposed no explicitly read-only Moodle tools")
         rows = []
+        abort = False
         for model in models:
+            if abort:
+                break
             for scenario in scenarios:
+                if abort:
+                    break
                 for repeat in range(1, args.repeat + 1):
                     print(
                         f"{model} · {scenario['id']} · passage {repeat}/{args.repeat}",
@@ -249,6 +280,7 @@ def main() -> int:
                         )
                     except Exception as error:
                         message = str(error).replace(api_key, "[REDACTED]")
+                        print(f"FAILED: {message[:500]}", file=sys.stderr)
                         rows.append(
                             {
                                 "model": model,
@@ -259,6 +291,14 @@ def main() -> int:
                                 "error": message[:500],
                             }
                         )
+                        if isinstance(error, ApiError) and error.status in (401, 403):
+                            print(
+                                "Stopping: check the OpenCode key, account, "
+                                "billing and model access.",
+                                file=sys.stderr,
+                            )
+                            abort = True
+                            break
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(
             json.dumps(
@@ -276,11 +316,12 @@ def main() -> int:
             + "\n",
             encoding="utf-8",
         )
-        print(f"Saved private run results to {args.output}")
+        completed = sum(bool(row.get("completed")) for row in rows)
+        print(f"Saved private run results to {args.output} ({completed}/{len(rows)} completed)")
     finally:
         private_config.unlink(missing_ok=True)
         del source_config
-    return 0
+    return 0 if rows and all(row.get("completed") for row in rows) and not abort else 1
 
 
 if __name__ == "__main__":

@@ -476,36 +476,16 @@ function localAppsScreen(){
 
 async function scanAssistants(){if(localAssistants.scanning||state.assistantBusy)return;localAssistants.scanning=true;localAssistants.error=null;localAssistants.selected=null;state.assistantConfirm=false;render();try{const result=await api('/assistants');localAssistants.items=result.assistants}catch(error){localAssistants.error=error.message}finally{localAssistants.scanning=false;if(state.screen==='assistant')render()}}
 function assistantGuide(id){
- const step=assistantJourney.step;
- if(step===0){
-  const observed={
-   grok:{video:'guide-grok-menu',caption:'Grok · + → Connectors → Manage connectors'},
-   claude:{video:'guide-claude-menu',caption:'Claude · Add → Add custom connector'},
-   chatgpt:{video:'guide-chatgpt-menu',caption:'ChatGPT · Add → Add custom MCP server'},
-   gemini:{video:'guide-gemini-menu',caption:'Gemini · Connectors → + Custom'}
-  };
-  return {title:'Open the connector settings',content:guideOpen(id)+(id==='grok'?guidePath(['+','Connectors','Manage connectors','Custom','Add a custom connector']):id==='gemini'?guidePath(['Connectors','+ Custom']):'')+guideMedia(observed[id],observed[id].caption)};
- }
- if(step===1){
-  const forms={
-    grok:guideFields([['Name','student-mcp']])+publicGuideLink('Server URL')+guidePath(['Add MCP'])+guideMedia({video:'guide-grok-form'},'Grok · Add MCP Server'),
-   claude:publicGuideLink('Remote MCP server URL')+guideFields([['Name','student-mcp'],['Authentication','No sign in']])+guidePath(['Continue','No sign in','Add (or Continue)'])+guideMedia({video:'guide-claude-form'},'Claude · Add custom connector'),
-   chatgpt:publicGuideLink('Connection → Server URL')+guideFields([['Name','student-mcp'],['Authentication','No authentication']])+guideMedia({video:'guide-chatgpt-form'},'ChatGPT · Add custom MCP server'),
-   gemini:publicGuideLink('MCP Server URL')+`<p class="setup-note">${t('Leave the optional OAuth client ID and secret blank.')}</p>`+guidePath(['Next','Accept the security and privacy risks','Connect'])+guideMedia({video:'guide-gemini-form'},'Gemini · Connect to an MCP server')
-  };
-  return {title:'Add student-mcp',content:forms[id]};
- }
- const paths={grok:[],claude:['+','Connectors','student-mcp'],chatgpt:['@','student-mcp'],gemini:['@',t('Your custom app')]};
- const chats={grok:{video:'guide-grok-chat'},claude:{video:'guide-claude-chat'},chatgpt:{video:'guide-chatgpt-chat'},gemini:{video:'guide-gemini-chat'}};
- return {title:'Ask your first question',content:(paths[id].length?guidePath(paths[id]):'')+`<blockquote class="setup-prompt"><p>${t('Use student-mcp: what are my deadlines this week?')}</p></blockquote>`+guideMedia(chats[id],'Write in the message field')};
+ const step=assistantJourney.step,part=['menu','form','chat'][step];
+ const captions={menu:{grok:'Grok · + → Connectors → Manage connectors',claude:'Claude · Add → Add custom connector',chatgpt:'ChatGPT · Add → Add custom MCP server',gemini:'Gemini · Connectors → + Custom'},form:{grok:'Grok · Add MCP Server',claude:'Claude · Add custom connector',chatgpt:'ChatGPT · Add custom MCP server',gemini:'Gemini · Connect to an MCP server'},chat:{grok:'Write in the message field',claude:'Write in the message field',chatgpt:'Write in the message field',gemini:'Write in the message field'}};
+ return {title:['Open the connector settings','Add student-mcp','Ask your first question'][step],content:guideMedia({video:`guide-${id}-${part}`},captions[part][id])};
 }
 function assistantScreen(){
   const id=state.assistant,info=assistantInfo[id],step=assistantJourney.step;
-  const heading=`<header class="assistant-heading">${pageNav('home','Back to services')}<h1>${t('Set up an assistant')}</h1></header>${assistantModes()}`;
-  if(localAssistants.mode==='local')return `<section style="--accent:var(--blue)">${heading}${localAppsScreen()}${notice()}</section>`;
- const labels=['Open settings','Add the server','Ask a question'],short=['Settings','Connect','Try it'];
+  const heading=`<header class="assistant-heading">${pageNav('home','Back to services')}<h1>${t('Set up an assistant')}</h1></header>`;
+  if(localAssistants.mode==='local')return `<section style="--accent:var(--blue)">${heading}${assistantModes()}${localAppsScreen()}${notice()}</section>`;
  const guide=assistantGuide(id);
-  return `<section style="--accent:${info.accent}">${heading}<div class="assistant-toolbar">${assistantSwitcher()}</div><div class="assistant-workspace assistant-journey"><aside class="journey-sidebar"><ol class="journey-steps" aria-label="${t('Setup steps')}">${labels.map((label,index)=>`<li><button class="journey-node" data-guide-step="${index}"${index===step?' aria-current="step"':''} aria-controls="setup-stage" aria-label="${index+1}. ${t(label)}"><span class="journey-number" aria-hidden="true">${index+1}</span><span class="journey-long">${t(label)}</span><span class="journey-short" aria-hidden="true">${t(short[index])}</span></button></li>`).join('')}</ol></aside><article class="setup-stage" id="setup-stage" aria-labelledby="setup-title"><h2 id="setup-title" tabindex="-1">${t(guide.title)}</h2><div class="setup-content">${guide.content}</div><footer class="setup-footer"><div class="setup-footer-actions">${step?`<button class="setup-previous" data-guide-previous>${t('Previous')}</button>`:''}<button class="setup-next" ${step===2?'data-screen="home"':'data-guide-next'}>${t(step===2?'Finish guide':'Continue')} <span aria-hidden="true">→</span></button></div></footer></article></div>${notice()}</section>`;
+ return `<section style="--accent:${info.accent}">${heading}<div class="assistant-toolbar">${assistantModes()}${assistantSwitcher()}${guideOpen(id)}</div><div class="assistant-workspace assistant-journey"><article class="setup-stage" id="setup-stage"><h2 class="sr-only" id="setup-title" tabindex="-1">${t(guide.title)}</h2><div class="setup-content">${guide.content}</div><nav class="video-steps" aria-label="${t('Setup steps')}"><button type="button" data-guide-previous aria-label="${t('Previous')}" ${step===0?'disabled':''}>‹</button><span aria-live="polite">${step+1} / 3</span><button type="button" data-guide-next aria-label="${t('Continue')}" ${step===2?'disabled':''}>›</button></nav></article></div>${notice()}</section>`;
 }
 async function openAssistant(id){if(!assistantInfo[id]||state.assistantBusy)return;localAssistants.mode='web';state.assistant=id;assistantJourney.step=0;state.assistantStatus=null;state.assistantConfirm=false;state.assistantRemoveConfirm=false;state.notice=null;state.screen='assistant';render()}
 async function configureAssistant(id){if(state.assistantBusy||localAssistants.selected!==id||localAssistants.items.find(app=>app.assistant===id)?.configured)return;state.assistantBusy=true;state.notice=null;render();try{const status=await api('/action',{action:'assistant_setup',assistant:id});state.assistantStatus=status;state.assistantConfirm=false;localAssistants.items=localAssistants.items.map(app=>app.assistant===id?{...app,...status}:app)}catch(error){state.notice={text:error.message,error:true}}finally{state.assistantBusy=false;if(state.screen==='assistant'){render();if(localAssistants.mode==='local')document.querySelector('.local-inline-action')?.focus({preventScroll:true})}}}

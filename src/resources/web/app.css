@@ -455,3 +455,17 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 /* ChatGPT guide videos are 16:9; keep them full-width at every breakpoint. */
 .guide-capture.is-video .guide-shot{aspect-ratio:16/9;object-fit:cover;max-height:none}
 @media(max-width:40rem){.guide-capture.is-video{display:flex;justify-content:center}.guide-capture.is-video .guide-shot{width:min(100%,180px)}}
+
+/* Let the recording fill the guide area without cropping it. */
+.assistant-journey .setup-content{display:flex;flex-direction:column;align-items:stretch;gap:1rem}
+.assistant-journey .setup-content>.guide-link{align-self:flex-start}
+.assistant-journey .setup-content>.guide-capture{width:100%;margin:0}
+.assistant-journey .guide-capture.is-video .guide-shot{width:100%;max-height:none;object-fit:contain}
+
+.assistant-toolbar{justify-content:space-between}.assistant-toolbar .guide-link{flex:none}.assistant-journey{display:block}.assistant-journey .setup-stage{position:relative;padding:0}.assistant-journey .setup-content{margin:0}.assistant-journey .guide-capture{margin:0}.assistant-journey .guide-shot-link,.assistant-journey .guide-shot{border-radius:var(--radius-md)}.video-steps{position:absolute;bottom:1rem;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:.25rem;padding:.25rem;border-radius:var(--radius-sm);background:var(--white);border:1px solid var(--border);box-shadow:var(--shadow);color:var(--ink);font-size:.8125rem;font-weight:600}.video-steps button{display:grid;place-items:center;width:40px;height:40px;border:0;border-radius:var(--radius-sm);background:transparent;color:var(--subtle);font-size:1.25rem;font-weight:400;line-height:1}.video-steps button:disabled{opacity:.35}.video-steps span{min-width:3rem;text-align:center}@media(max-width:40rem){.assistant-toolbar .guide-link{width:auto;min-height:40px;font-size:.75rem}.video-steps{bottom:.5rem}.video-steps button{width:36px;height:36px}}
+
+.assistant-toolbar{display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;gap:.75rem}.assistant-toolbar .assistant-modes{margin:0;flex:none}.assistant-toolbar .assistant-switcher{width:auto;flex:0 1 auto}@media(max-width:40rem){.assistant-toolbar .assistant-modes{width:auto;flex:none}.assistant-toolbar .assistant-switcher{width:auto;display:flex;flex:1 1 auto}.assistant-toolbar .assistant-switcher button{flex:1;min-width:44px}}@media(max-width:32rem){.assistant-toolbar .assistant-modes,.assistant-toolbar .assistant-switcher{width:100%;flex:1 1 100%}}
+.assistant-toolbar .guide-link{margin-left:auto}
+@media(max-width:32rem){.assistant-toolbar .guide-link{margin-left:0}}
+
+@media(hover:hover) and (pointer:fine){.video-steps button:not(:disabled):hover{background:var(--hover);color:var(--ink)}}

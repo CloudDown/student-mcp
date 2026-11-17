@@ -12,26 +12,26 @@ python3 benchmark/site.py                     # page visuelle (file://benchmark/
 python3 benchmark/surfaces.py                 # surface MCP de chaque release
 ```
 
-## Parcours étudiant avec un modèle
+## Parcours étudiant (Claude web + ChatGPT web)
 
-`student.py` donne une question libre au modèle, lui expose les outils Moodle
-en lecture seule, exécute ses appels sur le binaire local, puis sauvegarde sa
-réponse et sa trace pour une revue humaine. Il n'effectue aucune écriture Moodle.
+C’est **le** test qualité : une question naturelle dans Claude.ai et
+ChatGPT.com, MCP branché, réponse finale notée contre Moodle. Le harnais
+d’outils (`run.py`) reste le filet de régression ; il n’est pas ce score.
 
 ```bash
-cargo build --release
-export OPENCODE_API_KEY='…'  # clé OpenCode Zen; ne pas la mettre dans le dépôt
-python3 benchmark/student.py --scenarios benchmark/scenarios.example.json --repeat 3
+python3 benchmark/web_student.py    # 8 questions précises + page locale
 ```
 
-Par défaut, il compare `gpt-6-luna` et `claude-haiku-5-5` via l'API Responses
-d'OpenCode Zen. Résultats privés dans `benchmark/student-results/` (ignoré par
-Git) : ils contiennent les réponses et données Moodle retournées par les outils.
-Les questions et résultats Moodle sont transmis à OpenCode Zen pour l'inférence ;
-ne lance le test qu'avec des données que tu acceptes de transmettre. Ne publie
-pas les résultats. L'exécution consomme le quota/crédit OpenCode configuré.
-Le runner collecte les traces et métriques, mais ne prétend pas noter
-automatiquement la justesse de la réponse.
+La page (hors git) : `~/.student-mcp.eval/web-student/index.html`.
+
+1. student-mcp allumé, **lien public** copié depuis l’UI.
+2. Claude.ai → Customize → Connectors → coller le lien → chat neuf, activer student-mcp.
+3. ChatGPT.com → Plugins → Add custom MCP server, sans auth → chat neuf, `@student-mcp`.
+4. Une conversation **neuve** par question. Coller seulement la question, pas le nom d’outil.
+5. Coller les deux réponses dans la page : PASS / PARTIAL / FAIL tout de suite.
+
+`student.py` (Luna/Haiku via API) est un proxy pas cher. Ce n’est **pas** le
+verdict étudiant, et un HTTP 403 ne compte pas comme un run.
 
 Les versions testées sont celles qui changent vraiment le MCP : depuis 0.6.2 les
 27 noms d'outils sont identiques, mais leurs définitions passent de 13,8 Ko à
@@ -71,8 +71,9 @@ benchmark/
     moodle.py           50 questions + audit de charge utile
     _template.py        squelette pour Brightspace / Omnivox / Canvas
   run.py                releases × services → matrice et SCORES.md
-  student.py            parcours étudiant via OpenCode Zen + outils MCP
-  scenarios.example.json exemples de questions libres
+  web_student.py        questions précises → page Claude.ai / ChatGPT.com
+  student.py            proxy API (pas le verdict web)
+  scenarios.example.json exemples vagues, ne pas prendre pour le test web
   site.py               page unique file:// (questions, réponses, métriques)
   site/index.html       généré, hors git (réponses scolaires)
   results/              JSON brut par version (hors git)
