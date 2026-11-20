@@ -21,9 +21,10 @@ try {
     if(path==='/')return route.fulfill({contentType:'text/html',body:html});
     if(path==='/app.css')return route.fulfill({contentType:'text/css',body:css});
     if(path==='/app.js')return route.fulfill({contentType:'text/javascript',body:js});
+    if(path==='/assets/local-hermes.png'||path==='/assets/local-freebuff.png')return route.fulfill({contentType:'image/png',body:readFileSync(new URL('../src/resources'+path,import.meta.url))});
     if(path==='/state')return route.fulfill({json:state});
     if(path==='/update')return route.fulfill({json:{available:false}});
-    if(path==='/assistants')return route.fulfill({json:{assistants:[{assistant:'claude',name:'Claude Desktop',detected:true,configured:false,reload:'restart'},{assistant:'claude-code',name:'Claude Code',detected:true,configured:false,reload:'restart'},{assistant:'opencode',name:'OpenCode',detected:true,configured:false,reload:'automatic'},{assistant:'gemini',name:'Gemini CLI',detected:false,configured:false,reload:'restart'}]}});
+    if(path==='/assistants')return route.fulfill({json:{assistants:[{assistant:'claude',name:'Claude Desktop',detected:true,configured:false,reload:'restart'},{assistant:'claude-code',name:'Claude Code',detected:true,configured:false,reload:'restart'},{assistant:'opencode',name:'OpenCode',detected:true,configured:false,reload:'automatic'},{assistant:'gemini',name:'Gemini CLI',detected:false,configured:false,reload:'restart'},{assistant:'hermes',name:'Hermes Agent / Desktop',detected:true,configured:false,reload:'restart'},{assistant:'freebuff',name:'Freebuff',detected:false,configured:false,reload:'restart'}]}});
     if(path.startsWith('/assistant/')){const id=path.slice('/assistant/'.length);return route.fulfill({json:{assistant:id,local:id!=='chatgpt',detected:id==='claude',configured:false}})}
     if(path==='/action'){
       const action=route.request().postDataJSON();actions.push(action);
@@ -237,7 +238,14 @@ try {
   assert.equal(await page.locator('[data-local-assistant="claude"] img.local-app-logo[src="/assets/claude.png"]').count(),1);
   assert.equal(await page.locator('[data-local-assistant="claude-code"] img.local-app-logo[src="/assets/local-claude-code.png"]').count(),1);
   assert.equal(await page.locator('[data-local-assistant="opencode"] img.local-app-logo[src="/assets/local-opencode.png"]').count(),1);
-  assert.equal(await page.locator('[data-local-assistant="gemini"] img.local-app-logo[src="/assets/gemini.png"]').count(),1);
+   assert.equal(await page.locator('[data-local-assistant="gemini"] img.local-app-logo[src="/assets/gemini.png"]').count(),1);
+   const hermesLogo=page.locator('[data-local-assistant="hermes"] img.local-app-logo[src="/assets/local-hermes.png"]');
+   await hermesLogo.scrollIntoViewIfNeeded();
+   assert.equal(await hermesLogo.evaluate(async image=>{await image.decode();return image.naturalWidth}),128);
+   const freebuffLogo=page.locator('[data-local-assistant="freebuff"]:disabled img.local-app-logo[src="/assets/local-freebuff.png"]');
+   await page.locator('.other-apps summary').click();
+   await freebuffLogo.scrollIntoViewIfNeeded();
+   assert.equal(await freebuffLogo.evaluate(async image=>{await image.decode();return image.naturalWidth}),128);
   assert.equal(await page.locator('.local-app-list .local-app-mark').count(),0);
   await page.getByRole('button',{name:'Back to services',exact:true}).click();
   assert.deepEqual(errors,[]);

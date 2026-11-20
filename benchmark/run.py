@@ -10,8 +10,8 @@ build, so the comparison measures what a student actually installed. The
     python3 benchmark/run.py --update            # rewrite benchmark/SCORES.md
 
 The questions come from `python3 tools/mcp-audit.py --intents`, which grades
-every answer against the school API. This script only orchestrates: no second
-question set, no second grader.
+against the school API (Moodle) or a private official-portal reference
+(Brightspace/Omnivox). This script only orchestrates.
 """
 from __future__ import annotations
 
@@ -19,17 +19,21 @@ import argparse
 import json
 import os
 import platform
+import re
 import shutil
 import stat
 import statistics
 import subprocess
 import sys
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from benchmark import harness  # noqa: E402
+from benchmark import harness, report  # noqa: E402
+from benchmark.services import AVAILABLE  # noqa: E402
+from benchmark.services.portal import REFERENCE_ENV, read_reference  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 AUDIT = ROOT / "tools" / "mcp-audit.py"
@@ -111,6 +115,70 @@ def config_copy() -> tuple[Path, Path]:
     return source, Path(path)
 
 
+def copy_browser_profile(source: Path, dest: Path, account: dict) -> None:
+    """Copy the selected profile while the app's own lock excludes Chrome."""
+    import fcntl
+
+    profile_id = account["token"].removeprefix("browser-profile:")
+    if not re.fullmatch(r"[0-9a-fA-F]{32}", profile_id):
+        raise ValueError("Identifiant de profil navigateur invalide.")
+    override = os.environ.get("STUDENT_MCP_CONFIG_FILE") or os.environ.get("MOODLE_CONFIG_FILE")
+    if override and Path(override).expanduser().resolve() == source:
+        root = source.parent / "browsers"
+    else:
+        xdg_data = Path(os.environ.get("XDG_DATA_HOME", ""))
+        root = (xdg_data if xdg_data.is_absolute() else Path.home() / ".local/share") / "student-mcp" / "browsers"
+    profile = root / profile_id
+
+    def ignore(_path, names):
+        return {
+            name for name in names
+            if name in {"profile.lock", "DevToolsActivePort"}
+            or name.startswith("Singleton")
+            or (Path(_path) / name).is_symlink()
+        }
+
+    try:
+        with (profile / "profile.lock").open("rb") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if not (profile / "session.json").is_file():
+                raise OSError
+            shutil.copytree(profile, dest / "browsers" / profile_id, ignore=ignore)
+    except BlockingIOError:
+        raise ValueError("Profil navigateur occupé : termine la connexion ou l'appel en cours, puis relance.") from None
+    except OSError:
+        raise ValueError("Profil navigateur introuvable ou impossible à copier.") from None
+
+
+@contextmanager
+def portal_config(service: str, reference: Path, source: Path):
+    """Give benchmarked releases only the selected account, in a private directory."""
+    ref = read_reference(reference, service)
+    account = harness.load_account(source, service, account_id=ref["account_id"])
+    if account is None:
+        raise ValueError(f"Aucun compte {service} activé ne correspond à la référence.")
+    original = json.loads(source.read_text(encoding="utf-8"))
+    ident = account["id"]
+    if ident == service:
+        connection = dict(original[service], allow_write=False)
+        config = {service: connection}
+    else:
+        selected = next(row for row in original["accounts"] if row.get("id") == ident and row.get("service") == service)
+        connection = dict(selected[service], allow_write=False)
+        config = {"accounts": [{"id": ident, "service": service, service: connection}]}
+    with tempfile.TemporaryDirectory(prefix="student-mcp-bench-") as directory:
+        private = Path(directory) / "config.json"
+        with os.fdopen(os.open(private, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w", encoding="utf-8") as out:
+            json.dump(config, out)
+        if account["token"].startswith("browser-profile:"):
+            copy_browser_profile(source, private.parent, account)
+        # Freeze the exact same reference for all versions, even if the original is edited.
+        frozen = private.with_name("reference.json")
+        with os.fdopen(os.open(frozen, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w", encoding="utf-8") as out:
+            json.dump(ref, out)
+        yield private, frozen, ident
+
+
 def source_bytes(version: str) -> int:
     """Disk size of the MCP layer itself: mcp.rs plus the service connectors."""
     if version == "current":
@@ -131,17 +199,30 @@ def source_bytes(version: str) -> int:
     return total
 
 
-def run_version(version: str, binary: Path, config: Path) -> dict:
-    output = RESULTS / f"{version}.json"
+def run_version(
+    version: str, binary: Path, config: Path, *, service: str = "moodle",
+    reference: Path | None = None, account_id: str | None = None,
+) -> dict:
+    results_dir = RESULTS if service == "moodle" else RESULTS / service
+    results_dir.mkdir(parents=True, exist_ok=True)
+    output = results_dir / f"{version}.json"
     output.unlink(missing_ok=True)  # a stale report must never mask a failure
+    metrics = results_dir / f"{version}.metrics.json"
+    metrics.unlink(missing_ok=True)
     env = dict(os.environ)
     env["STUDENT_MCP_CONFIG_FILE"] = str(config)
+    if reference:
+        env[REFERENCE_ENV] = str(reference)
+    if account_id:
+        env["STUDENT_MCP_BENCH_ACCOUNT_ID"] = account_id
     print(f"  {version}: {binary.name}, questions in flight…")
     result = subprocess.run(
         [
             sys.executable,
             str(AUDIT),
             "--intents",
+            "--service",
+            service,
             "--bin",
             str(binary),
             "--config",
@@ -158,7 +239,7 @@ def run_version(version: str, binary: Path, config: Path) -> dict:
     if not output.exists():
         return {
             "version": version,
-            "error": (result.stderr or result.stdout).strip()[:300],
+            "error": (result.stderr or result.stdout).strip()[:300] if service == "moodle" else "Aucun rapport produit par l'audit.",
         }
     rows = json.loads(output.read_text())
     counts = {key: sum(1 for r in rows if r["verdict"] == key) for key in ("PASS", "PARTIAL", "FAIL", "SKIP")}
@@ -173,6 +254,8 @@ def run_version(version: str, binary: Path, config: Path) -> dict:
     counts["seconds_max"] = round(max(seconds), 2) if seconds else 0
     counts["slowest"] = rows[seconds.index(max(seconds))]["question"] if seconds else ""
     counts["tokens_total"] = sum(tokens)
+    if service != "moodle":
+        counts["wire_bytes_total"] = sum(int(row.get("wire_bytes") or 0) for row in rows)
     counts["tokens_median"] = int(statistics.median(tokens)) if tokens else 0
     counts["tokens_max"] = max(tokens) if tokens else 0
     counts["heaviest"] = rows[tokens.index(max(tokens))]["question"] if tokens else ""
@@ -186,7 +269,7 @@ def run_version(version: str, binary: Path, config: Path) -> dict:
         counts["tools_count"] = 0
         counts["tools_bytes"] = 0
     summary = {key: value for key, value in counts.items() if key != "rows"}
-    (RESULTS / f"{version}.metrics.json").write_text(json.dumps(summary, indent=2))
+    metrics.write_text(json.dumps(summary, indent=2))
     return {"version": version, "counts": counts}
 
 
@@ -231,14 +314,14 @@ def matrix(results: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def write_scores(results: list[dict], config_source: Path) -> None:
+def write_scores(results: list[dict], config_source: Path, service: str = "moodle") -> None:
     n_questions = 0
     for entry in results:
         counts = entry.get("counts") or {}
         n_questions = max(n_questions, len(counts.get("rows") or []), counts.get("graded", 0) + counts.get("SKIP", 0))
     n_label = f"{n_questions} questions" if n_questions else "questions"
     lines = [
-        "# MCP benchmark across releases",
+        "# MCP benchmark across releases" if service == "moodle" else f"# MCP benchmark — {service}",
         "",
         f"{n_label} étudiantes identiques, même compte, même correcteur "
         "(`tools/mcp-audit.py --intents`). Chaque ligne est un binaire publié.",
@@ -269,37 +352,64 @@ def write_scores(results: list[dict], config_source: Path) -> None:
         "Les `PARTIAL` et `FAIL` comptent : une release peut gagner en vitesse et perdre "
         "une réponse correcte. Les `SKIP` sont des données absentes du compte.",
         "",
-        "Régénérer : `python3 benchmark/run.py --update`.",
+        "Régénérer : `python3 benchmark/run.py --update`." if service == "moodle" else
+        f"Régénérer avec `benchmark/run.py --service {service} --reference … --update`.",
     ]
-    (ROOT / "benchmark" / "SCORES.md").write_text("\n".join(lines) + "\n")
-    print(f"\nwrote benchmark/SCORES.md (account: {config_source.name})")
+    scores = "SCORES.md" if service == "moodle" else f"SCORES-{service}.md"
+    (ROOT / "benchmark" / scores).write_text("\n".join(lines) + "\n")
+    print(f"\nwrote benchmark/{scores} (config: {config_source.name})")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--versions", default=",".join(DEFAULT_VERSIONS))
-    parser.add_argument("--update", action="store_true", help="rewrite benchmark/SCORES.md")
+    parser.add_argument("--versions", help="comma-separated releases (portal default: current)")
+    parser.add_argument("--service", choices=AVAILABLE, default="moodle")
+    parser.add_argument("--reference", type=Path, help="private official-portal reference (Brightspace/Omnivox)")
+    parser.add_argument("--update", action="store_true", help="rewrite the selected service's score table")
     args = parser.parse_args()
-    versions = [part.strip() for part in args.versions.split(",") if part.strip()]
-    RESULTS.mkdir(parents=True, exist_ok=True)
-
-    source, config = config_copy()
-    print(f"config: {source} (copie privée, supprimée à la fin)")
+    portal = args.service != "moodle"
+    if portal != bool(args.reference):
+        parser.error("--reference est requise pour Brightspace/Omnivox et non utilisée pour Moodle.")
+    versions = [part.strip() for part in (args.versions or ("current" if portal else ",".join(DEFAULT_VERSIONS))).split(",") if part.strip()]
+    if not versions:
+        parser.error("au moins une version est requise.")
     results: list[dict] = []
-    try:
-        for version in versions:
-            binary = binary_for(version)
-            results.append(run_version(version, binary, config))
-    finally:
-        config.unlink(missing_ok=True)
+    if portal:
+        source = harness.default_config().resolve()
+        try:
+            with portal_config(args.service, args.reference.resolve(), source) as (config, reference, ident):
+                for version in versions:
+                    results.append(run_version(version, binary_for(version), config, service=args.service,
+                                               reference=reference, account_id=ident))
+        except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
+            print(str(exc) if isinstance(exc, ValueError) else "Le benchmark n'a pas pu terminer.", file=sys.stderr)
+            return 2
+    else:
+        source, config = config_copy()
+        print(f"config: {source} (copie privée, supprimée à la fin)")
+        try:
+            for version in versions:
+                results.append(run_version(version, binary_for(version), config))
+        finally:
+            config.unlink(missing_ok=True)
 
     print()
     print(matrix(results))
+    if portal:
+        for entry in results:
+            if counts := entry.get("counts"):
+                print(f"\n{args.service} — {entry['version']}")
+                print(report.render_intents(counts["rows"]))
+    if portal and any(not (entry.get("counts") or {}).get("graded") for entry in results):
+        print("Au moins une version n'a pas de score exploitable.", file=sys.stderr)
+        return 2
     if args.update:
-        write_scores(results, source)
-        from benchmark import site as site_mod  # noqa: E402
-
-        site_mod.main()
+        write_scores(results, source, args.service)
+        if not portal:
+            from benchmark import site as site_mod  # noqa: E402
+            site_mod.main()
+    if portal and results[-1]["counts"]["FAIL"]:
+        return 1
     return 0
 
 

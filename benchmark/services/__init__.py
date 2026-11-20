@@ -15,9 +15,9 @@ one line in `AVAILABLE`, not a second harness. Copy `_template.py`.
 from importlib import import_module
 
 # Implemented services. Adding one means a module here and a line below.
-AVAILABLE = ("moodle",)
+AVAILABLE = ("moodle", "brightspace", "omnivox")
 # Services the harness is designed for; their module does not exist yet.
-PLANNED = ("brightspace", "omnivox", "canvas")
+PLANNED = ("canvas",)
 
 
 def load(name: str):

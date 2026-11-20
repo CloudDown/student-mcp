@@ -1,0 +1,26 @@
+{
+  "service": "omnivox",
+  "account_id": "omnivox",
+  "course": {"id": "MAT101.0001", "title": "Mathématiques"},
+  "document": {
+    "id": "17",
+    "title": "Guide de révision",
+    "title_field": "Titre",
+    "pdf_pages": 5,
+    "page1_text": "Fonctions et dérivées"
+  },
+  "assignment": {
+    "id": "21",
+    "instructions_field": "Enonce",
+    "instructions": "Résoudre les exercices 1 à 4. Justifier chaque réponse."
+  },
+  "grade": {
+    "match": {"Titre": "Quiz 1"},
+    "values": {"Note": 8840}
+  },
+  "deadlines": {
+    "days": 14,
+    "verified_utc_day": "2026-01-01",
+    "items": [{"kind": "assignment", "id": "21", "due": 1767816000000}]
+  }
+}

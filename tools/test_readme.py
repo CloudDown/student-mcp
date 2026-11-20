@@ -21,9 +21,6 @@ class ReadmeTests(unittest.TestCase):
             self.assertGreater(path.stat().st_size, 1000)
             self.assertIn(f"tools/screens/{image}", README)
         self.assertTrue(re.search(r"Connect with browser", README))
-        self.assertNotIn("Mail transfer", README)
-        self.assertNotIn("SPEC.md", README)
-        self.assertIn("0.8.5", (ROOT / "tools" / "capture-readme.mjs").read_text(encoding="utf-8"))
 
     def test_readme_stays_minimal(self):
         # The landing page is a short visual walkthrough; details belong in

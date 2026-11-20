@@ -347,9 +347,12 @@ References: [D2L API authentication](https://docs.valence.desire2learn.com/basic
   shows **Remove setup**, which deletes only `student-mcp` and keeps the other
   servers and settings, after creating a backup.
 - Automatic local setup supports Claude Desktop, Claude Code, Codex / ChatGPT
-  Desktop, Gemini CLI, OpenCode (V2), Cursor, Grok Build, Oh My Pi, GitHub Copilot /
-  VS Code, Windsurf, Pi, Qwen Code, Kiro, Amp, Crush and Devin CLI.
-  It merges only `student-mcp` into the native JSON, JSONC or TOML
+  Desktop, Gemini CLI, OpenCode (V2), Cursor (including CLI), Grok Build,
+  Oh My Pi, GitHub Copilot / VS Code, Windsurf, Pi, Qwen Code, Kiro (including
+  CLI), Amp, Crush, Devin CLI, Hermes Agent / Desktop, Google Antigravity,
+  Command Code, Kilo Code CLI, Kimi Code CLI, OpenClaw, Ori (OpenRouter),
+  MiniMax Code, DeepSeek Harness, Muse Code and Freebuff.
+  It merges only `student-mcp` into the native JSON, JSONC, TOML or YAML
   configuration, keeps other settings and MCP servers, and backs up existing files.
   OpenCode uses `mcp.servers` and retains JSONC comments; Codex and Grok Build use
   `mcp_servers` in TOML, with comments preserved. VS Code targets the current
@@ -367,11 +370,27 @@ References: [D2L API authentication](https://docs.valence.desire2learn.com/basic
   and [Devin CLI](https://docs.devin.ai/cli/extensibility/mcp/configuration).
   Amp uses the literal `amp.mcpServers` key (JSONC comments preserved), Crush uses
   `mcp` in its still-supported config-directory `crush.json`, never its machine-owned
-  state file, and the other new clients use `mcpServers`. Crush's `crushrc` is not
+  state file, and Pi, Qwen Code, Kiro and Devin use `mcpServers`. Crush's `crushrc` is not
   executed or edited and retains precedence over JSON. Existing approval policies
   stay unchanged; no Omarchy permission-bypass flags are copied.
   Detection also checks bounded mise installation directories without invoking mise
   or executing Omarchy's lazy installers. A lazy launcher alone is not an installed app.
+  [Hermes](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp)
+  uses `mcp_servers` in `config.yaml` for its active or inherited profile.
+  [Antigravity](https://antigravity.google/docs/mcp), [Command Code](https://commandcode.ai/docs/mcp),
+  [Kimi Code](https://github.com/MoonshotAI/kimi-code/blob/main/docs/en/customization/mcp.md),
+  Ori and MiniMax Code use their user-level `mcpServers` maps. Kimi Code CLI
+  here refers to the current `@moonshot-ai/kimi-code` client, not the older Python CLI.
+  [Kilo Code CLI](https://kilo.ai/docs/automate/mcp/using-in-cli) uses `mcp`
+  in its global Kilo settings. [OpenClaw](https://docs.openclaw.ai/cli/mcp)
+  uses `mcp.servers` for a local Gateway; split MCP configs using `$include`
+  should be managed in OpenClaw itself. DeepSeek Harness adds a single plugin
+  operation to its home `cordis.patch.yml`, without installing packages or
+  changing which profile runs. [Muse Code](https://meta-models.github.io/muse-code-sdk/next/guides/extend/mcp-servers/)
+  uses version 1 of its user settings and keeps the existing MCP key spelling.
+  [Freebuff](https://github.com/CodebuffAI/freebuff/blob/main/sdk/src/agents/load-mcp-config.ts)
+  uses the shared `~/.agents/mcp.json`; that file alone does not make Freebuff
+  appear installed.
   Grok, ChatGPT, Claude on the web and Gemini on the web use the public HTTPS link
   instead; the same pages show the official steps and a copy button.
 - Automatic setup refuses invalid native configuration, invalid MCP containers,

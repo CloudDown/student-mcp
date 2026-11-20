@@ -9,6 +9,8 @@ pub(super) enum Format {
     Jsonc,
     OpenCode,
     Toml,
+    Yaml,
+    Cordis,
 }
 
 pub(super) struct Assistant {
@@ -23,11 +25,13 @@ pub(super) struct Assistant {
 }
 
 impl Assistant {
-    pub fn servers_key(&self) -> &'static str {
+    pub fn servers_path(&self) -> &'static [&'static str] {
         match self.id {
-            "amp" => "amp.mcpServers",
-            "crush" => "mcp",
-            _ => "mcpServers",
+            "amp" => &["amp.mcpServers"],
+            "crush" | "kilo" => &["mcp"],
+            "opencode" | "openclaw" => &["mcp", "servers"],
+            "hermes" => &["mcp_servers"],
+            _ => &["mcpServers"],
         }
     }
 }
@@ -85,7 +89,7 @@ pub(super) const ASSISTANTS: &[Assistant] = &[
     },
     Assistant {
         id: "cursor",
-        name: "Cursor",
+        name: "Cursor / Cursor CLI",
         format: Format::Json,
         config: ".cursor/mcp.json",
         commands: &["cursor", "cursor-agent"],
@@ -95,7 +99,7 @@ pub(super) const ASSISTANTS: &[Assistant] = &[
     },
     Assistant {
         id: "grok-build",
-        name: "Grok Build",
+        name: "Grok Build (CLI)",
         format: Format::Toml,
         config: ".grok/config.toml",
         commands: &["grok"],
@@ -157,7 +161,7 @@ pub(super) const ASSISTANTS: &[Assistant] = &[
     },
     Assistant {
         id: "kiro",
-        name: "Kiro",
+        name: "Kiro / Kiro CLI",
         format: Format::Json,
         config: ".kiro/settings/mcp.json",
         commands: &["kiro-cli", "kiro"],
@@ -195,6 +199,116 @@ pub(super) const ASSISTANTS: &[Assistant] = &[
         app: "Devin",
         windows_app: "Devin/Devin.exe",
     },
+    Assistant {
+        id: "hermes",
+        name: "Hermes Agent / Desktop",
+        format: Format::Yaml,
+        config: ".hermes/config.yaml",
+        commands: &["hermes", "hermes-desktop"],
+        marker: "",
+        app: "Hermes",
+        windows_app: "",
+    },
+    Assistant {
+        id: "antigravity",
+        name: "Google Antigravity",
+        format: Format::Json,
+        config: ".gemini/config/mcp_config.json",
+        commands: &["agy", "antigravity"],
+        marker: ".gemini/antigravity-cli",
+        app: "Antigravity",
+        windows_app: "Google/Antigravity/Antigravity.exe",
+    },
+    Assistant {
+        id: "command-code",
+        name: "Command Code",
+        format: Format::Json,
+        config: ".commandcode/mcp.json",
+        commands: &["commandcode", "command-code", "cmdc", "cmd"],
+        marker: ".commandcode",
+        app: "",
+        windows_app: "",
+    },
+    Assistant {
+        id: "kilo",
+        name: "Kilo Code (CLI)",
+        format: Format::Jsonc,
+        config: "kilo/kilo.json",
+        commands: &["kilo"],
+        marker: "",
+        app: "",
+        windows_app: "",
+    },
+    Assistant {
+        id: "kimi",
+        name: "Kimi Code (CLI)",
+        format: Format::Json,
+        config: ".kimi-code/mcp.json",
+        commands: &["kimi"],
+        marker: ".kimi-code",
+        app: "",
+        windows_app: "",
+    },
+    Assistant {
+        id: "openclaw",
+        name: "OpenClaw",
+        format: Format::Jsonc,
+        config: ".openclaw/openclaw.json",
+        commands: &["openclaw"],
+        marker: "",
+        app: "",
+        windows_app: "",
+    },
+    Assistant {
+        id: "ori",
+        name: "Ori (OpenRouter)",
+        format: Format::Json,
+        config: ".ori/mcp.json",
+        commands: &["ori"],
+        marker: ".ori",
+        app: "Ori",
+        windows_app: "",
+    },
+    Assistant {
+        id: "minimax-code",
+        name: "MiniMax Code",
+        format: Format::Json,
+        config: ".minimax/mcp.json",
+        commands: &["mcode"],
+        marker: "",
+        app: "MiniMax Code",
+        windows_app: "",
+    },
+    Assistant {
+        id: "deepseek-harness",
+        name: "DeepSeek Harness",
+        format: Format::Cordis,
+        config: ".dsh/cordis.patch.yml",
+        commands: &["dsh"],
+        marker: "",
+        app: "",
+        windows_app: "",
+    },
+    Assistant {
+        id: "muse",
+        name: "Muse Code (Meta)",
+        format: Format::Json,
+        config: "muse/settings.json",
+        commands: &["muse"],
+        marker: "",
+        app: "",
+        windows_app: "",
+    },
+    Assistant {
+        id: "freebuff",
+        name: "Freebuff",
+        format: Format::Json,
+        config: ".agents/mcp.json",
+        commands: &["freebuff", "freebuff-desktop"],
+        marker: "",
+        app: "Freebuff",
+        windows_app: "",
+    },
 ];
 
 pub(super) fn find(id: &str) -> Result<&'static Assistant, String> {
@@ -212,7 +326,7 @@ pub(super) struct Computer {
     pub apps: Vec<PathBuf>,
     pub programs: Vec<PathBuf>,
     pub windows: bool,
-    pub overrides: Vec<(&'static str, PathBuf)>,
+    pub overrides: Vec<(&'static str, Result<PathBuf, String>)>,
     pub mise_installs: PathBuf,
 }
 
@@ -268,11 +382,48 @@ impl Computer {
         for (id, variable, file) in [
             ("codex", "CODEX_HOME", "config.toml"),
             ("vscode", "COPILOT_HOME", "mcp-config.json"),
+            ("kimi", "KIMI_CODE_HOME", "mcp.json"),
         ] {
             if let Some(directory) = absolute_env(variable) {
-                overrides.push((id, directory.join(file)));
+                overrides.push((id, Ok(directory.join(file))));
             }
         }
+        if let Some(path) = absolute_env("ORI_MCP_CONFIG") {
+            overrides.push(("ori", Ok(path)));
+        }
+        overrides.push(("minimax-code", minimax_config(&home)));
+        overrides.push((
+            "deepseek-harness",
+            user_path_env(&home, "DSH_HOME").map(|path| {
+                path.unwrap_or_else(|| home.join(".dsh"))
+                    .join("cordis.patch.yml")
+            }),
+        ));
+        overrides.push(("openclaw", openclaw_config(&home)));
+        let hermes_base = if cfg!(windows) {
+            absolute_env("LOCALAPPDATA").unwrap_or_else(|| home.join("AppData/Local"))
+        } else {
+            home.clone()
+        };
+        let suffix = std::env::var("HERMES_DATA_DIR_SUFFIX").unwrap_or_default();
+        let hermes_dir = format!(
+            "{}{suffix}",
+            if cfg!(windows) { "hermes" } else { ".hermes" }
+        );
+        let hermes_path = if hermes_dir.contains(['/', '\\']) {
+            Err("The Hermes data directory suffix is invalid.".into())
+        } else {
+            let native = hermes_base.join(hermes_dir);
+            let explicit = std::env::var_os("HERMES_HOME")
+                .filter(|path| !path.is_empty())
+                .map(PathBuf::from)
+                .map(|path| match path.strip_prefix("~") {
+                    Ok(relative) => home.join(relative),
+                    Err(_) => path,
+                });
+            hermes_config(&native, explicit.as_deref())
+        };
+        overrides.push(("hermes", hermes_path));
         let omp_root = absolute_env("PI_CONFIG_DIR").unwrap_or_else(|| home.join(".omp"));
         let profile = std::env::var("OMP_PROFILE")
             .or_else(|_| std::env::var("PI_PROFILE"))
@@ -291,9 +442,9 @@ impl Computer {
         } else {
             absolute_env("PI_CODING_AGENT_DIR").unwrap_or_else(|| omp_root.join("agent"))
         };
-        overrides.push(("omp", omp_agent.join("mcp.json")));
+        overrides.push(("omp", Ok(omp_agent.join("mcp.json"))));
         if let Some(agent_dir) = absolute_env("PI_CODING_AGENT_DIR") {
-            overrides.push(("pi", agent_dir.join("mcp.json")));
+            overrides.push(("pi", Ok(agent_dir.join("mcp.json"))));
         }
         let data = absolute_env("XDG_DATA_HOME").unwrap_or_else(|| home.join(".local/share"));
         let mise_installs = absolute_env("MISE_DATA_DIR")
@@ -313,13 +464,27 @@ impl Computer {
     }
 
     pub fn path(&self, assistant: &Assistant) -> PathBuf {
-        if let Some((_, path)) = self.overrides.iter().find(|(id, _)| *id == assistant.id) {
-            return path.clone();
-        }
         match assistant.id {
             "claude" => self.support.join(assistant.config),
             "devin" if self.windows => self.support.join(assistant.config),
-            "crush" | "devin" => self.config.join(assistant.config),
+            "crush" | "devin" | "muse" => self.config.join(assistant.config),
+            "kilo" => {
+                let json = self.config.join(assistant.config);
+                let folder = json.parent().unwrap();
+                // Kilo loads multiple global layers; edit the highest existing
+                // one so an older definition cannot shadow this change.
+                [
+                    "opencode.jsonc",
+                    "opencode.json",
+                    "kilo.jsonc",
+                    "kilo.json",
+                    "config.json",
+                ]
+                .iter()
+                .map(|name| folder.join(name))
+                .find(|path| path.symlink_metadata().is_ok())
+                .unwrap_or(json)
+            }
             "amp" | "opencode" => {
                 let json = self.config.join(assistant.config);
                 let jsonc = json.with_extension("jsonc");
@@ -337,8 +502,31 @@ impl Computer {
         }
     }
 
+    pub fn config_path(&self, assistant: &Assistant) -> Result<PathBuf, String> {
+        self.overrides
+            .iter()
+            .find(|(id, _)| *id == assistant.id)
+            .map_or_else(|| Ok(self.path(assistant)), |(_, path)| path.clone())
+    }
+
     pub fn detected(&self, assistant: &Assistant, path: &Path) -> bool {
-        path.exists()
+        // ~/.agents/mcp.json is shared, not evidence that Freebuff is installed.
+        (assistant.id != "freebuff" && path.exists())
+            || match assistant.id {
+                "hermes" => path.parent().is_some_and(|home| {
+                    let profile_dir = home.parent().filter(|dir| dir.ends_with("profiles"));
+                    let root = profile_dir.and_then(Path::parent).unwrap_or(home);
+                    root.join("hermes-agent/pyproject.toml").is_file()
+                }),
+                "openclaw" => {
+                    is_executable(&self.home.join(".openclaw/bin/openclaw"), self.windows)
+                }
+                "antigravity" => self.home.join(".gemini/antigravity").is_dir(),
+                "minimax-code" => path
+                    .parent()
+                    .is_some_and(|directory| directory.join("config.yaml").is_file()),
+                _ => false,
+            }
             || (matches!(
                 assistant.id,
                 "claude" | "vscode" | "amp" | "crush" | "devin"
@@ -355,6 +543,11 @@ impl Computer {
                     .iter()
                     .any(|root| root.join(assistant.windows_app).is_file()))
             || assistant.commands.iter().any(|name| {
+                // Windows itself ships cmd.exe; the npm package also provides
+                // three unambiguous command names on every platform.
+                if self.windows && *name == "cmd" {
+                    return false;
+                }
                 self.bins.iter().any(|directory| {
                     if directory == &self.mise_installs.with_file_name("shims") {
                         return false;
@@ -377,6 +570,14 @@ impl Computer {
             "omp" => "oh-my-pi",
             "kiro" => "http-kiro-cli",
             "devin" => "http-devin",
+            "antigravity" => "antigravity-cli",
+            "command-code" => "npm-command-code",
+            "kilo" => "npm-kilocode-cli",
+            "kimi" => "npm-moonshot-ai-kimi-code",
+            "minimax-code" => "npm-minimax-ai-code",
+            "deepseek-harness" => "npm-deepseek-ai-dsh",
+            "muse" => "http-muse",
+            "freebuff" => "npm-freebuff",
             _ => assistant.id,
         };
         assistant
@@ -390,20 +591,142 @@ impl Computer {
                 };
                 versions.take(32).flatten().any(|version| {
                     assistant.commands.iter().any(|command| {
-                        [version.path(), version.path().join("bin")]
-                            .iter()
-                            .any(|dir| {
-                                let candidate = dir.join(command);
-                                is_executable(&candidate, self.windows)
-                                    || (self.windows
-                                        && ["exe", "cmd", "bat"].iter().any(|ext| {
-                                            is_executable(&candidate.with_extension(ext), true)
-                                        }))
-                            })
+                        [
+                            version.path(),
+                            version.path().join("bin"),
+                            version.path().join("node_modules/.bin"),
+                        ]
+                        .iter()
+                        .any(|dir| {
+                            let candidate = dir.join(command);
+                            is_executable(&candidate, self.windows)
+                                || (self.windows
+                                    && ["exe", "cmd", "bat"].iter().any(|ext| {
+                                        is_executable(&candidate.with_extension(ext), true)
+                                    }))
+                        })
                     })
                 })
             })
     }
+}
+
+fn simple_profile(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+}
+
+fn minimax_config(home: &Path) -> Result<PathBuf, String> {
+    for name in ["MINIMAX_DATA_DIR", "MAVIS_DATA_DIR"] {
+        if let Some(value) = std::env::var_os(name).filter(|value| !value.is_empty()) {
+            let path = PathBuf::from(value);
+            if !path.is_absolute() {
+                return Err(format!(
+                    "Use an absolute {name} before setting up MiniMax Code."
+                ));
+            }
+            return Ok(path.join("mcp.json"));
+        }
+    }
+    let profile = std::env::var("MAVIS_PROFILE").unwrap_or_default();
+    let directory = match profile.trim() {
+        "" | "default" => ".minimax".into(),
+        name if simple_profile(name) => format!(".minimax-{name}"),
+        _ => return Err("The MiniMax Code profile name is invalid.".into()),
+    };
+    Ok(home.join(directory).join("mcp.json"))
+}
+
+fn openclaw_config(home: &Path) -> Result<PathBuf, String> {
+    if let Some(path) = user_path_env(home, "OPENCLAW_CONFIG_PATH")? {
+        return Ok(path);
+    }
+    if let Some(state) = user_path_env(home, "OPENCLAW_STATE_DIR")? {
+        return Ok(state.join("openclaw.json"));
+    }
+    let profile = std::env::var("OPENCLAW_PROFILE").unwrap_or_default();
+    let folder = match profile.trim() {
+        "" | "default" => ".openclaw".into(),
+        name if simple_profile(name) => format!(".openclaw-{name}"),
+        _ => return Err("The OpenClaw profile name is invalid.".into()),
+    };
+    let root = user_path_env(home, "OPENCLAW_HOME")?.unwrap_or_else(|| home.to_path_buf());
+    Ok(root.join(folder).join("openclaw.json"))
+}
+
+fn user_path_env(home: &Path, name: &str) -> Result<Option<PathBuf>, String> {
+    let Some(value) = std::env::var_os(name).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let path = PathBuf::from(value);
+    let path = match path.strip_prefix("~") {
+        Ok(relative) => home.join(relative),
+        Err(_) => path,
+    };
+    if path.is_absolute()
+        && !path
+            .components()
+            .any(|c| c == std::path::Component::ParentDir)
+    {
+        Ok(Some(path))
+    } else {
+        Err(format!(
+            "Use an absolute {name} before setting up this assistant."
+        ))
+    }
+}
+
+fn hermes_config(native: &Path, explicit: Option<&Path>) -> Result<PathBuf, String> {
+    let home = explicit.unwrap_or(native);
+    if !home.is_absolute()
+        || home
+            .components()
+            .any(|c| c == std::path::Component::ParentDir)
+    {
+        return Err("Use an absolute HERMES_HOME before setting up Hermes.".into());
+    }
+    if home
+        .parent()
+        .and_then(Path::file_name)
+        .is_some_and(|name| name == "profiles")
+    {
+        return Ok(home.join("config.yaml"));
+    }
+    let root = if home.starts_with(native) {
+        native
+    } else {
+        home
+    };
+    let active = root.join("active_profile");
+    let file = match std::fs::symlink_metadata(&active) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(home.join("config.yaml"))
+        }
+        Ok(meta) if meta.is_file() && meta.len() <= 256 => std::fs::File::open(active).ok(),
+        _ => None,
+    };
+    let mut name = String::new();
+    if file
+        .and_then(|file| file.take(257).read_to_string(&mut name).ok())
+        .is_none()
+        || name.len() > 256
+    {
+        return Err("The active Hermes profile could not be read.".into());
+    }
+    let name = name
+        .trim_start_matches('\u{feff}')
+        .trim()
+        .to_ascii_lowercase();
+    if name.is_empty() || name == "default" {
+        return Ok(home.join("config.yaml"));
+    }
+    let profile = home.join("profiles").join(&name);
+    if !simple_profile(&name) || !profile.is_dir() {
+        return Err("The active Hermes profile is invalid or missing. Switch profiles in Hermes and scan again.".into());
+    }
+    Ok(profile.join("config.yaml"))
 }
 
 fn absolute_env(name: &str) -> Option<PathBuf> {
@@ -546,6 +869,17 @@ mod tests {
             ("kiro", ".kiro/settings/mcp.json"),
             ("crush", "crush/crush.json"),
             ("devin", "devin/mcp_config.json"),
+            ("hermes", ".hermes/config.yaml"),
+            ("antigravity", ".gemini/config/mcp_config.json"),
+            ("command-code", ".commandcode/mcp.json"),
+            ("kilo", "kilo/kilo.json"),
+            ("kimi", ".kimi-code/mcp.json"),
+            ("openclaw", ".openclaw/openclaw.json"),
+            ("ori", ".ori/mcp.json"),
+            ("minimax-code", ".minimax/mcp.json"),
+            ("deepseek-harness", ".dsh/cordis.patch.yml"),
+            ("muse", "muse/settings.json"),
+            ("freebuff", ".agents/mcp.json"),
         ] {
             assert_eq!(
                 computer.path(find(id).unwrap()),
@@ -553,6 +887,55 @@ mod tests {
                 "{id}"
             );
         }
+        std::fs::create_dir_all(root.join(".agents")).unwrap();
+        let freebuff = find("freebuff").unwrap();
+        std::fs::write(computer.path(freebuff), "{}").unwrap();
+        assert!(!computer.detected(freebuff, &computer.path(freebuff)));
+        std::fs::create_dir_all(root.join("kilo")).unwrap();
+        for (name, expected) in [
+            ("config.json", "config.json"),
+            ("kilo.jsonc", "kilo.jsonc"),
+            ("kilo.json", "kilo.jsonc"),
+            ("opencode.json", "opencode.json"),
+        ] {
+            std::fs::write(root.join("kilo").join(name), "{}").unwrap();
+            assert_eq!(
+                computer.path(find("kilo").unwrap()),
+                root.join("kilo").join(expected)
+            );
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn hermes_targets_the_active_or_explicit_profile_without_a_fallback_write() {
+        let root = std::env::temp_dir().join(format!(
+            "student-mcp-hermes-profiles-{}",
+            crate::config::random_hex(8)
+        ));
+        let default_home = root.join(".hermes");
+        let work = default_home.join("profiles/work");
+        let study = default_home.join("profiles/study");
+        std::fs::create_dir_all(&work).unwrap();
+        std::fs::create_dir_all(&study).unwrap();
+        assert_eq!(
+            hermes_config(&default_home, None).unwrap(),
+            default_home.join("config.yaml")
+        );
+        std::fs::write(default_home.join("active_profile"), "\u{feff}Study\n").unwrap();
+        assert_eq!(
+            hermes_config(&default_home, None).unwrap(),
+            study.join("config.yaml")
+        );
+        assert_eq!(
+            hermes_config(&default_home, Some(&work)).unwrap(),
+            work.join("config.yaml")
+        );
+        std::fs::write(default_home.join("active_profile"), "../../outside\n").unwrap();
+        assert!(hermes_config(&default_home, None).is_err());
+        std::fs::write(default_home.join("active_profile"), "missing\n").unwrap();
+        assert!(hermes_config(&default_home, None).is_err());
+        assert!(!default_home.join("config.yaml").exists());
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -592,6 +975,14 @@ mod tests {
         std::fs::write(&installed, "#!/bin/sh\nexit 77\n").unwrap();
         std::fs::set_permissions(&installed, std::fs::Permissions::from_mode(0o700)).unwrap();
         assert!(computer.detected(pi, &computer.path(pi)));
+        let kilo = find("kilo").unwrap();
+        let npm_bin = computer
+            .mise_installs
+            .join("npm-kilocode-cli/1.0.0/node_modules/.bin/kilo");
+        std::fs::create_dir_all(npm_bin.parent().unwrap()).unwrap();
+        std::fs::write(&npm_bin, "#!/bin/sh\nexit 77\n").unwrap();
+        std::fs::set_permissions(&npm_bin, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(computer.detected(kilo, &computer.path(kilo)));
         assert_eq!(std::fs::read_to_string(launcher).unwrap(), source);
         assert!(!root.join(".pi").exists() && !root.join("config").exists());
         std::fs::remove_dir_all(root).unwrap();

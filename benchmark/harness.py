@@ -48,11 +48,32 @@ def est_tokens(text: str) -> int:
     return len(text) // 4
 
 
-def load_account(path: Path, service: str = "moodle") -> dict[str, Any] | None:
+def load_account(path: Path, service: str = "moodle", *, account_id: str | None = None) -> dict[str, Any] | None:
     """First connected account for one service, credentials only."""
     try:
         data = json.loads(path.read_text())
     except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    if service in ("brightspace", "omnivox"):
+        account_id = account_id or os.environ.get("STUDENT_MCP_BENCH_ACCOUNT_ID")
+        if service in (data.get("disabled_services") or []):
+            return None
+        accounts = [{"id": service, "service": service, service: data.get(service)}, *(data.get("accounts") or [])]
+        for account in accounts:
+            if not isinstance(account, dict):
+                continue
+            ident = account.get("id")
+            settings = account.get(service) or {}
+            if (
+                account.get("service") == service and isinstance(ident, str)
+                and (account_id is None or ident == account_id)
+                and f"{service}/{ident}" not in (data.get("disabled_accounts") or [])
+                and isinstance(settings, dict)
+                and all(isinstance(settings.get(key), str) and settings[key].strip() for key in ("url", "token"))
+            ):
+                return {"id": ident, "url": settings["url"], "token": settings["token"], "config": path.resolve()}
         return None
     for account in data.get("accounts") or []:
         settings = account.get(service) or {}
@@ -63,9 +84,10 @@ def load_account(path: Path, service: str = "moodle") -> dict[str, Any] | None:
 
 def default_config() -> Path:
     """XDG location first, then the pre-XDG file, so the audit works either way."""
-    override = os.environ.get("STUDENT_MCP_CONFIG_FILE")
-    if override and Path(override).is_file():
-        return Path(override)
+    for key in ("STUDENT_MCP_CONFIG_FILE", "MOODLE_CONFIG_FILE"):
+        override = os.environ.get(key)
+        if override and Path(override).is_file():
+            return Path(override)
     candidates = []
     xdg = os.environ.get("XDG_CONFIG_HOME")
     if xdg:
@@ -136,15 +158,19 @@ class MCP:
                 tools = message["result"]["tools"]
             elif isinstance(ident, int) and 100 <= ident < 100 + len(calls):
                 result = message.get("result") or {}
-                text = "".join(
-                    part.get("text", "")
-                    for part in result.get("content") or []
-                    if isinstance(part, dict)
-                )
+                parts = [p for p in result.get("content") or [] if isinstance(p, dict)]
+                text_parts = [part.get("text", "") for part in parts if isinstance(part.get("text"), str)]
                 results[ident - 100] = {
                     "name": calls[ident - 100][0],
-                    "text": text,
-                    "types": [p.get("type") for p in result.get("content") or [] if isinstance(p, dict)],
+                    "text": "".join(text_parts),
+                    "first_text": text_parts[0] if text_parts else "",
+                    "structured": result.get("structuredContent"),
+                    "types": [p.get("type") for p in parts],
+                    "image_count": sum(
+                        p.get("type") == "image" and isinstance(p.get("data"), str) and bool(p["data"])
+                        for p in parts
+                    ),
+                    "wire_bytes": len(line.encode("utf-8")),
                     "is_error": bool(result.get("isError")),
                     "error": (message.get("error") or {}).get("message"),
                     "missing": False,

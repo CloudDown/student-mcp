@@ -76,6 +76,19 @@ try{
     assert.equal(await page.locator('.guide-shot source').getAttribute('src'),'/assets/guide-chatgpt-menu.mp4');
    assert.equal(requests.filter(path=>path.startsWith('/assistant/')).length,0,'ChatGPT must not detect or configure a local assistant');
   for(const width of [1440,768,390,320]){await page.setViewportSize({width,height:1000});await noOverflow();for(const button of await page.locator('.assistant-switcher button').all()){const box=await button.boundingBox();assert.ok(box.width>=44&&box.height>=44)}await snapshot('general-default-'+width)}
+ // A finished recording advances to the next part and wraps from the third back to the first.
+ await page.evaluate(()=>{assistantJourney.step=0;render()});
+ await page.locator('video[data-guide-video="guide-chatgpt-menu"]').waitFor();
+ await page.locator('video[data-guide-video]').dispatchEvent('ended');
+ await page.locator('.guide-capture.is-leaving').waitFor();
+ assert.ok(await page.locator('.guide-capture').evaluate(el=>parseFloat(getComputedStyle(el).transitionDuration)>0),'Guide changes fade instead of cutting');
+ await page.locator('video[data-guide-video="guide-chatgpt-form"]').waitFor();
+ assert.match(await page.locator('.video-steps').innerText(),/2 \/ 3/);
+ await page.evaluate(()=>{assistantJourney.step=2;render()});
+ await page.locator('video[data-guide-video="guide-chatgpt-chat"]').waitFor();
+ await page.locator('video[data-guide-video]').dispatchEvent('ended');
+ await page.locator('video[data-guide-video="guide-chatgpt-menu"]').waitFor();
+ assert.match(await page.locator('.video-steps').innerText(),/1 \/ 3/);
  await page.getByRole('button',{name:'Retour aux services',exact:true}).click();
  await page.setViewportSize({width:1440,height:1000});
   for(const [id,title] of [['claude','Configurer Claude'],['chatgpt','Configurer ChatGPT'],['gemini','Configurer Gemini'],['grok','Configurer Grok']]){
@@ -124,7 +137,7 @@ try{
       const video=page.locator('.guide-shot').first();
       assert.ok((await video.boundingBox()).width>150);
       assert.ok(await video.evaluate(v=>v.videoWidth===1920&&v.videoHeight===1080),'Recorded guide videos are 1920×1080');
-      assert.ok(await video.evaluate(v=>v.autoplay&&v.muted&&v.loop&&v.playsInline));
+      assert.ok(await video.evaluate(v=>v.autoplay&&v.muted&&!v.loop&&v.playsInline));
       await page.waitForFunction(()=>{const v=document.querySelector('.guide-shot');return v&&v.readyState>=2&&!v.paused});
      }else{
       await page.waitForFunction(()=>[...document.querySelectorAll('.guide-shot')].every(img=>img.complete&&img.naturalWidth>0));

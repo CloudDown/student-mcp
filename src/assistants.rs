@@ -8,6 +8,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 mod discovery;
+mod yaml;
 use discovery::{find, Assistant, Computer, Format, ASSISTANTS};
 
 const MAX_CONFIG_BYTES: u64 = 8 * 1024 * 1024;
@@ -56,6 +57,12 @@ fn configured(path: &Path, executable: &Path, assistant: &Assistant) -> bool {
     let Ok(text) = read_config(path) else {
         return false;
     };
+    if assistant.format == Format::Yaml {
+        return yaml::configured(&text, executable);
+    }
+    if assistant.format == Format::Cordis {
+        return yaml::cordis_configured(&text, executable);
+    }
     if assistant.format == Format::Toml {
         let Ok(value) = text.parse::<toml_edit::DocumentMut>() else {
             return false;
@@ -72,42 +79,46 @@ fn configured(path: &Path, executable: &Path, assistant: &Assistant) -> bool {
     let Ok(value) = parse_json(&text, assistant.format) else {
         return false;
     };
-    let server = if assistant.format == Format::OpenCode {
-        &value["mcp"]["servers"]["student-mcp"]
-    } else {
-        &value[assistant.servers_key()]["student-mcp"]
+    let Ok(keys) = json_servers_path(&value, assistant) else {
+        return false;
     };
-    let expected = if assistant.format == Format::OpenCode {
-        json!({"type":"local","command":[executable]})
+    let servers = keys.iter().fold(&value, |node, key| &node[*key]);
+    let server = &servers["student-mcp"];
+    let list_command = assistant.format == Format::OpenCode || assistant.id == "kilo";
+    let command_matches = if list_command {
+        server["type"] == "local" && server["command"] == json!([executable])
     } else {
-        json!({"type":"stdio","command":executable,"args":[]})
+        server["command"] == json!(executable)
+            && server.get("type").is_none_or(|kind| kind == "stdio")
+            && server.get("transport").is_none_or(|kind| kind == "stdio")
+            && server
+                .get("args")
+                .is_none_or(|args| args.as_array().is_some_and(Vec::is_empty))
+            && (assistant.id != "kimi"
+                || server
+                    .get("environment_id")
+                    .is_none_or(|environment| environment == "local"))
     };
-    let command_matches = server["command"] == expected["command"];
     command_matches
         && server["disabled"] != true
         && server["enabled"] != false
-        && (if assistant.format == Format::OpenCode {
-            server["type"] == "local"
-        } else {
-            server.get("type").is_none_or(|kind| kind == "stdio")
-                && server
-                    .get("args")
-                    .is_none_or(|args| args.as_array().is_some_and(Vec::is_empty))
-        })
         && !value["disabledServers"]
             .as_array()
             .is_some_and(|items| items.contains(&json!("student-mcp")))
 }
 
 fn local_status(computer: &Computer, executable: &Path, assistant: &Assistant) -> Value {
-    let path = computer.path(assistant);
-    let detected = computer.detected(assistant, &path);
+    let path = computer.config_path(assistant);
+    let detected = path.as_ref().map_or_else(
+        |_| computer.detected(assistant, &computer.path(assistant)),
+        |path| computer.detected(assistant, path),
+    );
     json!({
         "assistant":assistant.id,
         "name":assistant.name,
         "local":true,
         "detected":detected,
-        "configured":configured(&path, executable, assistant),
+        "configured":path.is_ok_and(|path| configured(&path, executable, assistant)),
         "reload":match assistant.id { "opencode" => "automatic", "omp" => "mcp", _ => "restart" },
     })
 }
@@ -154,6 +165,7 @@ fn merge_json(text: &str, executable: &Path, assistant: &Assistant) -> Result<St
     let command = executable
         .to_str()
         .ok_or("The student-mcp path is not valid UTF-8.")?;
+    let keys = json_servers_path(&root, assistant)?;
     if matches!(assistant.format, Format::OpenCode | Format::Jsonc) {
         // Keep comments, trailing commas and unrelated formatting in JSONC.
         use jsonc_parser::cst::{CstInputValue as Input, CstRootNode};
@@ -162,15 +174,13 @@ fn merge_json(text: &str, executable: &Path, assistant: &Assistant) -> Result<St
         let object = tree
             .object_value()
             .ok_or("Invalid JSONC object; the configuration was left unchanged.")?;
-        let servers = if assistant.format == Format::OpenCode {
-            object
-                .object_value_or_create("mcp")
-                .and_then(|mcp| mcp.object_value_or_create("servers"))
-        } else {
-            object.object_value_or_create(assistant.servers_key())
+        let mut servers = object.clone();
+        for key in keys {
+            servers = servers
+                .object_value_or_create(key)
+                .ok_or("Invalid MCP settings; the configuration was left unchanged.")?;
         }
-        .ok_or("Invalid MCP settings; the configuration was left unchanged.")?;
-        let value = if assistant.format == Format::OpenCode {
+        let value = if assistant.format == Format::OpenCode || assistant.id == "kilo" {
             Input::Object(vec![
                 ("type".into(), "local".into()),
                 ("command".into(), Input::Array(vec![command.into()])),
@@ -191,10 +201,16 @@ fn merge_json(text: &str, executable: &Path, assistant: &Assistant) -> Result<St
         }
         return Ok(tree.to_string());
     }
-    let servers = object_entry(&mut root, assistant.servers_key())?;
+    let servers = object_entry(&mut root, keys[0])?;
     servers["student-mcp"] = json!({"command":command,"args":[]});
-    if matches!(assistant.id, "cursor" | "omp" | "claude-code" | "crush") {
+    if matches!(
+        assistant.id,
+        "cursor" | "omp" | "claude-code" | "crush" | "ori" | "minimax-code" | "muse" | "freebuff"
+    ) {
         servers["student-mcp"]["type"] = json!("stdio");
+    }
+    if assistant.id == "command-code" {
+        servers["student-mcp"]["transport"] = json!("stdio");
     }
     // OMP's explicit denylist wins over the server's enabled field.
     if assistant.id == "omp" {
@@ -208,6 +224,39 @@ fn merge_json(text: &str, executable: &Path, assistant: &Assistant) -> Result<St
     serde_json::to_string_pretty(&root)
         .map(|text| text + "\n")
         .map_err(|error| error.to_string())
+}
+
+fn has_openclaw_include(value: &Value) -> bool {
+    value.get("$include").is_some()
+        || value["mcp"].get("$include").is_some()
+        || value["mcp"]["servers"].get("$include").is_some()
+}
+
+fn json_servers_path(
+    value: &Value,
+    assistant: &Assistant,
+) -> Result<&'static [&'static str], String> {
+    if assistant.id == "openclaw" && has_openclaw_include(value) {
+        return Err("This OpenClaw configuration uses $include for MCP. Use OpenClaw's MCP settings; the configuration was left unchanged.".into());
+    }
+    if assistant.id == "muse" {
+        if value["schema_version"] != 1 {
+            return Err(
+                "Muse Code requires schema_version: 1; the configuration was left unchanged."
+                    .into(),
+            );
+        }
+        if value.get("mcp_servers").is_some() {
+            if value.get("mcpServers").is_some() {
+                return Err(
+                    "Muse Code has two MCP settings keys; the configuration was left unchanged."
+                        .into(),
+                );
+            }
+            return Ok(&["mcp_servers"]);
+        }
+    }
+    Ok(assistant.servers_path())
 }
 
 fn object_entry<'a>(root: &'a mut Value, key: &str) -> Result<&'a mut Value, String> {
@@ -256,21 +305,23 @@ fn merge_toml(text: &str, executable: &Path) -> Result<String, String> {
 fn remove_json(text: &str, assistant: &Assistant) -> Result<Option<String>, String> {
     if matches!(assistant.format, Format::OpenCode | Format::Jsonc) {
         use jsonc_parser::cst::CstRootNode;
+        let keys = if assistant.id == "openclaw" {
+            json_servers_path(&parse_json(text, assistant.format)?, assistant)?
+        } else {
+            assistant.servers_path()
+        };
         let tree = CstRootNode::parse(text, &Default::default())
             .map_err(|_| "Invalid JSONC; the configuration was left unchanged.")?;
         let object = tree
             .object_value()
             .ok_or("Invalid JSONC object; the configuration was left unchanged.")?;
-        let servers = if assistant.format == Format::OpenCode {
-            object
-                .object_value("mcp")
-                .and_then(|mcp| mcp.object_value("servers"))
-        } else {
-            object.object_value(assistant.servers_key())
-        };
-        let Some(servers) = servers else {
-            return Ok(None);
-        };
+        let mut servers = object;
+        for key in keys {
+            let Some(next) = servers.object_value(key) else {
+                return Ok(None);
+            };
+            servers = next;
+        }
         let Some(property) = servers.get("student-mcp") else {
             return Ok(None);
         };
@@ -278,10 +329,8 @@ fn remove_json(text: &str, assistant: &Assistant) -> Result<Option<String>, Stri
         return Ok(Some(tree.to_string()));
     }
     let mut root = parse_json(text, assistant.format)?;
-    let Some(servers) = root
-        .get_mut(assistant.servers_key())
-        .and_then(Value::as_object_mut)
-    else {
+    let keys = json_servers_path(&root, assistant)?;
+    let Some(servers) = root.get_mut(keys[0]).and_then(Value::as_object_mut) else {
         return Ok(None);
     };
     if servers.remove("student-mcp").is_none() {
@@ -339,10 +388,11 @@ fn remove_config(path: &Path, assistant: &Assistant) -> Result<(), String> {
     fs2::FileExt::lock_exclusive(&lock).map_err(|error| error.to_string())?;
 
     let text = read_config(path)?;
-    let next = if assistant.format == Format::Toml {
-        remove_toml(&text)?
-    } else {
-        remove_json(&text, assistant)?
+    let next = match assistant.format {
+        Format::Toml => remove_toml(&text)?,
+        Format::Yaml => yaml::edit(&text, None)?,
+        Format::Cordis => yaml::edit_cordis(&text, None)?,
+        _ => remove_json(&text, assistant)?,
     };
     let Some(text) = next else {
         return Ok(());
@@ -360,7 +410,7 @@ fn remove_config(path: &Path, assistant: &Assistant) -> Result<(), String> {
 pub fn deconfigure(assistant: &str) -> Result<Value, String> {
     let assistant = find(assistant)?;
     let computer = Computer::current()?;
-    let path = computer.path(assistant);
+    let path = computer.config_path(assistant)?;
     remove_config(&path, assistant)?;
     let executable = executable()?;
     Ok(local_status(&computer, &executable, assistant))
@@ -392,10 +442,11 @@ fn merge_config(path: &Path, executable: &Path, assistant: &Assistant) -> Result
             (read_config(path)?, Some(metadata.permissions()), true)
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => (
-            (if assistant.format == Format::Toml {
-                ""
-            } else {
-                "{}"
+            (match (assistant.format, assistant.id) {
+                (Format::Toml, _) => "",
+                (Format::Cordis, _) => "[]",
+                (_, "muse") => r#"{"schema_version":1}"#,
+                _ => "{}",
             })
             .into(),
             None,
@@ -403,10 +454,11 @@ fn merge_config(path: &Path, executable: &Path, assistant: &Assistant) -> Result
         ),
         Err(error) => return Err(error.to_string()),
     };
-    let text = if assistant.format == Format::Toml {
-        merge_toml(&text, executable)?
-    } else {
-        merge_json(&text, executable, assistant)?
+    let text = match assistant.format {
+        Format::Toml => merge_toml(&text, executable)?,
+        Format::Yaml => yaml::edit(&text, Some(executable))?.unwrap_or(text),
+        Format::Cordis => yaml::edit_cordis(&text, Some(executable))?.unwrap_or(text),
+        _ => merge_json(&text, executable, assistant)?,
     };
 
     if existed {
@@ -420,7 +472,7 @@ fn merge_config(path: &Path, executable: &Path, assistant: &Assistant) -> Result
 pub fn configure(assistant: &str) -> Result<Value, String> {
     let assistant = find(assistant)?;
     let computer = Computer::current()?;
-    let path = computer.path(assistant);
+    let path = computer.config_path(assistant)?;
     if !computer.detected(assistant, &path) {
         return Err("Open the local assistant once before setting it up.".into());
     }
@@ -633,8 +685,8 @@ mod tests {
         for id in ["pi", "qwen", "kiro", "amp", "crush", "devin"] {
             let assistant = find(id).unwrap();
             let mut original = json!({"permissions":{"ask":true},"theme":"custom"});
-            original[assistant.servers_key()] =
-                json!({"other":{"command":"other","env":{"KEY":"unchanged"}}});
+            let key = assistant.servers_path()[0];
+            original[key] = json!({"other":{"command":"other","env":{"KEY":"unchanged"}}});
             let original = serde_json::to_string(&original).unwrap();
             let text = if assistant.format == Format::Jsonc {
                 format!("// Keep this comment\n{original}")
@@ -645,12 +697,8 @@ mod tests {
             let value = parse_json(&updated, assistant.format).unwrap();
             assert_eq!(value["theme"], "custom", "{id}");
             assert_eq!(value["permissions"]["ask"], true, "{id}");
-            assert_eq!(
-                value[assistant.servers_key()]["other"]["env"]["KEY"],
-                "unchanged",
-                "{id}"
-            );
-            let server = &value[assistant.servers_key()]["student-mcp"];
+            assert_eq!(value[key]["other"]["env"]["KEY"], "unchanged", "{id}");
+            let server = &value[key]["student-mcp"];
             assert_eq!(server["command"], executable.to_str().unwrap(), "{id}");
             assert_eq!(server["args"], json!([]), "{id}");
             assert!(
@@ -666,6 +714,106 @@ mod tests {
                     "Never write another client's wrapper key"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn additional_omarchy_json_clients_get_their_documented_stdio_shape() {
+        let executable = Path::new("/opt/Student MCP/student-mcp");
+        for (id, key, expected) in [
+            (
+                "antigravity",
+                "/mcpServers",
+                json!({"command":executable,"args":[]}),
+            ),
+            (
+                "command-code",
+                "/mcpServers",
+                json!({"transport":"stdio","command":executable,"args":[]}),
+            ),
+            (
+                "kilo",
+                "/mcp",
+                json!({"type":"local","command":[executable]}),
+            ),
+            (
+                "kimi",
+                "/mcpServers",
+                json!({"command":executable,"args":[]}),
+            ),
+            (
+                "openclaw",
+                "/mcp/servers",
+                json!({"command":executable,"args":[]}),
+            ),
+            (
+                "ori",
+                "/mcpServers",
+                json!({"type":"stdio","command":executable,"args":[]}),
+            ),
+            (
+                "minimax-code",
+                "/mcpServers",
+                json!({"type":"stdio","command":executable,"args":[]}),
+            ),
+            (
+                "freebuff",
+                "/mcpServers",
+                json!({"type":"stdio","command":executable,"args":[]}),
+            ),
+        ] {
+            let assistant = find(id).unwrap();
+            let original = if id == "openclaw" {
+                "{// Other settings survive\n mcp: {servers: { other: {command: 'other'}, }, },}"
+            } else if id == "kilo" {
+                "{// Other settings survive\n \"mcp\": {\"other\": {\"type\":\"local\",\"command\":[\"other\"]},},}"
+            } else {
+                r#"{"mcpServers":{"other":{"command":"other"}}}"#
+            };
+            let updated = merge_json(original, executable, assistant).unwrap();
+            let value = parse_json(&updated, assistant.format).unwrap();
+            assert_eq!(value.pointer(key).unwrap()["student-mcp"], expected, "{id}");
+            if assistant.format == Format::Jsonc {
+                assert!(updated.contains("// Other settings survive"), "{id}");
+                assert!(value.get("$schema").is_none());
+            }
+            let removed = remove_json(&updated, assistant).unwrap().unwrap();
+            assert_eq!(
+                parse_json(&removed, assistant.format).unwrap(),
+                parse_json(original, assistant.format).unwrap(),
+                "{id}"
+            );
+        }
+        let included = "{mcp: {$include: './my-mcp.json'}}";
+        let openclaw = find("openclaw").unwrap();
+        assert!(merge_json(included, executable, openclaw).is_err());
+        assert!(remove_json(included, openclaw).is_err());
+    }
+
+    #[test]
+    fn muse_keeps_the_existing_mcp_key_and_requires_a_valid_settings_version() {
+        let muse = find("muse").unwrap();
+        let executable = Path::new("/bin/student-mcp");
+        let original = r#"{"schema_version":1,"mcp_servers":{"other":{"command":"other"}}}"#;
+        let updated = merge_json(original, executable, muse).unwrap();
+        let value = parse_json(&updated, muse.format).unwrap();
+        assert_eq!(
+            value["mcp_servers"]["student-mcp"],
+            json!({"type":"stdio","command":executable,"args":[]})
+        );
+        assert!(value.get("mcpServers").is_none());
+        let removed = remove_json(&updated, muse).unwrap().unwrap();
+        assert_eq!(
+            parse_json(&removed, muse.format).unwrap(),
+            parse_json(original, muse.format).unwrap()
+        );
+        for invalid in [
+            "{}",
+            r#"{"schema_version":2}"#,
+            r#"{"schema_version":1,"mcpServers":{},"mcp_servers":{}}"#,
+        ] {
+            assert!(merge_json(invalid, executable, muse).is_err());
+            assert!(remove_json(invalid, muse).is_err());
         }
     }
 

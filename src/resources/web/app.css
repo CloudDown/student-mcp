@@ -472,3 +472,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 .update-label[hidden]{display:none}
 .global-bar .update-control>.icon-button{width:2rem;height:2rem;min-width:2rem;min-height:2rem;border:1px solid var(--border);border-radius:999px;background:var(--white);box-shadow:var(--shadow);color:var(--blue)}
 .global-bar .update-control>.icon-button svg{width:1.125rem;height:1.125rem}
+/* The guide cross-fades between recordings instead of cutting to the next one. */
+.guide-capture{opacity:1;transition:opacity 200ms ease-out}
+.guide-capture.is-leaving,.guide-capture.is-entering{opacity:0}
+@media(prefers-reduced-motion:reduce){.guide-capture{transition:none}.guide-capture.is-leaving,.guide-capture.is-entering{opacity:1}}

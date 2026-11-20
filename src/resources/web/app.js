@@ -452,7 +452,7 @@ function guideMedia(media,caption){
  const label=esc(t(caption)),reduce=window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
  if(media.video){
   const src='/assets/'+media.video+'.mp4',poster='/assets/'+media.video+'.png';
-  const video=`<video class="guide-shot" ${reduce?'controls':`autoplay muted loop playsinline`} muted preload="metadata" poster="${poster}" width="1920" height="1080" aria-label="${label}"><source src="${src}" type="video/mp4"></video>`;
+  const video=`<video class="guide-shot" data-guide-video="${media.video}" ${reduce?'controls':`autoplay muted playsinline`} muted preload="metadata" poster="${poster}" width="1920" height="1080" aria-label="${label}"><source src="${src}" type="video/mp4"></video>`;
   return reduce?`<figure class="guide-capture is-video">${video}</figure>`:`<figure class="guide-capture is-video"><button class="guide-shot-link" type="button" data-lightbox="${src}" data-lightbox-type="video" data-lightbox-poster="${poster}" aria-label="${t('Enlarge video')}">${video}</button></figure>`;
  }
  const path='/assets/'+media.image+'.webp';
@@ -462,7 +462,14 @@ function guideCapture(file,caption){return guideMedia({image:file},caption)}
  function guideFields(fields){return `<dl class="journey-fields">${fields.map(([label,value])=>`<div class="journey-field"><dt>${t(label)}</dt><dd>${esc(t(value))}</dd></div>`).join('')}</dl>`}
  function guidePath(items){return `<ol class="guide-path" aria-label="${t('Click path')}">${items.map(text=>`<li><span data-server-text>${esc(t(text))}</span></li>`).join('')}</ol>`}
 function guideOpen(id){return `<a class="full-button primary guide-link" href="${assistantInfo[id].settings}" target="_blank" rel="noopener noreferrer">${t('Open '+assistantInfo[id].name+' settings')} <span aria-hidden="true">↗</span></a>`}
-const localLogos={'claude':'/assets/claude.png','claude-code':'/assets/local-claude-code.png',codex:'/assets/chatgpt.png',gemini:'/assets/gemini.png','grok-build':'/assets/grok.png',opencode:'/assets/local-opencode.png',cursor:'/assets/local-cursor.png',vscode:'/assets/local-vscode.png',windsurf:'/assets/local-windsurf.png',qwen:'/assets/local-qwen.png',pi:'/assets/local-pi.png',omp:'/assets/local-omp.png',kiro:'/assets/local-kiro.png',amp:'/assets/local-amp.png',crush:'/assets/local-crush.png',devin:'/assets/local-devin.png'};
+ const localLogos={
+  claude:'/assets/claude.png',codex:'/assets/chatgpt.png',gemini:'/assets/gemini.png','grok-build':'/assets/grok.png',
+  ...Object.fromEntries([
+   'claude-code','opencode','cursor','vscode','windsurf','qwen','pi','omp','kiro','amp','crush','devin',
+   'hermes','antigravity','command-code','deepseek-harness','freebuff','kilo','kimi','minimax-code',
+   'muse','openclaw','ori'
+  ].map(id=>[id,`/assets/local-${id}.png`]))
+ };
 function localAppCard(app){
  const selected=localAssistants.selected===app.assistant,mark=app.name.replace(/[^A-Za-z0-9]/g,'').slice(0,2),logo=localLogos[app.assistant];
  const visual=logo?`<img class="local-app-logo" src="${logo}" alt="" width="128" height="128" loading="lazy" decoding="async">`:`<span class="local-app-mark" aria-hidden="true">${esc(mark)}</span>`;
@@ -893,6 +900,26 @@ $('update-button').addEventListener('click',async()=>{
  finally{updateSubmitting=false;renderUpdate()}
 });
  let renderedScreen='',refreshing=false,linksPending=0,linksVersion=0,linksQueue=Promise.resolve(),confirmTimer=null;
+// Guide videos play each part once, then move to the next part and wrap around.
+function fadeInGuide(){
+ const figure=document.querySelector('.guide-capture');if(!figure)return;
+ figure.classList.add('is-entering');
+ requestAnimationFrame(()=>requestAnimationFrame(()=>figure.classList.remove('is-entering')));
+}
+function bindGuideVideo(playback){
+ const video=document.querySelector('video[data-guide-video]');if(!video)return;
+ if(playback&&video.dataset.guideVideo===playback.id&&playback.time>0){try{video.currentTime=playback.time}catch{}if(!playback.paused)video.play().catch(()=>{})}
+ if(video.hasAttribute('controls'))return;
+ video.addEventListener('ended',()=>{
+  if(state.screen!=='assistant'||state.assistantBusy)return;
+  const figure=video.closest('.guide-capture');
+  const advance=()=>{assistantJourney.step=(assistantJourney.step+1)%3;render();fadeInGuide()};
+  if(!figure||window.matchMedia?.('(prefers-reduced-motion: reduce)').matches){advance();return}
+  figure.classList.add('is-leaving');
+  setTimeout(advance,200);
+ });
+
+}
 function render(){
  renderUpdate();
  const startup=$('app-startup'),startupSwitch=startup.querySelector('input');startup.hidden=false;$('app-startup-label').textContent=t('Launch at startup');startupSwitch.checked=state.autostart;startupSwitch.disabled=state.busy;sizeLanguageMenu();
@@ -901,11 +928,13 @@ function render(){
  const active=document.activeElement;
   const focus=active&&screen.contains(active)?{id:active.id,attr:['data-screen','data-copy','data-action','data-eye','data-help','data-open','data-account','data-add','data-assistant','data-guide-step','data-assistant-mode','data-assistant-scan','data-local-assistant','data-assistant-confirm','data-assistant-cancel','name'].find(a=>active.hasAttribute(a)),value:null}:null;
  if(focus?.attr)focus.value=active.getAttribute(focus.attr);
+  const previousVideo=screen.querySelector('video[data-guide-video]'),playback=previousVideo?{id:previousVideo.dataset.guideVideo,time:previousVideo.currentTime,paused:previousVideo.paused}:null;
   screen.innerHTML=state.screen==='home'?home():state.screen==='links'?linkScreen():state.screen==='tools'?toolsScreen():state.screen==='assistant'?assistantScreen():serviceScreen();
   localize(screen);
  mindMapObserver?.disconnect();const mindMap=screen.querySelector('.mind-map');if(mindMap){mindMapObserver?.observe(mindMap);scheduleMindMap()}
  if(route!==renderedScreen){const heading=screen.querySelector('h1');if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true})}window.scrollTo(0,0)}
  else if(focus){const target=focus.id?document.getElementById(focus.id):focus.attr?[...screen.querySelectorAll('['+focus.attr+']')].find(el=>el.getAttribute(focus.attr)===focus.value):null;target?.focus({preventScroll:true})}
+  bindGuideVideo(playback);
  renderedScreen=route;
 }
 async function refresh(background=false){

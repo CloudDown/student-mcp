@@ -45,7 +45,10 @@ cache dans `benchmark/.bin/` (ignoré par git), et chaque exécution reçoit une
 ne peut réécrire la vraie config, et l'ancien format `~/.student-mcp.json` reste
 lisible via `STUDENT_MCP_CONFIG_FILE`.
 
-Résultat actuel : `SCORES.md`.
+Résultat historique Moodle : `SCORES.md`. Les questions principales sont
+générées depuis le compte dans `services/moodle.py` (la matrice publiée en
+compte 50). Les **trois** questions de `scenarios.example.json` servent juste à
+essayer `student.py` : elles ne limitent ni la matrice ni les huit questions web.
 
 Ce que la matrice mesure, au-delà du score :
 
@@ -69,16 +72,73 @@ benchmark/
   services/
     __init__.py         registre AVAILABLE + load()
     moodle.py           50 questions + audit de charge utile
-    _template.py        squelette pour Brightspace / Omnivox / Canvas
+    brightspace.py      7 cas de référence
+    omnivox.py          6 cas de référence
+    portal.py           vérifications communes pour ces deux plateformes
+    _template.py        squelette pour un futur service
+  references/           deux exemples fictifs de références portail
   run.py                releases × services → matrice et SCORES.md
   web_student.py        questions précises → page Claude.ai / ChatGPT.com
   student.py            proxy API (pas le verdict web)
-  scenarios.example.json exemples vagues, ne pas prendre pour le test web
+  scenarios.example.json trois exemples de saisie pour student.py (proxy API)
   site.py               page unique file:// (questions, réponses, métriques)
   site/index.html       généré, hors git (réponses scolaires)
   results/              JSON brut par version (hors git)
   .bin/                 binaires téléchargés (hors git)
 ```
+
+## Brightspace et Omnivox
+
+Le même harnais vérifie les inscriptions, la découverte d'un document, la
+lecture d'une page de PDF et sa continuation, les consignes, les notes et les
+échéances d'un seul cours. Brightspace teste aussi sa recherche par titre. Les
+verdicts portent sur les réponses d'outils, pas sur une réponse Claude/ChatGPT.
+
+1. Copie le [modèle Brightspace](references/brightspace.example.json) ou
+   [Omnivox](references/omnivox.example.json) **hors du dépôt**. Remplace les
+   valeurs fictives par des données vérifiées **dans le portail officiel** ou
+   dans ses réponses réseau de lecture, jamais dans les résultats du MCP testé.
+   N'y mets ni cookies, ni jetons, ni identifiants de connexion.
+2. `account_id` est l'identifiant du compte activé dans student-mcp
+   (`student_status`, sans collecte de données scolaires). Utilise le même
+   compte dans le portail. `course` est obligatoire ; supprime les sections
+   facultatives non vérifiables pour qu'elles donnent `SKIP`. Pour Omnivox,
+   complète `instructions_field` avec le vrai champ des consignes ; pour les
+   notes, `match` identifie une évaluation de façon unique et `values` liste les
+   champs qu'on compare sur cette même évaluation. Les noms de champs des
+   exemples sont illustratifs : utilise ceux de ton portail. Respecte l'unité
+   du connecteur (p. ex. `8840` pour `88,40` en x100 sur Omnivox).
+3. Pour `deadlines`, vérifie la **liste complète** du cours pour la fenêtre
+   indiquée et renseigne la date UTC du relevé. Une liste `[]` signifie
+   « vérifiée vide », pas « pas vérifiée ». Brightspace inclut devoirs, quiz et
+   échéances du calendrier ; Omnivox seulement les remises Léa. Lance la
+   comparaison rapidement après le relevé, hors d'un début ou d'une fin
+   d'échéance. Si la date UTC a changé, le cas est `SKIP`.
+
+```bash
+python3 benchmark/run.py --service brightspace --reference ~/brightspace-reference.json
+python3 benchmark/run.py --service omnivox --reference ~/omnivox-reference.json --versions current
+# Comparer une release compatible au binaire local déjà compilé :
+python3 benchmark/run.py --service brightspace --reference ~/brightspace-reference.json --versions vX.Y.Z,current
+```
+
+Le harnais utilise une copie privée du seul compte sélectionné et fige la
+référence pour toutes les versions. Sur Linux, il copie un éventuel profil
+Chromium sous le verrou de l'application ; aucune session n'est exportée
+vers le correcteur. Ferme les appels ou connexions actifs et utilise un
+navigateur Chromium installé (ou son chemin dans `STUDENT_MCP_BROWSER`).
+La configuration et le profil d'origine ne sont pas modifiés. Seuls les outils
+déclarés en lecture seule et nommés dans les cas sont appelés.
+
+Les verdicts affichent leur raison. Une échéance hors cours, manquante sans
+avertissement ou mal datée échoue ; une couverture explicitement incomplète
+est notée `PARTIAL`. Les rapports ignorés par Git sont séparés par service
+dans `results/` et enregistrent temps, octets de texte et taille sur le fil, sans
+stocker les réponses scolaires intégrales. `--update` écrit une table de
+scores séparée, sans toucher à la matrice ni à la page Moodle. Le code de
+sortie vaut `1` si la dernière version demandée contient un `FAIL`, `2` si
+une version ne produit aucun score exploitable. Sans référence réelle
+exécutée, il n'existe pas encore de score de terrain pour ces services.
 
 ## Ajouter un service
 
@@ -96,17 +156,13 @@ scores le prennent automatiquement — il n'y a pas de second harnais à écrire
 
 Règles qui gardent la comparaison honnête :
 
-- la vérité terrain vient de l'école, avec le **même User-Agent** que le
+- la vérité terrain vient de l'école, via ses API ou un relevé indépendant du
+  portail ; un client HTTP direct doit utiliser le **même User-Agent** que le
   connecteur (un WAF répond une page vide au UA par défaut) ;
 - une donnée absente du compte donne `SKIP`, pas `FAIL` ;
 - jamais d'écriture testée sur un compte réel ;
 - une question qui passe de PASS à FAIL est une régression bloquante, même si le
   score global monte.
 
-## Pourquoi pas un dossier par service dès maintenant
-
-Moodle est le seul service connecté et le seul dont la vérité terrain est
-l'API. Omnivox et Brightspace demandent un client navigateur/session, Canvas une
-API différente : chacun aura sa logique dans son fichier, mais le harnais, le
-rendu et le benchmark restent uniques. Copier-coller trois harnais serait le
-contraire de l'objectif.
+Canvas n'a pas encore de batterie. La logique spécifique va dans son module ;
+le transport MCP, le rendu et la comparaison restent communs.

@@ -424,6 +424,50 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                     include_bytes!("resources/assets/local-devin.png"),
                     "image/png",
                 )),
+                "/assets/local-hermes.png" => Some((
+                    include_bytes!("resources/assets/local-hermes.png"),
+                    "image/png",
+                )),
+                "/assets/local-antigravity.png" => Some((
+                    include_bytes!("resources/assets/local-antigravity.png"),
+                    "image/png",
+                )),
+                "/assets/local-command-code.png" => Some((
+                    include_bytes!("resources/assets/local-command-code.png"),
+                    "image/png",
+                )),
+                "/assets/local-deepseek-harness.png" => Some((
+                    include_bytes!("resources/assets/local-deepseek-harness.png"),
+                    "image/png",
+                )),
+                "/assets/local-freebuff.png" => Some((
+                    include_bytes!("resources/assets/local-freebuff.png"),
+                    "image/png",
+                )),
+                "/assets/local-kilo.png" => Some((
+                    include_bytes!("resources/assets/local-kilo.png"),
+                    "image/png",
+                )),
+                "/assets/local-kimi.png" => Some((
+                    include_bytes!("resources/assets/local-kimi.png"),
+                    "image/png",
+                )),
+                "/assets/local-minimax-code.png" => Some((
+                    include_bytes!("resources/assets/local-minimax-code.png"),
+                    "image/png",
+                )),
+                "/assets/local-muse.png" => Some((
+                    include_bytes!("resources/assets/local-muse.png"),
+                    "image/png",
+                )),
+                "/assets/local-openclaw.png" => Some((
+                    include_bytes!("resources/assets/local-openclaw.png"),
+                    "image/png",
+                )),
+                "/assets/local-ori.png" => Some((
+                    include_bytes!("resources/assets/local-ori.png"),
+                    "image/png",
+                )),
                 _ => None,
             };
             if let Some((image, mime)) = image {

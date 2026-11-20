@@ -165,11 +165,6 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         for assistant in ("grok", "claude", "chatgpt", "gemini"):
             status, body = request(f"/assets/{assistant}.png", auth=False)
             assert status == 200 and body.startswith(b"\x89PNG\r\n\x1a\n"), assistant
-        for app in ("claude-code", "opencode", "cursor", "vscode", "windsurf", "qwen", "pi",
-                    "omp", "kiro", "amp", "crush", "devin"):
-            status, body = request(f"/assets/local-{app}.png", auth=False)
-            assert status == 200 and body.startswith(b"\x89PNG\r\n\x1a\n"), app
-        assert b"localLogos" in js and b"/assets/local-opencode.png" in js
         assert b'assistantScreen()' in js and b'data-assistant-choose' in js
         assert b"openAssistant('chatgpt')" in js and b'class="assistant-switcher"' in js
         for app in ("chatgpt", "claude", "grok", "gemini"):
@@ -196,6 +191,12 @@ with tempfile.TemporaryDirectory(prefix="student-mcp-web-") as tmp:
         assert set(assistant_files) <= local_apps.keys() and 'omp' in local_apps
         assert {'pi', 'qwen', 'kiro', 'amp', 'crush', 'devin'} <= local_apps.keys()
         assert 't3code' not in local_apps
+        logos = js.split(b'const localLogos={', 1)[1].split(b'function localAppCard', 1)[0]
+        shared_logos = {'claude', 'codex', 'gemini', 'grok-build'}
+        for app in local_apps.keys() - shared_logos:
+            assert f"'{app}'".encode() in logos, app
+            status, body = request(f"/assets/local-{app}.png", auth=False)
+            assert status == 200 and body.startswith(b"\x89PNG\r\n\x1a\n"), app
         for assistant, (path, original) in assistant_files.items():
             assert local_apps[assistant]['detected'] and not local_apps[assistant]['configured']
             assert path.read_text() == original, 'Scan must be read-only'
