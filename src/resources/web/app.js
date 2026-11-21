@@ -1,6 +1,7 @@
 const $=id=>document.getElementById(id);let key=location.hash.slice(1)||sessionStorage.getItem('admin');if(key)sessionStorage.setItem('admin',key);history.replaceState(null,'',location.pathname);
 const languages=['fr','es','en'];
 let language='en';
+let languageVersion=0,languageLoaded=false,languageSave=Promise.resolve();
 try{const saved=localStorage.getItem('student-mcp.language');language=languages.includes(saved)?saved:(navigator.language||'en').split('-')[0]}catch{}
 if(!languages.includes(language))language='en';
 // English is the source language; only UI copy is translated, never account data or server diagnostics.
@@ -407,7 +408,7 @@ function sizeLanguageMenu(){const startup=$('app-startup'),button=$('language-bu
 window.addEventListener('resize',sizeLanguageMenu);document.fonts?.ready.then(sizeLanguageMenu);
 document.addEventListener('click',e=>{
  const choice=e.target.closest('[data-language]');
- if(choice){language=choice.dataset.language;try{localStorage.setItem('student-mcp.language',language)}catch{}updateLanguageControl();render();closeLanguages(true);return}
+ if(choice){language=choice.dataset.language;languageVersion++;const selected=language;try{localStorage.setItem('student-mcp.language',language)}catch{}updateLanguageControl();render();closeLanguages(true);languageSave=languageSave.catch(()=>{}).then(()=>api('/action',{action:'language',language:selected})).catch(error=>{state.notice={text:error.message,error:true};render()});return}
  if(e.target.closest('#language-button')){const open=$('language-menu').hidden;$('language-menu').hidden=!open;$('language-button').setAttribute('aria-expanded',String(open));if(open)$('language-menu').querySelector('[aria-pressed="true"]').focus();return}
  if(!e.target.closest('.language-control'))closeLanguages();
 });
@@ -940,7 +941,8 @@ function render(){
 async function refresh(background=false){
   if(refreshing)return;refreshing=true;const linkRequestVersion=linksVersion;
  try{
-  const d=await api('/state');
+  const version=languageVersion,d=await api('/state');
+  if(!languageLoaded){languageLoaded=true;if(version===languageVersion&&languages.includes(d.language)){language=d.language;updateLanguageControl()}}
   updateState=await api('/update');renderUpdate();
   // Polling may update status, but must never replace an active form or pending settings.
   const changed=JSON.stringify([state.accounts,state.link,state.localLink,state.tunnel,state.autostart])!==JSON.stringify([d.accounts,d.link,d.local_link,d.tunnel,d.autostart]);

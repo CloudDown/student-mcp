@@ -8,7 +8,6 @@ const browser=await chromium.launch({headless:true,executablePath:process.env.ST
 try {
   const page=await browser.newPage();
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
-  await page.addInitScript(()=>localStorage.setItem('student-mcp.language','en'));
   const html=readFileSync(new URL('../src/resources/web/index.html',import.meta.url),'utf8');
   const css=readFileSync(new URL('../src/resources/web/app.css',import.meta.url),'utf8');
   const js=readFileSync(new URL('../src/resources/web/app.js',import.meta.url),'utf8');
@@ -16,7 +15,7 @@ try {
   const actions=[];
   let needsBrowser=false;
   let rejectRename=false;
-  await page.route('http://student.test/**',async route=>{
+  await page.route(/^http:\/\/student(?:-restart)?\.test\//,async route=>{
     const path=new URL(route.request().url()).pathname;
     if(path==='/')return route.fulfill({contentType:'text/html',body:html});
     if(path==='/app.css')return route.fulfill({contentType:'text/css',body:css});
@@ -28,6 +27,7 @@ try {
     if(path.startsWith('/assistant/')){const id=path.slice('/assistant/'.length);return route.fulfill({json:{assistant:id,local:id!=='chatgpt',detected:id==='claude',configured:false}})}
     if(path==='/action'){
       const action=route.request().postDataJSON();actions.push(action);
+      if(action.action==='language'){state.language=action.language;return route.fulfill({json:{}})}
       if(action.action==='rename_account'){
         if(rejectRename)return route.fulfill({status:400,json:{error:'Rename failed'}});
         const account=state.accounts.find(a=>a.id===action.id&&a.service===action.service);
@@ -47,6 +47,19 @@ try {
     return route.fulfill({status:404,body:''});
   });
   await page.goto('http://student.test/#test-secret');
+  await page.locator('#language-button').click();
+  const languageSaved=page.waitForResponse(response=>response.url().endsWith('/action')&&response.request().postDataJSON().action==='language');
+  await page.locator('[data-language="fr"]').click();
+  await page.waitForFunction(()=>document.documentElement.lang==='fr');
+  await languageSaved;
+  assert.equal(state.language,'fr');
+  // A new port is a new origin and has no access to the previous localStorage.
+  await page.goto('http://student-restart.test/#test-secret');
+  await page.waitForFunction(()=>document.documentElement.lang==='fr');
+  assert.equal(await page.locator('[data-language="fr"]').getAttribute('aria-pressed'),'true');
+  state.language='en';
+  await page.goto('http://student.test/#test-secret');
+  await page.waitForFunction(()=>document.documentElement.lang==='en');
   await page.getByRole('combobox').fill('poly');
   assert.match(await page.getByRole('option').first().innerText(),/Polytechnique Montréal/);
   await page.getByRole('option').first().click();

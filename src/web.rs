@@ -513,7 +513,7 @@ fn serve(port: Option<u16>, open_window: bool) -> Result<(), String> {
                     accounts.push(json!({"service":service,"id":id,"name":current.account_name(service, &id),"url":url,"enabled":current.account_enabled(service, &id)}));
                 }
             }
-            (200, "application/json", json!({"accounts":accounts,"verification":pending.as_ref().map(|(_,p)| &p.prompt),"browser_login":browser_login.as_ref().map(crate::browser::Login::status),"link":mcp_endpoint(tunnel.origin().unwrap_or(&format!("http://127.0.0.1:{port}")), &gateway.token),"local_link":mcp_endpoint(&format!("http://127.0.0.1:{port}"), &gateway.token),"tunnel":format!("{:?}",tunnel.state),"public":current.gateway.public_enabled(),"local":enabled.load(Ordering::SeqCst),"autostart":crate::autostart::enabled().unwrap_or(false)}).to_string().into_bytes(),false)
+            (200, "application/json", json!({"accounts":accounts,"language":current.language,"verification":pending.as_ref().map(|(_,p)| &p.prompt),"browser_login":browser_login.as_ref().map(crate::browser::Login::status),"link":mcp_endpoint(tunnel.origin().unwrap_or(&format!("http://127.0.0.1:{port}")), &gateway.token),"local_link":mcp_endpoint(&format!("http://127.0.0.1:{port}"), &gateway.token),"tunnel":format!("{:?}",tunnel.state),"public":current.gateway.public_enabled(),"local":enabled.load(Ordering::SeqCst),"autostart":crate::autostart::enabled().unwrap_or(false)}).to_string().into_bytes(),false)
         } else if request.method() == &Method::Get && path == "/assistants" {
             match crate::assistants::scan() {
                 Ok(status) => (
@@ -672,7 +672,7 @@ fn background_action(action: &str) -> bool {
 }
 
 fn action_allowed_during_job(action: &str, checking: bool) -> bool {
-    matches!(action, "stop" | "links" | "autostart")
+    matches!(action, "stop" | "links" | "autostart" | "language")
         || (checking && matches!(action, "service_enabled" | "rename_account"))
 }
 
@@ -705,6 +705,15 @@ fn action(
         "assistant_setup" => return crate::assistants::configure(get("assistant")),
         "assistant_remove" => return crate::assistants::deconfigure(get("assistant")),
         "stop" => return Ok(json!({"stop":true})),
+        "language" => {
+            let language = get("language");
+            if !["fr", "es", "en"].contains(&language) {
+                return Err("Unsupported language.".into());
+            }
+            Settings::update(|s| s.language = Some(language.to_owned()))
+                .map_err(|e| e.to_string())?;
+            return Ok(json!({}));
+        }
         "autostart" => {
             crate::autostart::set(args["enabled"] == true)?;
             return Ok(json!({}));

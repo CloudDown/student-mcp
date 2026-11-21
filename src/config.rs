@@ -164,6 +164,9 @@ pub struct Settings {
     pub canvas: Option<CanvasSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scale: Option<f32>,
+    /// Language selected in the local settings interface.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
     /// Temporary `/s/` file-link lifetime in hours. Default 24; clamped to 1–168.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link_ttl_hours: Option<u64>,
@@ -1194,6 +1197,17 @@ pub(crate) mod tests {
             settings.disable("moodle");
             settings.save().unwrap();
             assert!(Settings::load().moodle().is_none());
+        });
+    }
+
+    #[test]
+    fn language_preference_survives_other_settings_updates() {
+        with_temp_config(|| {
+            Settings::update(|s| s.language = Some("fr".into())).unwrap();
+            Settings::update(|s| s.gateway.local_enabled = Some(true)).unwrap();
+            let loaded = Settings::load();
+            assert_eq!(loaded.language.as_deref(), Some("fr"));
+            assert_eq!(loaded.gateway.local_enabled, Some(true));
         });
     }
 
