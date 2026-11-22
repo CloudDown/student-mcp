@@ -3,6 +3,36 @@
 Notable changes, newest first. Downloads for each release are on the
 [releases page](https://github.com/CloudDown/student-mcp/releases).
 
+## 0.8.6 — 2026-11-21
+
+- **More local assistants.** Automatic setup now covers Hermes Agent / Desktop,
+  Google Antigravity, Command Code, Kilo Code CLI, Kimi Code CLI, OpenClaw, Ori
+  (OpenRouter), MiniMax Code, DeepSeek Harness, Muse Code and Freebuff, and
+  Cursor and Kiro also handle their CLI configuration. Hermes and DeepSeek
+  Harness use native YAML, edited in place without reserializing the file. Each
+  client keeps its own MCP key spelling (`mcp.servers`, `mcp_servers`, `mcp`),
+  detects `KIMI_CODE_HOME`, `ORI_MCP_CONFIG` and MiniMax locations, and refuses
+  ambiguous or included configurations (OpenClaw `$include`, Muse without
+  `schema_version: 1` or with two MCP keys, YAML duplicates and merge keys)
+  instead of guessing. The setup still merges only `student-mcp`, keeps other
+  servers and backs the file up.
+
+- **Setup videos play through.** Each recorded step plays once and the guide
+  advances to the next part with a short cross-fade, rather than looping the
+  same clip. Reduced motion keeps the clip paused with manual controls, and the
+  enlarged view can still be opened by keyboard.
+
+- **The interface language is remembered.** Choosing a language is saved in the
+  settings file, so a restart on a new port—where the previous page origin and
+  its `localStorage` are gone—keeps the same language. A failed save shows an
+  error instead of silently reverting.
+
+- **Brightspace and Omnivox benchmark.** `benchmark/run.py` can now grade a
+  private, independently verified reference file against read-only tool
+  responses for these two portals (enrolments, documents, pages, deadlines and
+  grades), with shared checks, offline regression tests and example references.
+  No result is committed and no school data is written.
+
 ## 0.8.5 — 2026-11-16
 
 - **XDG file locations.** Settings moved to `~/.config/student-mcp/config.json`
