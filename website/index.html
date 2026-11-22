@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f5f7">
+  <title>student-mcp — Tes cours dans ton assistant IA</title>
+  <meta name="description" content="Relie Moodle, Omnivox, Brightspace ou Canvas à ton assistant IA. Découvre student-mcp et installe l’application sur Windows, macOS ou Linux.">
+  <link rel="icon" href="assets/app-icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="site.css">
+  <script defer src="assets/schools.js"></script>
+  <script defer src="site.js"></script>
+</head>
+<body id="haut">
+  <a class="skip" href="#contenu">Aller au contenu</a>
+  <header class="bar">
+    <nav class="wrap nav" aria-label="Navigation principale">
+      <a class="brand masthead" href="#haut"><span class="app-tile"><img src="assets/app-icon.svg" alt="" width="36" height="36"></span>student-mcp</a>
+      <a class="tour-link" href="#ecoles">Plateformes</a>
+      <a class="tour-link" href="#parcours">Fonctionnement</a>
+      <a class="tour-link" href="#assistants">Assistants</a>
+      <a class="nav-action" href="#installer">Obtenir l’app</a>
+    </nav>
+  </header>
+  <main id="contenu">
+    <section class="wrap hero" aria-labelledby="titre">
+      <div class="intro">
+        <h1 id="titre">C’est à rendre<br> quand&nbsp;?</h1>
+        <p>La date est sur ton portail. Les consignes sont dans un PDF. Relie ton école à ton assistant IA pour lui poser la question là où tu travailles déjà.</p>
+        <div class="hero-actions">
+          <a class="primary" id="hero-action" href="#installer"><span>Télécharger l’app</span><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4"/></svg></a>
+          <a class="systems" href="#installer">Tous les systèmes <span aria-hidden="true">›</span></a>
+        </div>
+      </div>
+      <div class="demo" data-ui>
+        <div class="demo-title"><img src="assets/app-icon.svg" alt="" width="36" height="36"><strong>student-mcp</strong><span>Exemple de conversation</span></div>
+        <div class="exchange" aria-live="polite" aria-atomic="true">
+          <p class="question">Qu’est-ce que j’ai à remettre cette semaine&nbsp;?</p>
+          <div class="answer"><div class="source"><img src="assets/moodle-icon.png" width="24" height="24" alt="">Moodle · Biologie</div><p id="example-answer">Ton compte rendu de laboratoire est à remettre vendredi avant 17&nbsp;h.</p>
+            <a class="example-file" href="assets/laboratoire-2.pdf" type="application/pdf"><img src="assets/fiche.webp" width="40" height="56" alt=""><span><strong>Laboratoire 2 — Osmose</strong><small>Ouvrir la fiche · PDF</small></span><span aria-hidden="true">›</span></a>
+          </div>
+        </div>
+        <fieldset class="topics" hidden>
+          <legend class="sr-only">Choisir un exemple de question</legend>
+          <label><input type="radio" name="topic" value="remise" checked><span>Remise</span></label>
+          <label><input type="radio" name="topic" value="consigne"><span>Consigne</span></label>
+          <label><input type="radio" name="topic" value="document"><span>Document</span></label>
+        </fieldset>
+        <p class="sample-note">Illustration avec un cours fictif.</p>
+      </div>
+    </section>
+
+    <section class="catalog" id="ecoles" aria-labelledby="ecoles-titre">
+      <div class="wrap catalog-grid">
+        <div class="catalog-intro">
+          <h2 id="ecoles-titre">Et dans ton école&nbsp;?</h2>
+          <p class="lead">Un même portail peut porter un autre nom chez toi. StudiUM, par exemple, fonctionne avec Moodle.</p>
+          <div class="finder" id="finder" hidden>
+            <label for="school-search">Trouve ta plateforme</label>
+            <div class="search-field">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>
+              <input id="school-search" type="search" placeholder="Établissement ou sigle, ex. UdeM" autocomplete="off" maxlength="120" aria-describedby="search-status">
+            </div>
+            <p id="search-status" role="status">La recherche utilise l’annuaire de l’app.</p>
+            <ul id="school-results" aria-label="Établissements correspondants"></ul>
+          </div>
+        </div>
+        <div class="portals">
+          <fieldset class="portal-picker">
+            <legend class="sr-only">Explorer une plateforme</legend>
+            <label><input type="radio" name="portal" value="moodle" checked><span><img src="assets/moodle-icon.png" width="32" height="32" alt="">Moodle</span></label>
+            <label><input type="radio" name="portal" value="omnivox"><span><img src="assets/omnivox-icon.png" width="32" height="32" alt="">Omnivox</span></label>
+            <label><input type="radio" name="portal" value="brightspace"><span><img src="assets/brightspace-icon.png" width="32" height="32" alt="">Brightspace</span></label>
+            <label><input type="radio" name="portal" value="canvas"><span><img src="assets/canvas-icon.png" width="32" height="32" alt="">Canvas</span></label>
+          </fieldset>
+          <article id="portal-moodle" class="portal-panel"><h3>«&nbsp;Qu’est-ce qui compte pour ma note&nbsp;?&nbsp;»</h3><p>Sur Moodle, retrouve les évaluations d’un cours et leur pondération lorsqu’elle est publiée. Tu peux aussi retrouver une consigne ou ouvrir un document joint.</p></article>
+          <article id="portal-omnivox" class="portal-panel"><h3>«&nbsp;À quelle heure est mon prochain cours&nbsp;?&nbsp;»</h3><p>Sur Omnivox, consulte ton horaire de la semaine, les avis de cours annulés et les travaux dans Léa. Ton assistant peut aussi retrouver un message dans MIO.</p></article>
+          <article id="portal-brightspace" class="portal-panel"><h3>«&nbsp;Quel commentaire ai-je reçu sur ce travail&nbsp;?&nbsp;»</h3><p>Sur Brightspace, consulte les commentaires publiés avec tes notes. Tu peux aussi retrouver une annonce de cours ou la date d’un questionnaire.</p></article>
+          <article id="portal-canvas" class="portal-panel"><h3>«&nbsp;Sur quels critères ce projet sera-t-il évalué&nbsp;?&nbsp;»</h3><p>Sur Canvas, demande la grille d’évaluation jointe au devoir, les consignes ou les commentaires sur ta remise. Le connecteur Canvas fonctionne en lecture seule.</p></article>
+          <p class="sample-note">Les informations accessibles dépendent de ton établissement.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="tour" id="parcours" aria-labelledby="parcours-titre">
+      <div class="wrap">
+        <div class="walkthrough">
+          <div>
+            <h2 id="parcours-titre">De ton école à ton assistant.</h2>
+            <p class="lead">Moodle, Omnivox, Brightspace ou Canvas&nbsp;: choisis ta plateforme, puis les comptes que tu veux relier à ton assistant.</p>
+          </div>
+          <figure class="window" data-ui>
+            <img class="home-shot" loading="lazy" src="assets/accueil.webp" width="904" height="504" alt="Moodle, Omnivox, Brightspace et Canvas convergent vers le lien de ton assistant.">
+            <figcaption>L’accueil de student-mcp sur ordinateur.</figcaption>
+          </figure>
+        </div>
+        <ol class="steps">
+          <li>
+            <img loading="lazy" src="assets/connexion.webp" width="600" height="290" alt="Le bouton de connexion Moodle ouvre le navigateur.">
+            <h3>Connecte ton école</h3>
+            <p>Cherche ton établissement ou entre l’adresse de sa plateforme. Connecte-toi dans le navigateur, avec ta vérification habituelle si elle est demandée.</p>
+          </li>
+          <li>
+            <img loading="lazy" src="assets/comptes.webp" width="600" height="290" alt="Interrupteur d’accès au compte Moodle de Léa.">
+            <h3>Choisis tes comptes</h3>
+            <p>Donne un nom à chaque compte. Tu peux en désactiver un sans te déconnecter des autres, même s’ils utilisent la même plateforme.</p>
+          </li>
+          <li>
+            <img loading="lazy" src="assets/assistant.webp" width="484" height="234" alt="Claude Desktop, Cursor et Gemini CLI figurent parmi les assistants détectés sur cet ordinateur.">
+            <h3>Pose ta question</h3>
+            <p>Ajoute student-mcp à un assistant compatible, puis demande-lui&nbsp;: «&nbsp;Qu’est-ce que j’ai à remettre cette semaine&nbsp;?&nbsp;»</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="assistants wrap" id="assistants" aria-labelledby="assistants-titre">
+      <div class="assistant-intro">
+        <h2 id="assistants-titre">Garde ton assistant.</h2>
+        <p class="lead">student-mcp fait le lien avec tes cours. La conversation se passe dans l’assistant que tu utilises déjà.</p>
+      </div>
+      <div class="mode-card">
+        <fieldset class="mode-picker">
+          <legend class="sr-only">Où utilises-tu ton assistant&nbsp;?</legend>
+          <label><input type="radio" name="mode" value="web" checked><span>Sur le web</span></label>
+          <label><input type="radio" name="mode" value="desktop"><span>Sur ton ordinateur</span></label>
+        </fieldset>
+        <article class="mode" id="mode-web">
+          <div class="mode-copy">
+            <h3>Un lien pour tes comptes.</h3>
+            <p>Copie ton lien public depuis l’app dans les <strong>réglages du connecteur</strong> de ton assistant. Le même lien donne accès aux comptes que tu actives.</p>
+            <ul class="client-list" aria-label="Assistants web avec guide intégré">
+              <li><img src="assets/chatgpt-icon.png" alt="" width="22" height="22">ChatGPT</li><li><img src="assets/claude-icon.png" alt="" width="22" height="22">Claude</li><li><img src="assets/gemini-icon.png" alt="" width="22" height="22">Gemini</li><li><img src="assets/grok-icon.png" alt="" width="22" height="22">Grok</li>
+            </ul>
+            <p class="sample-note">Les connecteurs personnalisés doivent être disponibles pour ton compte.</p>
+          </div>
+          <figure class="guide"><video controls playsinline preload="none" width="1920" height="1080" poster="assets/guide-chatgpt-menu.webp" src="assets/guide-chatgpt-menu.mp4" aria-label="Extrait du guide ChatGPT : ouvrir le formulaire du connecteur" aria-describedby="guide-caption"></video>
+            <figcaption id="guide-caption">Extrait du guide intégré · ChatGPT<br><span>Dans Plugins, ouvre «&nbsp;Add&nbsp;», puis «&nbsp;Add custom MCP server&nbsp;».</span></figcaption>
+          </figure>
+        </article>
+        <article class="mode" id="mode-desktop">
+          <div class="mode-copy">
+            <h3>Connecte une app installée.</h3>
+            <p>Dans «&nbsp;Configurer un assistant&nbsp;», choisis «&nbsp;Sur cet ordinateur&nbsp;». Sélectionne une application détectée et confirme la configuration. Aucun lien public à copier.</p>
+            <ul class="client-list" aria-label="Exemples d’assistants sur ordinateur"><li><img src="assets/claude-icon.png" alt="" width="22" height="22">Claude Desktop</li><li><img src="assets/local-cursor.png" alt="" width="22" height="22">Cursor</li><li><img src="assets/local-opencode.png" alt="" width="22" height="22">OpenCode</li><li><img src="assets/gemini-icon.png" alt="" width="22" height="22">Gemini CLI</li></ul>
+          </div>
+          <figure class="guide"><img src="assets/assistants-locaux.webp" loading="lazy" width="1040" height="470" alt="Écran Sur cet ordinateur : Claude Desktop est configuré et quatre autres assistants sont détectés."><figcaption>La liste se construit à partir des apps détectées sur ton ordinateur.</figcaption></figure>
+        </article>
+      </div>
+    </section>
+
+    <section class="questions" id="questions" aria-labelledby="questions-titre">
+      <div class="wrap qa-grid"><div><h2 id="questions-titre">Avant de commencer.</h2><p class="lead">Quelques repères pour ta première connexion.</p></div>
+        <div class="answers">
+          <details><summary>Qui peut accéder à mes cours&nbsp;?</summary><p>Ton mot de passe scolaire n’est pas enregistré. Ton assistant reçoit les informations qu’il demande aux comptes activés. Pour la connexion web, toute personne qui possède le lien secret peut utiliser les outils activés, et le relais srv.us peut lire les échanges. Garde ce lien dans les réglages du connecteur, pas dans le chat.</p></details>
+          <details><summary>Est-ce que je dois laisser l’onglet ouvert&nbsp;?</summary><p>Tu peux fermer l’onglet de réglages. student-mcp reste dans la barre des menus ou la zone de notification. Pour les connexions web, garde ton ordinateur allumé, éveillé et en ligne. Tu peux activer «&nbsp;Lancer au démarrage&nbsp;» dans l’app.</p></details>
+          <details><summary>Mon assistant peut-il lire un PDF&nbsp;?</summary><p>Tu peux lui demander le fichier original ou l’étude de pages précises. Pour un PDF, l’app peut transmettre le texte et l’image de chaque page demandée, figures comprises. Télécharger le document ne veut pas dire que l’assistant l’a lu en entier.</p></details>
+          <details><summary>Peut-il modifier quelque chose sur mon portail&nbsp;?</summary><p>Canvas est en lecture seule. D’autres plateformes permettent aussi des actions, par exemple envoyer un MIO sur Omnivox ou déposer un devoir sur Brightspace. La demande de confirmation dépend des réglages de ton assistant.</p></details>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap install" id="installer" aria-labelledby="installer-titre">
+      <div class="install-heading">
+        <span class="app-tile"><img src="assets/app-icon.svg" width="76" height="76" alt=""></span>
+        <div><h2 id="installer-titre">Télécharger student-mcp</h2>
+        <p>Après l’installation, les réglages s’ouvrent dans ton navigateur.</p></div>
+      </div>
+      <div class="choices">
+        <fieldset class="os-picker">
+          <legend class="sr-only">Système d’exploitation</legend>
+          <label><input type="radio" name="os" value="windows" checked><span>Windows</span></label>
+          <label><input type="radio" name="os" value="macos"><span>macOS</span></label>
+          <label><input type="radio" name="os" value="linux"><span>Linux</span></label>
+        </fieldset>
+        <section class="package" id="windows" aria-labelledby="win-title">
+          <h3 id="win-title">Installer sur Windows</h3>
+          <p>Ouvre le fichier <strong>.exe</strong> et laisse «&nbsp;Open student-mcp&nbsp;» coché pour lancer l’app.</p>
+          <a class="primary" href="https://github.com/CloudDown/student-mcp/releases/latest/download/student-mcp-setup.exe">Télécharger pour Windows</a>
+          <details class="install-help"><summary>Windows affiche un avertissement&nbsp;?</summary><p>L’installateur n’est pas signé. Windows peut afficher un avertissement à son ouverture. Ne désactive pas les protections du système.</p></details>
+        </section>
+        <section class="package" id="macos" aria-labelledby="mac-title">
+          <h3 id="mac-title">Installer sur Mac</h3>
+          <p>Ouvre le fichier <strong>.dmg</strong>, lance «&nbsp;Install student-mcp&nbsp;», puis choisis «&nbsp;Install and open&nbsp;».</p>
+          <a class="primary" href="https://github.com/CloudDown/student-mcp/releases/latest/download/student-mcp.dmg">Télécharger pour macOS</a>
+          <details class="install-help"><summary>macOS bloque l’ouverture&nbsp;?</summary><p>L’installateur n’est pas signé. Si le développeur n’est pas identifié, tu peux autoriser l’app dans Réglages Système → Confidentialité et sécurité après la première tentative. Si macOS la signale comme endommagée ou malveillante, arrête l’installation.</p></details>
+        </section>
+        <section class="package" id="linux" aria-labelledby="linux-title">
+          <h3 id="linux-title">Installer sous Linux</h3>
+          <p>Colle cette commande dans ton terminal. Le script sélectionne la version x64 ou ARM64 et vérifie le téléchargement.</p>
+          <pre><code id="command">curl -fsSL https://raw.githubusercontent.com/CloudDown/student-mcp/main/tools/packaging/install.sh | bash</code></pre>
+          <button id="copy" type="button" hidden>Copier la commande</button>
+          <span id="copy-status" role="status"></span>
+        </section>
+      </div>
+    </section>
+  </main>
+  <footer class="wrap"><a class="brand" href="#haut"><img src="assets/app-icon.svg" width="28" height="28" alt="">student-mcp</a><nav aria-label="Liens de bas de page"><a href="#ecoles">Mon école</a><a href="#questions">Questions</a><a href="#haut">Haut de page ↑</a></nav></footer>
+</body>
+</html>
