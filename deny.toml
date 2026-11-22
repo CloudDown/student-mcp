@@ -8,6 +8,10 @@ ignore = [
     { id = "RUSTSEC-2026-0370", reason = "zvariant is a transitive dependency of ksni 0.3.7, which has no zbus 6 release" },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names is a transitive dependency of ksni 0.3.7, which has no zbus 6 release" },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive is a transitive dependency of ksni 0.3.7, which has no zbus 6 release" },
+    # chrono is only reached through russh-util's SSH certificate helpers. The
+    # advisory marks every release unmaintained; russh 0.65.4 still depends on
+    # it, so there is no replacement to select yet.
+    { id = "RUSTSEC-2026-0543", reason = "chrono is a transitive dependency of russh-util with no maintained release to move to" },
 ]
 
 [licenses]
