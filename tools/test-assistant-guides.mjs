@@ -214,8 +214,13 @@ try{
  const reducedVideo=page.locator('.guide-shot');
  await reducedVideo.waitFor();
  assert.equal(await reducedVideo.evaluate(v=>v.tagName),'VIDEO');
- assert.ok(await reducedVideo.evaluate(v=>v.controls&&!v.autoplay&&v.paused),'Reduced motion disables autoplay and shows controls');
- assert.equal(await page.locator('.guide-shot-link').count(),0,'Reduced-motion video is not wrapped in the zoom button');
+  assert.ok(await reducedVideo.evaluate(v=>!v.controls&&!v.autoplay&&v.paused),'Reduced motion disables preview autoplay and controls');
+  await page.locator('.guide-shot-link').focus();
+  await page.keyboard.press('Enter');
+  assert.ok(await page.locator('#lightbox').evaluate(dialog=>dialog.open),'Reduced-motion video can be enlarged by keyboard');
+  assert.ok(await page.locator('#lightbox-video').evaluate(v=>v.controls&&v.paused),'Enlarged video offers manual controls without autoplay');
+  await page.locator('[data-lightbox-close]').click();
+  assert.ok(await page.locator('.guide-shot-link').evaluate(el=>el===document.activeElement),'Closing the video restores focus');
  await snapshot('reduced-motion');
  assert.deepEqual(errors,[]);
     console.log('Assistant guides passed: separate web/local views, minimal web guides, lightbox, 320/390/768/1440px, FR/ES/EN, clipboard, polling, keyboard and opt-in automatic local setup.');

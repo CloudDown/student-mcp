@@ -453,8 +453,8 @@ function guideMedia(media,caption){
  const label=esc(t(caption)),reduce=window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
  if(media.video){
   const src='/assets/'+media.video+'.mp4',poster='/assets/'+media.video+'.png';
-  const video=`<video class="guide-shot" data-guide-video="${media.video}" ${reduce?'controls':`autoplay muted playsinline`} muted preload="metadata" poster="${poster}" width="1920" height="1080" aria-label="${label}"><source src="${src}" type="video/mp4"></video>`;
-  return reduce?`<figure class="guide-capture is-video">${video}</figure>`:`<figure class="guide-capture is-video"><button class="guide-shot-link" type="button" data-lightbox="${src}" data-lightbox-type="video" data-lightbox-poster="${poster}" aria-label="${t('Enlarge video')}">${video}</button></figure>`;
+   const video=`<video class="guide-shot" data-guide-video="${media.video}" ${reduce?'':'autoplay'} muted playsinline preload="metadata" poster="${poster}" width="1920" height="1080" aria-label="${label}"><source src="${src}" type="video/mp4"></video>`;
+   return `<figure class="guide-capture is-video"><button class="guide-shot-link" type="button" data-lightbox="${src}" data-lightbox-type="video" data-lightbox-poster="${poster}" aria-label="${t('Enlarge video')}">${video}</button></figure>`;
  }
  const path='/assets/'+media.image+'.webp';
  return `<figure class="guide-capture"><button class="guide-shot-link" type="button" data-lightbox="${path}" aria-label="${t('Enlarge screenshot')}"><img class="guide-shot" src="${path}" alt="${label}" width="1440" height="1080" loading="lazy" decoding="async"></button></figure>`;
@@ -974,7 +974,7 @@ document.addEventListener('click',async e=>{
    const lightbox=$('lightbox'),image=$('lightbox-image'),video=$('lightbox-video');
    if(shot.dataset.lightboxType==='video'){
     image.hidden=true;image.removeAttribute('src');
-    video.hidden=false;video.src=shot.dataset.lightbox;video.poster=shot.dataset.lightboxPoster||'';video.currentTime=0;video.play().catch(()=>{});
+    video.hidden=false;video.src=shot.dataset.lightbox;video.poster=shot.dataset.lightboxPoster||'';video.currentTime=0;if(!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)video.play().catch(()=>{});
    }else{
     video.pause();video.hidden=true;video.removeAttribute('src');
     image.hidden=false;image.src=shot.dataset.lightbox;image.alt=shot.querySelector('img')?.alt||t('Screenshot');
