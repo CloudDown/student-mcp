@@ -1,6 +1,7 @@
 {
   "service": "omnivox",
   "account_id": "omnivox",
+  "term": "20263",
   "course": {"id": "MAT101.0001", "title": "Mathématiques"},
   "document": {
     "id": "17",

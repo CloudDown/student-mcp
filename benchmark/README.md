@@ -73,7 +73,7 @@ benchmark/
     __init__.py         registre AVAILABLE + load()
     moodle.py           50 questions + audit de charge utile
     brightspace.py      7 cas de référence
-    omnivox.py          6 cas de référence
+    omnivox.py          7 cas de référence
     portal.py           vérifications communes pour ces deux plateformes
     _template.py        squelette pour un futur service
   references/           deux exemples fictifs de références portail
@@ -103,11 +103,14 @@ verdicts portent sur les réponses d'outils, pas sur une réponse Claude/ChatGPT
    (`student_status`, sans collecte de données scolaires). Utilise le même
    compte dans le portail. `course` est obligatoire ; supprime les sections
    facultatives non vérifiables pour qu'elles donnent `SKIP`. Pour Omnivox,
-   complète `instructions_field` avec le vrai champ des consignes ; pour les
-   notes, `match` identifie une évaluation de façon unique et `values` liste les
-   champs qu'on compare sur cette même évaluation. Les noms de champs des
-   exemples sont illustratifs : utilise ceux de ton portail. Respecte l'unité
-   du connecteur (p. ex. `8840` pour `88,40` en x100 sur Omnivox).
+   renseigne `term` (le trimestre à cinq chiffres, sinon les outils existants
+   gardent leur route gateway et peuvent répondre vide sur une connexion
+   collège directe), puis complète `instructions_field` avec le vrai champ des
+   consignes ; pour les notes, `match` identifie une évaluation de façon unique
+   et `values` liste les champs qu'on compare sur cette même évaluation. Les
+   noms de champs des exemples sont illustratifs : utilise ceux de ton portail.
+   Respecte l'unité du connecteur (p. ex. `8840` pour `88,40` en x100 sur
+   Omnivox).
 3. Pour `deadlines`, vérifie la **liste complète** du cours pour la fenêtre
    indiquée et renseigne la date UTC du relevé. Une liste `[]` signifie
    « vérifiée vide », pas « pas vérifiée ». Brightspace inclut devoirs, quiz et

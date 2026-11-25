@@ -36,6 +36,9 @@ def read_reference(path: Path, service: str) -> dict:
         course = ref["course"]
         require(ref["service"] == service and nonblank(account))
         require(has_title(course) and valid_id(service, course["id"], course=True))
+        term = ref.get("term")
+        if term is not None:
+            require(service == "omnivox" and isinstance(term, str) and re.fullmatch(r"[0-9]{5}", term))
         document = ref.get("document")
         if document is not None:
             require(has_title(document) and valid_id(service, document["id"]))

@@ -9,7 +9,8 @@ def cases(ref: dict) -> list[portal.Case]:
     document = ref.get("document")
     assignment = ref.get("assignment")
     grade = ref.get("grade")
-    args = {"course_id": course["id"]}
+    term = ref.get("term")
+    args = {"course_id": course["id"], **({"term": term} if term else {})}
 
     def course_check(data, _result):
         if isinstance(data, dict):
@@ -37,8 +38,16 @@ def cases(ref: dict) -> list[portal.Case]:
         field = assignment["instructions_field"]
         return portal.instructions_check((row.get(field) for row in portal.objects(data)), assignment["instructions"])
 
-    return [
-        portal.Case("« Ce cours est-il dans mes inscriptions ? »", "omnivox_my_courses", {}, course_check),
+    def term_check(data, _result):
+        terms = data.get("available_terms") if isinstance(data, dict) else None
+        available = terms.get("AnSessionDisponible") if isinstance(terms, dict) else None
+        if data.get("current_term") == term and isinstance(available, list) and term in available:
+            return "PASS", "Trimestre courant et liste des trimestres conformes."
+        return "FAIL", "Le trimestre courant ne correspond pas à la référence."
+
+    cases = [
+        portal.Case("« Ce cours est-il dans mes inscriptions ? »", "omnivox_my_courses",
+                    {"term": term} if term else {}, course_check),
         portal.Case("« Où est ce document dans le contenu du cours ? »", "omnivox_course_documents",
                     args, document_check if document else None),
         portal.pdf_case("omnivox_file", {**args, "file_id": document["id"]} if document else args, document),
@@ -49,6 +58,9 @@ def cases(ref: dict) -> list[portal.Case]:
                     (lambda data, _: portal.grade_check(data, grade)) if grade else None),
         portal.deadlines_case(NAME, {"course_ids": [course["id"]]}, course["id"], ref.get("deadlines")),
     ]
+    if term:
+        cases.insert(0, portal.Case("« Quel est le trimestre courant ? »", "omnivox_terms", {}, term_check))
+    return cases
 
 
 def questions(binary, account):

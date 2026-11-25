@@ -64,13 +64,47 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(bs[1].check({"Modules": [{"Topics": [{"Id": 17, "Title": "Guide de révision"}]}]}, {})[0], "PASS")
         self.assertEqual(bs[2].check({"matches": [], "truncated": True}, {})[0], "PARTIAL")
         self.assertEqual(bs[4].check({"folder": {"id": 999, "instructions": "..."}}, {})[0], "FAIL")
-        ov = omnivox.cases(reference("omnivox"))
-        self.assertEqual(ov[0].check({"ListeCours": [{"NoCours": "MAT101", "NoGroupe": "0001", "NomCours": "Mathématiques"}]}, {})[0], "PASS")
-        self.assertEqual(ov[1].check({"IdDocCoursDocument": 17, "Titre": "Guide de révision"}, {})[0], "PASS")
-        self.assertEqual(ov[3].check({"Enonce": "<p>Résoudre les exercices 1 à 4.</p><p>Justifier chaque réponse.</p>"}, {})[0], "PASS")
-        self.assertEqual(ov[3].check({"Enonce": "Résoudre les exercices 1 à 4."}, {})[0], "FAIL")
-        self.assertEqual(ov[4].check([{"Titre": "Quiz 1", "Note": 8840}], {})[0], "PASS")
-        self.assertEqual(ov[4].check([{"Titre": "Quiz 1", "Note": 88.4}, {"Titre": "Quiz 2", "Note": 8840}], {})[0], "FAIL")
+        ov = {case.tool: case for case in omnivox.cases(reference("omnivox"))}
+        self.assertEqual(ov["omnivox_my_courses"].check({"ListeCours": [{"NoCours": "MAT101", "NoGroupe": "0001", "NomCours": "Mathématiques"}]}, {})[0], "PASS")
+        self.assertEqual(ov["omnivox_course_documents"].check({"IdDocCoursDocument": 17, "Titre": "Guide de révision"}, {})[0], "PASS")
+        self.assertEqual(ov["omnivox_assignment_detail"].check({"Enonce": "<p>Résoudre les exercices 1 à 4.</p><p>Justifier chaque réponse.</p>"}, {})[0], "PASS")
+        self.assertEqual(ov["omnivox_assignment_detail"].check({"Enonce": "Résoudre les exercices 1 à 4."}, {})[0], "FAIL")
+        self.assertEqual(ov["omnivox_grades"].check([{"Titre": "Quiz 1", "Note": 8840}], {})[0], "PASS")
+        self.assertEqual(ov["omnivox_grades"].check([{"Titre": "Quiz 1", "Note": 88.4}, {"Titre": "Quiz 2", "Note": 8840}], {})[0], "FAIL")
+
+    def test_omnivox_term_is_forwarded_to_term_dependent_reads(self):
+        ref = reference("omnivox")
+        cases = {case.tool: case for case in omnivox.cases(ref)}
+        for tool in (
+            "omnivox_my_courses", "omnivox_course_documents", "omnivox_file",
+            "omnivox_assignment_detail", "omnivox_grades",
+        ):
+            self.assertEqual(cases[tool].args.get("term"), ref["term"])
+        self.assertNotIn("term", cases["omnivox_deadlines"].args)
+        self.assertEqual(cases["omnivox_terms"].args, {})
+        ref.pop("term")
+        self.assertNotIn("omnivox_terms", {case.tool for case in omnivox.cases(ref)})
+        self.assertEqual(
+            [case.args.get("term") for case in omnivox.cases(ref) if case.tool != "omnivox_deadlines"],
+            [None] * 5,
+        )
+
+    def test_omnivox_current_term_must_match_the_reference(self):
+        ref = reference("omnivox")
+        case = next(case for case in omnivox.cases(ref) if case.tool == "omnivox_terms")
+        good = {"current_term": ref["term"], "available_terms": {"AnSessionDisponible": [ref["term"]]}}
+        self.assertEqual(case.check(good, {})[0], "PASS")
+        self.assertEqual(case.check({**good, "current_term": "20262"}, {})[0], "FAIL")
+        self.assertEqual(case.check({"current_term": ref["term"], "available_terms": {}}, {})[0], "FAIL")
+
+    def test_invalid_omnivox_term_is_rejected(self):
+        ref = reference("omnivox")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "reference.json"
+            for term in ("2026", "202633", 20263):
+                path.write_text(json.dumps({**ref, "term": term}))
+                with self.assertRaises(ValueError):
+                    portal.read_reference(path, "omnivox")
 
     def test_mcp_transport_preserves_pdf_metadata_and_counts_nonempty_images(self):
         content = [{"type": "text", "text": '{"coverage":{}}'},

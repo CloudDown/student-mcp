@@ -500,3 +500,27 @@ mémoire. Le tampon est maintenant aussi écrit dans un dossier privé.
   durée), livraisons de fichiers (nom, MIME, octets, pages, texte, lien).
 - `student-mcp logs [--lines=N] [--follow] [--mcp]`.
 - Jamais de valeurs d'arguments, corps, octets de fichiers, jetons ni mots de passe.
+
+## 16. Benchmark Omnivox en lecture seule (24 novembre 2026)
+
+- Compte Omnivox connecté par profil Chromium, trimestre courant découvert par
+  `omnivox_terms`. La référence privée a été vérifiée dans les réponses brutes
+  du portail mobile (`/Mobl/`), pas dans la sortie des outils MCP testés.
+- Défaut corrigé : `benchmark/services/omnivox.py` n'envoyait pas `term` aux
+  lectures dépendantes du trimestre. Sur une connexion collège directe,
+  `omnivox_course_documents` et `omnivox_grades` gardaient alors leur route
+  gateway et répondaient vide. `term` est maintenant optionnel dans la
+  référence, validé sur cinq chiffres et transmis aux lectures concernées ;
+  `omnivox_terms` vérifie que le trimestre courant correspond à la référence.
+- Référence privée : `~/.student-mcp.eval/omnivox-reference.json`, mode `0600`,
+  hors dépôt. Elle contient un cours, un document PDF de deux pages, un devoir,
+  une évaluation et une liste d'échéances vérifiée vide.
+- Commande de contrôle :
+  `python3 benchmark/run.py --service omnivox --reference ~/.student-mcp.eval/omnivox-reference.json --versions current`
+- Résultat final : **7 PASS, 0 PARTIAL, 0 FAIL, 0 SKIP — 100 %**, 30,1 s au
+  total, médiane 4,35 s, 24 734 tokens lus. Aucun outil d'écriture appelé ; le
+  harnais refuse tout outil dont `readOnlyHint` n'est pas `true`.
+- Un passage intermédiaire a subi un échec transitoire de session mobile
+  (`omnivox_grades`), puis le passage suivant a réussi sans changement de code.
+- Tests hors réseau : `python3 -m unittest benchmark.test_portal` — 13 réussis.
+  Aucun changement Rust.
