@@ -69,6 +69,22 @@ Timestamps are Unix **milliseconds**. Calendar type is `scolaire` (default) or
 previous/next-page flags in the response. Maintenance/unavailable/interception
 responses become explicit errors, not empty successful lists.
 
+## Où chercher quoi
+
+- **MIO** : messages entre personnes. C'est la source pour un professeur
+  absent, en congé ou en absence prolongée, pour une annulation de cours
+  envoyée par un enseignant et pour les communications de cours par message.
+- **Léa** : contenu de cours (documents, travaux, notes, communiqués de cours).
+  Un communiqué Léa n'est pas un message MIO.
+- **Collège** : actualités, services, documents officiels, formulaires.
+- **Horaire / Calendrier** : horaire et dates. Une séance annulée, un trou dans
+  l'horaire ou une absence étudiante ne prouvent pas un congé de professeur.
+
+Pour « mon prof est-il absent / en congé / malade ? », chercher dans MIO avec
+`absence`, `maladie`, `congé` ou le nom de l'enseignant, puis lire le message
+complet. Ne pas conclure à partir des annonces Léa, du calendrier ou de
+l'horaire seuls.
+
 ## MIO
 
 | Tool | Purpose |

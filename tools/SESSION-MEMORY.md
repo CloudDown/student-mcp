@@ -594,3 +594,38 @@ mémoire. Le tampon est maintenant aussi écrit dans un dossier privé.
   13 ignorés ; `python3 -m unittest benchmark.test_portal benchmark.test_student`
   — 18 réussis ; `python3 -m py_compile benchmark/services/moodle.py` et
   `git diff --check` propres.
+
+## 19. MIO contre Léa : consignes et binaire réellement connecté (26 novembre 2026)
+
+- Symptôme observé : à la question « j'ai un prof en congé maladie ? », un
+  assistant a conclu « aucun professeur » après avoir regardé les annonces Léa,
+  l'horaire, le plan de cours et les documents, sans consulter MIO. Après avoir
+  demandé explicitement MIO, il a trouvé le message « Absence prolongée ».
+- Cause : le client OpenCode lançait
+  `/home/rain/.student-mcp/bin/student-mcp`, un binaire du 23 novembre, alors
+  que les nouvelles consignes et descriptions n'existaient que dans
+  `target/release`. Le binaire installé a été remplacé (sauvegarde
+  `student-mcp.bak-*`) et le client doit être reconnecté pour charger les
+  nouvelles instructions.
+- Carte des sources ajoutée aux instructions du connecteur :
+  - **MIO** = messages entre personnes (courriels de professeurs, absence ou
+    congé prolongé, annulations envoyées par un enseignant) ;
+  - **Léa** = contenu de cours (documents, travaux, notes, communiqués de
+    cours) ;
+  - **Collège** = actualités, services, documents officiels, formulaires ;
+  - **Horaire/Calendrier** = horaire et dates.
+- Les descriptions `omnivox_mio_search`, `mio_messages`, `mio_message`,
+  `announcements`, `course_announcements`, `teachers`, `teacher_detail`,
+  `cancelled_classes`, `calendar_page`, `calendar_month`, `schedule` et
+  `schedule_week` disent maintenant explicitement qu'un calendrier, une
+  annulation ou une annonce Léa ne prouve pas un congé, et qu'il faut chercher
+  dans MIO.
+- Deux vérifications réelles ajoutées à la référence privée : recherche
+  `absence` → message « Absence prolongée », puis lecture du message et de son
+  corps (« raisons médicales », « reste de la session »). Total Omnivox :
+  **66 PASS, 0 FAIL, 0 SKIP — 100 %**, 158,3 s, médiane 2,34 s, 178 206 tokens.
+- Vérifications : `cargo test --offline` — 319 tests lib + 3 CLI réussis,
+  13 ignorés ; `cargo clippy --offline --all-targets -- -D warnings` propre ;
+  18 tests Python réussis ; `git diff --check` propre.
+- La référence privée `~/.student-mcp.eval/omnivox-reference.json` contient le
+  message d'absence (0600, hors dépôt). Aucune donnée scolaire dans Git.
