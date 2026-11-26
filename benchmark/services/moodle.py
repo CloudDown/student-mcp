@@ -895,6 +895,165 @@ def questions(binary: Path, account: dict[str, Any] | None) -> list[dict[str, An
         ),
     )
 
+    # Remaining read surface: use the live course snapshot, then follow the
+    # discovery chain (forum -> discussion -> posts, messages -> conversation).
+    ask(
+        "« Quel est l'état de ma connexion Moodle ? »",
+        "moodle_status",
+        {},
+        lambda result, data: (
+            "PASS" if not result["is_error"] and isinstance(data, dict)
+            and bool(data.get("sitename") or data.get("release")) else "FAIL",
+            f"site={bool((data or {}).get('sitename')) if isinstance(data, dict) else False}",
+        ),
+    )
+
+    if heaviest:
+        code = heaviest["code"]
+        files = [f for f in heaviest["files"] if f.get("filename")][:5]
+        ask(
+            f"« Quelles ressources dans {code} ? »",
+            "moodle_resources",
+            {"courseid": heaviest["id"]},
+            lambda result, data, names=[f["filename"] for f in files]: (
+                "PASS" if not result["is_error"] and (
+                    not names or any(_has(result["text"], name) for name in names)
+                ) else ("PARTIAL" if not result["is_error"] else "FAIL"),
+                f"{len((data or {}).get('resources') or [])} ressource(s)",
+            ),
+        )
+        assignments = heaviest["assignments"]
+        if assignments:
+            first = assignments[0]
+            ask(
+                f"« Quels devoirs dans {code} ? »",
+                "moodle_assignments",
+                {"courseids": [heaviest["id"]]},
+                lambda result, data, title=first.get("name") or "": (
+                    "PASS" if not result["is_error"] and (
+                        not title or _has(result["text"], title)
+                    ) else ("PARTIAL" if not result["is_error"] else "FAIL"),
+                    f"{len((data or {}).get('assignments') or [])} devoir(s)",
+                ),
+            )
+            ask(
+                f"« Ai-je remis {first.get('name') or 'ce devoir'} ? »",
+                "moodle_assignment_status",
+                {"assignid": first["id"]},
+                lambda result, data: (
+                    "PASS" if not result["is_error"] and isinstance(data, dict)
+                    and (data.get("submissionStatus") is not None or data.get("status") is not None)
+                    else "FAIL",
+                    f"statut={(data or {}).get('submissionStatus') if isinstance(data, dict) else None}",
+                ),
+            )
+        forums = heaviest["forums"]
+        if forums:
+            forum = forums[0]
+            ask(
+                f"« Quels forums dans {code} ? »",
+                "moodle_forums",
+                {"courseids": [heaviest["id"]]},
+                lambda result, data, name=forum.get("name") or "": (
+                    "PASS" if not result["is_error"] and (
+                        not name or any(
+                            _has(forum_row.get("name") or "", name)
+                            for forum_row in ((data or {}).get("forums") or [])
+                            if isinstance(forum_row, dict)
+                        ) or _has(result["text"], name)
+                    ) else ("PARTIAL" if not result["is_error"] else "FAIL"),
+                    f"{len((data or {}).get('forums') or [])} forum(s)",
+                ),
+            )
+
+    forum_target = None
+    for course in facts["details"]:
+        for forum in course.get("forums") or []:
+            _, discussions_data = call(
+                "moodle_forum_discussions", {"forumid": forum["id"], "limit": 5}
+            )
+            discussions = (discussions_data or {}).get("discussions") or []
+            if discussions:
+                forum_target = (course, forum, discussions)
+                break
+        if forum_target:
+            break
+    if forum_target:
+        course, forum, discussions = forum_target
+        discussion = discussions[0]
+        discussionid = discussion.get("discussionid") or discussion.get("id")
+        if discussionid:
+            ask(
+                f"« Lis la première discussion du forum {forum.get('name')} de {course['code']}. »",
+                "moodle_forum_posts",
+                {"discussionid": discussionid},
+                lambda result, data: (
+                    "PASS" if not result["is_error"] and isinstance(data, dict)
+                    and isinstance(data.get("posts"), list) else "FAIL",
+                    f"{len((data or {}).get('posts') or [])} message(s)",
+                ),
+            )
+    else:
+        row(
+            "« Lis la première discussion d'un forum. »",
+            "SKIP",
+            "aucune discussion accessible",
+            "moodle_forum_posts",
+        )
+
+    completion_course = next(
+        (course for course in facts["details"] if course.get("modules")), None
+    )
+    if completion_course:
+        ask(
+            f"« Où j'en suis dans {completion_course['code']} ? »",
+            "moodle_completion",
+            {"courseid": completion_course["id"]},
+            lambda result, data: (
+                "PASS" if not result["is_error"] and isinstance(data, dict)
+                and isinstance(data.get("activities"), list) else "FAIL",
+                f"{len((data or {}).get('activities') or [])} activité(s)",
+            ),
+        )
+
+    ask(
+        "« Quelles notifications Moodle ? »",
+        "moodle_notifications",
+        {"limit": 10},
+        lambda result, data: (
+            "PASS" if not result["is_error"] and isinstance(data, dict)
+            and isinstance(data.get("notifications"), list) else "FAIL",
+            f"{len((data or {}).get('notifications') or [])} notification(s)",
+        ),
+    )
+
+    result, data = call("moodle_messages", {"limit": 5})
+    conversations = (data or {}).get("conversations") or []
+    if conversations:
+        conversation = conversations[0]
+        ask(
+            "« Lis ma première conversation. »",
+            "moodle_conversation_messages",
+            {"conversationid": conversation["id"], "limit": 10},
+            lambda result, data: (
+                "PASS" if not result["is_error"] and isinstance(data, dict)
+                and isinstance(data.get("messages"), list) else "FAIL",
+                f"{len((data or {}).get('messages') or [])} message(s)",
+            ),
+        )
+    else:
+        row("« Lis ma première conversation. »", "SKIP", "aucune conversation", "moodle_conversation_messages")
+
+    result, data = call("moodle_deadlines", {"days": 365, "include_expired": True})
+    row(
+        "« Quelles échéances sont déjà passées ? »",
+        "PASS" if not result["is_error"] and (data or {}).get("count", 0) > 0
+        else ("SKIP" if not result["is_error"] else "FAIL"),
+        f"{len((data or {}).get('deadlines') or [])} échéance(s), include_expired=true",
+        "moodle_deadlines",
+        len(result["text"]),
+    )
+
     result, _ = mcp.one("omnivox_deadlines", {"days": 14})
     last["seconds"] = 0.0
     honest = result["is_error"] and len(result["text"]) < 400

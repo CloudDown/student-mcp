@@ -558,3 +558,39 @@ mémoire. Le tampon est maintenant aussi écrit dans un dossier privé.
   `cargo clippy --offline --all-targets -- -D warnings` propre ;
   `python3 -m unittest benchmark.test_portal benchmark.test_student` — 18
   réussis ; `git diff --check` propre.
+
+## 18. Scan profond Omnivox + Moodle et benchmark réel (26 novembre 2026)
+
+- Scan Omnivox en lecture seule : 249 appels, 125 réponses JSON conservées
+  temporairement, 8 cours réels, 227 documents, 11 travaux, toutes les notes
+  par cours, 9 enseignants et leurs détails, 10 dossiers MIO, les 342 messages
+  de la boîte de réception paginés (100+100+100+42), détails de messages,
+  annuaire, actualités, services, documents officiels, deux semaines d'horaire,
+  calendrier Léa et un échantillon PDF/PPTX/DOCX. Aucun outil d'écriture appelé.
+- Scan Moodle en lecture seule : 379 appels, 190 réponses, 26 cours (5 cours
+  courants), 50 devoirs, 26 quiz, 12 forums, 27 échéances avec
+  `include_expired=true`, 15 notifications, ressources, completion, mises à
+  jour, recherches, discussions et pièces jointes. Aucun `moodle_api_call`.
+  Trois cours anciens refusent le carnet de notes
+  (`nopermissiontoviewgrades`) ; c'est une limite de permissions Moodle, pas un
+  échec du benchmark.
+- Référence Omnivox privée : 57 vérifications `checks` + 7 cas fixes = **64
+  questions**, toutes en lecture seule. Ajouts : consignes de deux devoirs,
+  deux fiches enseignants, annuaire MIO, détail d'un message, pagination de la
+  boîte de réception, horaire de la semaine suivante et extraction texte d'un
+  PowerPoint. Résultat : **64 PASS, 0 FAIL, 0 SKIP — 100 %**, 143,7 s au total,
+  médiane 2,19 s, 170 023 tokens.
+- Benchmark Moodle : la génération compte maintenant les outils de lecture
+  restants, dérivés du compte réel — statut, ressources, devoirs,
+  `assignment_status`, forums, première discussion, completion, notifications,
+  première conversation et échéances expirées. Résultat : **52 PASS, 0 FAIL,
+  1 SKIP — 100 %**, 19,8 s, médiane 0,26 s, 118 622 tokens. Le SKIP est
+  « prochain devoir à rendre », faute d'échéance future dans ce compte.
+- Les données brutes de scan sont supprimées après extraction ; seule la
+  référence privée `~/.student-mcp.eval/omnivox-reference.json` (0600, hors
+  dépôt) conserve les valeurs nécessaires. Aucune donnée scolaire n'entre dans
+  Git.
+- Vérifications : `cargo test --offline` — 318 tests lib + 3 CLI réussis,
+  13 ignorés ; `python3 -m unittest benchmark.test_portal benchmark.test_student`
+  — 18 réussis ; `python3 -m py_compile benchmark/services/moodle.py` et
+  `git diff --check` propres.
