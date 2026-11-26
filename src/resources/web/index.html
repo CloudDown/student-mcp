@@ -5,10 +5,19 @@
 <link rel="stylesheet" href="/app.css"></head>
 <body>
 <header class="global-bar">
+ <div class="start-controls">
  <div id="update-control" class="update-control">
   <span id="update-label" class="update-label" role="status"></span>
   <button id="update-button" class="icon-button" type="button" aria-label="Install update" title="Install update" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg></button>
   <div id="update-status" class="update-status" role="status" hidden></div>
+ </div>
+ <div class="help-control">
+  <button id="help-button" class="icon-button" type="button" aria-label="Help and feedback" aria-expanded="false" aria-controls="help-menu">?</button>
+ </div>
+ <div id="help-menu" class="language-menu help-menu" hidden role="group" aria-label="Help and feedback">
+  <a href="https://github.com/CloudDown/student-mcp#readme" target="_blank" rel="noopener noreferrer" data-help-label="Help">Help</a>
+  <a href="https://github.com/CloudDown/student-mcp/issues/new" target="_blank" rel="noopener noreferrer" data-help-label="Report a problem">Report a problem</a>
+ </div>
  </div>
  <div class="global-actions">
   <label class="startup-row app-startup" id="app-startup" hidden><span id="app-startup-label"></span><input class="switch" type="checkbox" name="autostart"></label>

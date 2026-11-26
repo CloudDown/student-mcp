@@ -47,6 +47,14 @@ try {
     return route.fulfill({status:404,body:''});
   });
   await page.goto('http://student.test/#test-secret');
+  // Help is a small menu beside the version, not a second page.
+  await page.locator('#help-button').click();
+  await page.locator('#help-menu').waitFor();
+  assert.equal(await page.locator('#help-button').getAttribute('aria-expanded'),'true');
+  assert.deepEqual((await page.locator('#help-menu a').allTextContents()),['Help','Report a problem']);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#help-menu').isHidden(),true);
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'help-button');
   await page.locator('#language-button').click();
   const languageSaved=page.waitForResponse(response=>response.url().endsWith('/action')&&response.request().postDataJSON().action==='language');
   await page.locator('[data-language="fr"]').click();
@@ -65,6 +73,14 @@ try {
   await page.getByRole('option').first().click();
   await page.getByLabel('Site address',{exact:true}).waitFor();
   assert.equal(await page.getByLabel('Site address',{exact:true}).inputValue(),'https://moodle.polymtl.ca');
+  await page.getByRole('button',{name:'Back to services',exact:true}).click();
+  await page.getByRole('combobox').fill('concordia');
+  await page.getByRole('option',{name:/Concordia.*Moodle/}).click();
+  assert.equal(await page.getByLabel('Site address',{exact:true}).inputValue(),'https://moodle.concordia.ca/moodle');
+  await page.getByRole('button',{name:'Back to services',exact:true}).click();
+  await page.getByRole('combobox').fill('hec');
+  await page.getByRole('option',{name:/HEC Montréal/}).click();
+  assert.equal(await page.getByLabel('Site address',{exact:true}).inputValue(),'https://hecmontreal.instructure.com');
   await page.getByRole('button',{name:'Back to services',exact:true}).click();
   await page.getByRole('combobox').fill('garneau');
   await page.getByRole('option',{name:/Garneau/}).click();

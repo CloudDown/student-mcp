@@ -971,6 +971,20 @@ impl Browser {
                 return Err(RECONNECT.into());
             }
             if url.path().contains("login") {
+                // Some Canvas instances only expose institutional SSO and
+                // return 404 on the local /login/canvas page. Fall back to
+                // Canvas's /login discovery page, which redirects to that SSO.
+                if url.path().ends_with("/login/canvas") {
+                    if let Ok(status) = self.evaluate(
+                        "performance.getEntriesByType('navigation')[0]?.responseStatus".into(),
+                    ) {
+                        if status.as_u64() == Some(404) {
+                            let target =
+                                format!("{}/login", self.profile.origin.trim_end_matches('/'));
+                            let _ = self.call("Page.navigate", json!({"url": target}));
+                        }
+                    }
+                }
                 return Err(RECONNECT.into());
             }
             let user = self

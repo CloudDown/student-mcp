@@ -180,7 +180,7 @@ const schoolDirectory = [
 ["Trent University", "brightspace", "trent university learn trentu"],
 ["Tufts University", "canvas", "tufts university"],
 ["Université Claude Bernard Lyon 1", "moodle", "universite claude bernard lyon univ lyon1"],
-["Université Concordia", "brightspace", "concordia universite"],
+["Université Concordia", "moodle", "concordia universite"],
 ["Université d'Aix-Marseille", "moodle", "amu aix marseille universite ametice univ"],
 ["Université d'Angers", "moodle", "universite angers univ"],
 ["Université d'Artois", "moodle", "universite artois univ"],
