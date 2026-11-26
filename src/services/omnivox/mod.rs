@@ -242,11 +242,17 @@ impl OmnivoxClient {
     pub fn status(&self) -> Result<Value, String> {
         if self.is_college() {
             let courses = self.mobl("LeaCommun/GetDefaultModel", json!({ "AnSession": "" }))?;
-            let count = courses
-                .get("ListeCours")
-                .and_then(Value::as_array)
-                .map(Vec::len)
-                .ok_or("Omnivox did not confirm access to Léa. Sign in again in the app.")?;
+            let count = omnivox_course_rows(&courses).len();
+            if count == 0
+                && courses
+                    .get("ListeCours")
+                    .and_then(Value::as_array)
+                    .is_none()
+            {
+                return Err(
+                    "Omnivox did not confirm access to Léa. Sign in again in the app.".into(),
+                );
+            }
             return Ok(json!({ "connected": true, "college": true, "courses": count }));
         }
         let names = tool_names(&self.catalog()?);
@@ -1484,7 +1490,7 @@ pub fn dispatch(client: &OmnivoxClient, name: &str, args: &Value) -> Result<Valu
                 }
             }
         }
-        let value = client.mobl(path, body)?;
+        let value = reads::compact(name, client.mobl(path, body)?);
         return if name == "omnivox_terms" {
             Ok(
                 json!({"current_term":value.get("AnSession"),"available_terms":value.get("AnSessionDisponible")}),
@@ -1493,7 +1499,7 @@ pub fn dispatch(client: &OmnivoxClient, name: &str, args: &Value) -> Result<Valu
             Ok(value)
         };
     }
-    match name {
+    let result = match name {
         "omnivox_status" => client.status(),
         "omnivox_my_courses" => client.courses(),
         "omnivox_course_documents" => client.documents(&require_course_id(args)?),
@@ -1506,7 +1512,8 @@ pub fn dispatch(client: &OmnivoxClient, name: &str, args: &Value) -> Result<Valu
             client.deadlines(days, optional_course_ids(args)?)
         }
         _ => Err("Unknown Omnivox tool.".into()),
-    }
+    };
+    result.map(|value| reads::compact(name, value))
 }
 
 #[cfg(test)]
@@ -2152,6 +2159,26 @@ pub(crate) mod tests {
         assert!(requests[3].contains(r#""course_id":"2434K5EM.1011""#));
         assert!(requests[5].starts_with("POST /tools/get-grades-summary "));
         assert!(requests[6].contains(r#""range":"week""#));
+    }
+
+    #[test]
+    fn college_status_counts_real_courses_only() {
+        let (config, worker) = server(vec![(
+            200,
+            json!({"ListeCours":[
+                {"IdCoursGroupe":0,"Titre":"Léa"},
+                {"IdCoursGroupe":1,"NoCours":"MAT101","NoGroupe":"0001","Titre":"Mathématiques"}
+            ]})
+            .to_string(),
+        )]);
+        let client = OmnivoxClient::new(OmnivoxConfig {
+            base_url: config.base_url,
+            token: "session=fixture; other=value".into(),
+            device_id: None,
+            auth_hash: None,
+        });
+        assert_eq!(client.status().unwrap()["courses"], 1);
+        worker.join().unwrap();
     }
 
     #[test]

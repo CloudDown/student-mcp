@@ -524,3 +524,37 @@ mémoire. Le tampon est maintenant aussi écrit dans un dossier privé.
   (`omnivox_grades`), puis le passage suivant a réussi sans changement de code.
 - Tests hors réseau : `python3 -m unittest benchmark.test_portal` — 13 réussis.
   Aucun changement Rust.
+
+## 17. Benchmark Omnivox élargi et compacté (25 novembre 2026)
+
+- La référence privée accepte maintenant une liste `checks` : chemins
+  (`HoraireDex.Cours`), sélection d'une ligne (`match`), valeurs exactes,
+  sous-chaînes, listes vides, minimum et nombre exact. `benchmark/services/
+  portal.py` construit ces cas ; tout outil nommé doit être déclaré
+  `readOnlyHint: true` avant d'être appelé.
+- La référence `~/.student-mcp.eval/omnivox-reference.json` (mode `0600`, hors
+  dépôt) contient 48 vérifications construites depuis les réponses brutes
+  `/Mobl/`, en plus des 7 cas fixes : 55 questions notées, du trimestre et des
+  inscriptions jusqu'aux documents, travaux, notes, annonces, absences,
+  enseignants, sites web, notifications, services, actualités, communautés,
+  documents officiels, formulaires, MIO, calendriers, horaires et PDF.
+- `omnivox_status.courses` ne compte plus la ligne agrégée de Léa : 8 cours
+  réels au lieu de 9. Test Rust ajouté.
+- Compactage des sorties les plus lourdes, sans retirer les champs utiles :
+  cours (modules réduits à leurs compteurs), documents (métadonnées utiles,
+  sans dates/icônes redondantes), messages MIO (aperçu sans corps HTML),
+  calendriers (titre, date, type, cours, travail/évaluation) et services
+  (identité et drapeaux). Les listes restent complètes et les IDs sont
+  conservés.
+- Résultat final, binaire `current` : **55 PASS, 0 PARTIAL, 0 FAIL, 0 SKIP —
+  100 %** ; 123,1 s au total, médiane 2,22 s ; **133 758 tokens** lus (médiane
+  1 165), contre 232 661 avant compactage (-43 %). Aucun outil d'écriture
+  appelé.
+- Comparaison : Moodle `current` reste à 93 % avec 71 876 tokens pour 50
+  questions. Le score Omnivox est supérieur, mais la connexion mobile reste
+  plus lente et plus verbeuse ; les gros postes restants sont le calendrier
+  Léa, le HTML des événements du collège et les deux horaires.
+- Vérifications : `cargo test --offline` — 321 réussis, 13 ignorés ;
+  `cargo clippy --offline --all-targets -- -D warnings` propre ;
+  `python3 -m unittest benchmark.test_portal benchmark.test_student` — 18
+  réussis ; `git diff --check` propre.

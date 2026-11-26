@@ -125,6 +125,32 @@ python3 benchmark/run.py --service omnivox --reference ~/omnivox-reference.json 
 python3 benchmark/run.py --service brightspace --reference ~/brightspace-reference.json --versions vX.Y.Z,current
 ```
 
+Les cas fixes couvrent les parcours principaux. Pour vérifier d'autres
+lectures sans ajouter de code, la référence accepte une liste `checks` :
+
+```json
+{
+  "checks": [{
+    "question": "« Combien de documents dans ce cours ? »",
+    "tool": "omnivox_documents_summary",
+    "args": {"term": "20263"},
+    "expect": [{
+      "path": "ListeSommaire",
+      "match": {"NoCours": "MAT101", "NoGroupe": "0001"},
+      "values": {"NbDocumentsDisponibles": 17}
+    }]
+  }]
+}
+```
+
+`path` suit les clés et index (`HoraireDex.Cours`, `0.Titre`). `match`
+sélectionne une seule ligne d'une liste, `values` compare des champs exacts,
+`contains` cherche un texte, `empty` exige une liste vide, `min_count` un
+minimum d'éléments et `count` un nombre exact. `text` vérifie des sous-chaînes
+dans la réponse brute.
+Chaque outil nommé est appelé seulement si sa définition déclare
+`readOnlyHint: true` ; aucun outil d'écriture n'est exécuté.
+
 Le harnais utilise une copie privée du seul compte sélectionné et fige la
 référence pour toutes les versions. Sur Linux, il copie un éventuel profil
 Chromium sous le verrou de l'application ; aucune session n'est exportée

@@ -27,6 +27,91 @@ class Case:
     follow: Callable[[object], dict | None] | None = None
 
 
+def nested(value: object, path: str):
+    """Follow a dot-separated key/index path, returning None on a miss."""
+    for part in path.split("."):
+        if not part:
+            continue
+        if isinstance(value, dict):
+            value = value.get(part)
+        elif isinstance(value, list) and part.isdigit():
+            index = int(part)
+            value = value[index] if index < len(value) else None
+        else:
+            return None
+    return value
+
+
+def same_value(left: object, right: object) -> bool:
+    # JSON booleans must not match numeric 0 or 1.
+    return left == right and isinstance(left, bool) == isinstance(right, bool)
+
+
+def spec_check(expectations: list[dict], text: list[str]):
+    """Generic check for reference-supplied paths, rows and substrings."""
+    def check(data: object, result: dict) -> Verdict:
+        for expectation in expectations:
+            path = expectation.get("path", "")
+            subject = path or "racine"
+            value = nested(data, path)
+            if expectation.get("empty") is True:
+                if not isinstance(value, list) or value:
+                    return "FAIL", f"Liste non vide ou absente ({subject})."
+            if "min_count" in expectation:
+                if not isinstance(value, list) or len(value) < expectation["min_count"]:
+                    return "FAIL", f"Moins de {expectation['min_count']} éléments dans {subject}."
+            if "count" in expectation:
+                if not isinstance(value, list) or len(value) != expectation["count"]:
+                    return "FAIL", f"Nombre d'éléments différent dans {subject}."
+            if "match" in expectation:
+                if not isinstance(value, list):
+                    return "FAIL", f"Liste absente ({subject})."
+                rows = [
+                    row for row in value
+                    if isinstance(row, dict) and all(
+                        key in row and same_value(row[key], expected)
+                        for key, expected in expectation["match"].items()
+                    )
+                ]
+                if len(rows) != 1:
+                    return "FAIL", f"Élément introuvable ou ambigu dans {subject}."
+                row = rows[0]
+            else:
+                row = value
+            if "values" in expectation or "contains" in expectation:
+                if not isinstance(row, dict):
+                    return "FAIL", f"Objet absent ({subject})."
+            for key, expected in (expectation.get("values") or {}).items():
+                if key not in row or not same_value(row.get(key), expected):
+                    return "FAIL", f"Champ {key} différent de la référence ({subject})."
+            for key, expected in (expectation.get("contains") or {}).items():
+                if expected not in str(row.get(key) or ""):
+                    return "FAIL", f"Champ {key} sans le texte de référence ({subject})."
+        for needle in text:
+            if needle not in (result.get("text") or ""):
+                return "FAIL", "Le texte de référence est absent de la réponse."
+        return "PASS", "Réponse conforme à la référence."
+    return check
+
+
+def spec_cases(service: str, specs: list[dict]) -> list[Case]:
+    """Turn reference-supplied checks into read-only benchmark cases."""
+    cases: list[Case] = []
+    for spec in specs:
+        expectations = spec.get("expect") or []
+        text = spec.get("text") or []
+        cases.append(
+            Case(
+                spec["question"],
+                spec["tool"],
+                dict(spec.get("args") or {}),
+                spec_check(expectations, text) if expectations or text else None,
+                spec.get("skip") or "Aucune donnée de référence pour ce cas.",
+            )
+        )
+    return cases
+
+
 def read_reference(path: Path, service: str) -> dict:
     try:
         if path.stat().st_size > 1024 * 1024:
@@ -71,6 +156,42 @@ def read_reference(path: Path, service: str) -> dict:
                 key = (item["kind"], item["id"])
                 require(key not in keys)
                 keys.add(key)
+        checks = ref.get("checks")
+        if checks is not None:
+            require(isinstance(checks, list) and len(checks) <= 100)
+            for spec in checks:
+                require(isinstance(spec, dict) and nonblank(spec.get("question"))
+                        and len(spec["question"]) <= 300)
+                tool = spec.get("tool")
+                require(nonblank(tool) and len(tool) <= 80 and tool.startswith(f"{service}_"))
+                args = spec.get("args") or {}
+                require(isinstance(args, dict) and "account_id" not in args)
+                expectations = spec.get("expect") or []
+                text = spec.get("text") or []
+                require(isinstance(expectations, list) and len(expectations) <= 20)
+                require(isinstance(text, list) and len(text) <= 10)
+                require(expectations or text)
+                for expectation in expectations:
+                    require(isinstance(expectation, dict))
+                    require(set(expectation) <= {"path", "match", "values", "contains", "empty", "min_count", "count"})
+                    require(isinstance(expectation.get("path", ""), str) and len(expectation.get("path", "")) <= 200)
+                    for key in ("match", "values", "contains"):
+                        if key in expectation:
+                            fields = expectation[key]
+                            require(isinstance(fields, dict) and fields)
+                            require(all(
+                                nonblank(name) and len(name) <= 100
+                                and (value is None or type(value) in (str, int, float, bool))
+                                for name, value in fields.items()
+                            ))
+                    if "empty" in expectation:
+                        require(expectation["empty"] is True)
+                    if "min_count" in expectation:
+                        require(positive_int(expectation["min_count"]))
+                    if "count" in expectation:
+                        require(expectation["count"] == 0 or positive_int(expectation["count"]))
+                    require(any(key in expectation for key in ("empty", "min_count", "count", "match", "values", "contains")))
+                require(all(nonblank(needle) and len(needle) <= 200 for needle in text))
     except (AttributeError, KeyError, TypeError, ValueError, OSError):
         raise ValueError(f"Référence {service} invalide : voir le format dans benchmark/README.md.") from None
     return ref

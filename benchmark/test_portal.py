@@ -106,6 +106,56 @@ class ScoringTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     portal.read_reference(path, "omnivox")
 
+    def test_generic_reference_checks_follow_paths_rows_and_text(self):
+        spec = {
+            "question": "« Combien de documents dans ce cours ? »",
+            "tool": "omnivox_documents_summary",
+            "args": {"term": "20263"},
+            "expect": [
+                {"path": "ListeSommaire", "match": {"NoCours": "MAT101", "NoGroupe": "0001"},
+                 "values": {"NbDocumentsDisponibles": 17}},
+                {"path": "ListeSommaire", "min_count": 1},
+                {"path": "ListeSommaire", "count": 1},
+                {"path": "ListeTravaux", "empty": True},
+            ],
+            "text": ["ListeSommaire"],
+        }
+        case = portal.spec_cases("omnivox", [spec])[0]
+        data = {"ListeSommaire": [{"NoCours": "MAT101", "NoGroupe": "0001", "NbDocumentsDisponibles": 17}],
+                "ListeTravaux": []}
+        result = {"text": '{"ListeSommaire":[]}'}
+        self.assertEqual(case.check(data, result)[0], "PASS")
+        self.assertEqual(case.check({"ListeSommaire": [], "ListeTravaux": []}, result)[0], "FAIL")
+        self.assertEqual(case.check({**data, "ListeSommaire": data["ListeSommaire"] * 2}, result)[0], "FAIL")
+        self.assertEqual(case.check({**data, "ListeTravaux": [{}]}, result)[0], "FAIL")
+        self.assertEqual(case.check({**data, "ListeSommaire": [{**data["ListeSommaire"][0], "NbDocumentsDisponibles": 16}]}, result)[0], "FAIL")
+        self.assertEqual(case.check(data, {"text": "absent"})[0], "FAIL")
+
+    def test_generic_checks_are_validated_and_appended_to_cases(self):
+        ref = reference("omnivox")
+        ref["checks"] = [{
+            "question": "« Combien de cours ? »",
+            "tool": "omnivox_status",
+            "args": {},
+            "expect": [{"path": "", "values": {"connected": True}}],
+        }]
+        self.assertEqual(omnivox.cases(ref)[-1].tool, "omnivox_status")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "reference.json"
+            for broken in (
+                {**ref["checks"][0], "tool": "moodle_search"},
+                {**ref["checks"][0], "args": {"account_id": "omnivox"}},
+                {**ref["checks"][0], "expect": []},
+                {**ref["checks"][0], "expect": [{"path": "", "empty": False}]},
+                {**ref["checks"][0], "expect": [{"path": "", "min_count": 0}]},
+                {**ref["checks"][0], "expect": [{"path": "", "values": {}}]},
+                {**ref["checks"][0], "expect": [{"path": "", "unknown": True}]},
+                {**ref["checks"][0], "text": [1]},
+            ):
+                path.write_text(json.dumps({**ref, "checks": [broken]}))
+                with self.assertRaises(ValueError):
+                    portal.read_reference(path, "omnivox")
+
     def test_mcp_transport_preserves_pdf_metadata_and_counts_nonempty_images(self):
         content = [{"type": "text", "text": '{"coverage":{}}'},
                    {"type": "text", "text": "Page 1"},

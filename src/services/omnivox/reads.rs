@@ -1,7 +1,7 @@
 //! Curated, read-only mobile endpoints. No caller-supplied paths or write actions.
 //! Protocol reference: https://github.com/Beat-YT/omnivox-mcp/tree/main/docs/mobl
 use super::{optional_course_id, require_course_id, split_class_id};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 pub(super) fn term_schema() -> Value {
     json!({"type":"string","pattern":"^[0-9]{5}$","description":"Academic term ID from omnivox_terms (YYYYN). Omit for the current term."})
@@ -291,6 +291,229 @@ pub(super) fn without_credentials(mut value: Value) -> Value {
     value
 }
 
+/// Mobile list models repeat icons, HTML and internal identifiers that a model
+/// does not need to answer a student question. Keep the fields used by tools,
+/// links and the benchmark; drop the rest before it reaches the model.
+pub(super) fn compact(name: &str, value: Value) -> Value {
+    match name {
+        "omnivox_my_courses" => compact_courses(value),
+        "omnivox_course_documents" => compact_documents(value),
+        "omnivox_mio_messages" | "omnivox_mio_search" => compact_mio_messages(value),
+        "omnivox_calendar" | "omnivox_calendar_page" | "omnivox_calendar_month" => {
+            compact_calendar(value)
+        }
+        "omnivox_services" => compact_services(value),
+        _ => value,
+    }
+}
+
+fn pick(row: &Map<String, Value>, keys: &[&str]) -> Value {
+    Value::Object(
+        keys.iter()
+            .filter_map(|key| {
+                row.get(*key)
+                    .map(|value| ((*key).to_string(), value.clone()))
+            })
+            .collect(),
+    )
+}
+
+fn compact_rows(value: &mut Value, key: &str, keys: &[&str]) {
+    if let Some(rows) = value.get_mut(key).and_then(Value::as_array_mut) {
+        for row in rows {
+            if let Some(object) = row.as_object() {
+                *row = pick(object, keys);
+            }
+        }
+    }
+}
+
+fn compact_courses(mut value: Value) -> Value {
+    if let Some(rows) = value.get_mut("ListeCours").and_then(Value::as_array_mut) {
+        for row in rows {
+            let Some(object) = row.as_object() else {
+                continue;
+            };
+            let mut compact = pick(
+                object,
+                &[
+                    "IdCoursGroupe",
+                    "NoCours",
+                    "NoGroupe",
+                    "Titre",
+                    "TagCoursGroupeCoursDiffere",
+                ],
+            );
+            if let Some(modules) = object.get("ListeModulesLea").and_then(Value::as_object) {
+                let mut counts = Map::new();
+                for (name, module) in modules {
+                    if let Some(module) = module.as_object() {
+                        counts.insert(
+                            name.clone(),
+                            pick(
+                                module,
+                                &[
+                                    "NotificationsNonConsultes",
+                                    "NotificationsTotal",
+                                    "EstBloque",
+                                ],
+                            ),
+                        );
+                    }
+                }
+                compact["ListeModulesLea"] = Value::Object(counts);
+            }
+            *row = compact;
+        }
+    }
+    value
+}
+
+fn compact_documents(mut value: Value) -> Value {
+    compact_rows(
+        &mut value,
+        "ListeDocuments",
+        &[
+            "IdDocCoursDocument",
+            "Titre",
+            "TitreCategorie",
+            "NomDocument",
+            "Extension",
+            "TailleOctet",
+            "ContentType",
+            "DateDebutDistribution",
+            "DateFinDistribution",
+            "DateConsultation",
+            "Description",
+            "IsPeutVisualiser",
+            "TypeDocument",
+            "IndicateurDocumentVisualise",
+            "IndicateurCategorieRetracte",
+        ],
+    );
+    value
+}
+
+fn compact_mio_messages(mut value: Value) -> Value {
+    compact_rows(
+        &mut value,
+        "ListeMessages",
+        &[
+            "Id",
+            "MioEnvoi",
+            "Sujet",
+            "NomCompletEnvoyeur",
+            "TitreAfficheEnvoyeur",
+            "NomCompletRecepteur",
+            "TimestampDateEnvoi",
+            "ExtraitMessage",
+            "NbAttachements",
+            "HasAttachment",
+            "TailleAttachements",
+            "Unread",
+            "IsBrouillon",
+            "NomCategorie",
+            "IsPeutVisualiser",
+            "Indicateurs",
+            "IDMessageReply",
+            "NbDestinataires",
+            "OIDEnvoyeur",
+            "NomEnvoyeur",
+            "PrenomEnvoyeur",
+            "OIDRecepteur",
+            "NomRecepteur",
+            "PrenomRecepteur",
+        ],
+    );
+    value
+}
+
+fn compact_calendar(mut value: Value) -> Value {
+    if let Some(events) = value
+        .get_mut("ListeEvenements")
+        .and_then(Value::as_array_mut)
+    {
+        for event in events {
+            let Some(object) = event.as_object() else {
+                continue;
+            };
+            let mut compact = pick(
+                object,
+                &[
+                    "TitreAffiche",
+                    "DescriptionAffiche",
+                    "EstTermine",
+                    "EstEnCours",
+                    "EstPeriode",
+                ],
+            );
+            if let Some(inner) = object.get("Evenement").and_then(Value::as_object) {
+                let mut detail = pick(
+                    inner,
+                    &[
+                        "Type",
+                        "Titre",
+                        "TimestampDateEvenement",
+                        "TimestampDateFin",
+                    ],
+                );
+                if let Some(details) = inner.get("Details").and_then(Value::as_object) {
+                    detail["Details"] = pick(
+                        details,
+                        &[
+                            "AnSession",
+                            "NoCours",
+                            "NoGroupe",
+                            "NomCours",
+                            "IdTravail",
+                            "IdEvaluation",
+                            "Ponderation",
+                            "ModeRemise",
+                            "LienExterne",
+                            "NomMio",
+                            "URLMio",
+                            "NomMio2",
+                            "URLMio2",
+                            "TitreCommunaute",
+                            "URLCommunaute",
+                            "NoLocal",
+                        ],
+                    );
+                }
+                compact["Evenement"] = detail;
+            }
+            *event = compact;
+        }
+    }
+    value
+}
+
+fn compact_services(mut value: Value) -> Value {
+    if let Some(menu) = value
+        .pointer_mut("/OffreService/MenuItems")
+        .and_then(Value::as_array_mut)
+    {
+        for item in menu {
+            if let Some(object) = item.as_object() {
+                *item = pick(
+                    object,
+                    &[
+                        "Id",
+                        "Module",
+                        "Texte",
+                        "Description",
+                        "EstDisponibleMenu",
+                        "EstActif",
+                        "EstBloque",
+                        "RaisonBloque",
+                    ],
+                );
+            }
+        }
+    }
+    value
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -417,5 +640,96 @@ mod tests {
             value,
             json!({"Travail":{"Titre":"Exam"},"items":[{"Nom":"Forms"}]})
         );
+    }
+
+    #[test]
+    fn compaction_keeps_useful_fields_and_drops_mobile_presentation_data() {
+        let documents = compact(
+            "omnivox_course_documents",
+            json!({"ListeDocuments":[{
+                "IdDocCoursDocument":"doc",
+                "Titre":"Guide",
+                "NomDocument":"guide.pdf",
+                "Extension":".pdf",
+                "Description":"Utile",
+                "TimeStampDateDebutDistribution":123,
+                "TagIcone":"pdf"
+            }]}),
+        );
+        let document = &documents["ListeDocuments"][0];
+        assert_eq!(document["IdDocCoursDocument"], "doc");
+        assert_eq!(document["Titre"], "Guide");
+        assert_eq!(document["Description"], "Utile");
+        assert!(document.get("TimeStampDateDebutDistribution").is_none());
+        assert!(document.get("TagIcone").is_none());
+
+        let messages = compact(
+            "omnivox_mio_messages",
+            json!({"ListeMessages":[{
+                "Id":"message",
+                "Sujet":"Sujet",
+                "ExtraitMessage":"Extrait",
+                "Message":"<p>corps complet</p>",
+                "Images":"base64",
+                "Attachements":[{"Id":"heavy"}],
+                "NbAttachements":1
+            }]}),
+        );
+        let message = &messages["ListeMessages"][0];
+        assert_eq!(message["Id"], "message");
+        assert_eq!(message["Sujet"], "Sujet");
+        assert_eq!(message["ExtraitMessage"], "Extrait");
+        assert_eq!(message["NbAttachements"], 1);
+        assert!(message.get("Message").is_none());
+        assert!(message.get("Images").is_none());
+        assert!(message.get("Attachements").is_none());
+
+        let calendar = compact(
+            "omnivox_calendar_month",
+            json!({"ListeEvenements":[{
+                "TitreAffiche":"Devoir",
+                "EstTermine":false,
+                "Evenement":{
+                    "Titre":"Devoir",
+                    "TimestampDateEvenement":123,
+                    "DescriptionAng":"inutile",
+                    "Details":{"NoCours":"MAT101","NomCours":"Mathématiques","URLMio":"secret"}
+                }
+            }]}),
+        );
+        let event = &calendar["ListeEvenements"][0];
+        assert_eq!(event["TitreAffiche"], "Devoir");
+        assert_eq!(event["Evenement"]["Details"]["NoCours"], "MAT101");
+        assert!(event["Evenement"].get("DescriptionAng").is_none());
+
+        let services = compact(
+            "omnivox_services",
+            json!({"OffreService":{"MenuItems":[{
+                "Id":"Mio","Texte":"Mio","EstActif":true,"EstBloque":false,
+                "Image":"sprite.png","UrlService":"secret"
+            }]}}),
+        );
+        let service = &services["OffreService"]["MenuItems"][0];
+        assert_eq!(service["Id"], "Mio");
+        assert_eq!(service["Texte"], "Mio");
+        assert!(service.get("Image").is_none());
+        assert!(service.get("UrlService").is_none());
+
+        let courses = compact(
+            "omnivox_my_courses",
+            json!({"ListeCours":[{
+                "IdCoursGroupe":1,"NoCours":"MAT101","NoGroupe":"0001","Titre":"Mathématiques",
+                "ListeModulesLea":{"Documents":{"NotificationsNonConsultes":2,"NotificationsTotal":9,"NomIcone":"doc.png","EstBloque":false}}
+            }]}),
+        );
+        let course = &courses["ListeCours"][0];
+        assert_eq!(course["NoCours"], "MAT101");
+        assert_eq!(
+            course["ListeModulesLea"]["Documents"]["NotificationsTotal"],
+            9
+        );
+        assert!(course["ListeModulesLea"]["Documents"]
+            .get("NomIcone")
+            .is_none());
     }
 }

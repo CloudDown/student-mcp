@@ -60,6 +60,7 @@ def cases(ref: dict) -> list[portal.Case]:
     ]
     if term:
         cases.insert(0, portal.Case("« Quel est le trimestre courant ? »", "omnivox_terms", {}, term_check))
+    cases.extend(portal.spec_cases(NAME, ref.get("checks") or []))
     return cases
 
 
